@@ -14,6 +14,10 @@ const mainReadme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 const gitignore = fs.readFileSync(path.join(projectRoot, ".gitignore"), "utf8");
 const ciWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "ci.yml"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "release.yml"), "utf8");
+const releaseBuilder = fs.readFileSync(path.join(projectRoot, "tools", "build-release.ps1"), "utf8");
+const exampleConfiguration = JSON.parse(
+  fs.readFileSync(path.join(updaterRoot, "updater.config.example.json"), "utf8")
+);
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
 
 const expectedPackageFiles = [
@@ -64,7 +68,21 @@ assert.match(updaterReadme, /verifies its checksum/i);
 assert.match(updaterReadme, /replaces only RoTool's managed runtime files/i);
 assert.match(updaterReadme, /Press \*\*Reload\*\* on that same RoTool card/i);
 assert.match(updaterReadme, /never place a GitHub access token/i);
-assert.match(mainReadme, /Load unpacked/);
+assert.match(updaterReadme, /Kais80r\/RoTool-Extension/);
+assert.match(mainReadme, /^## Updating an unpacked copy from GitHub$/m);
+assert.match(mainReadme, /RoTool-setup\.zip/);
+assert.match(mainReadme, /keep that exact folder path/i);
+assert.match(mainReadme, /do not remove the existing extension/i);
+assert.match(mainReadme, /double-click `updater\/Update RoTool\.cmd`/i);
+assert.match(mainReadme, /does not access the browser profile or delete unrecognized local files/i);
+assert.match(mainReadme, /press \*\*Reload\*\* on the same RoTool card/i);
+assert.match(mainReadme, /GitHub workflow runs every test/i);
+assert.match(mainReadme, /Never put a GitHub token/i);
+assert.deepEqual(exampleConfiguration, {
+  repository: "Kais80r/RoTool-Extension",
+  browser: "edge"
+});
+assert.match(releaseBuilder, /\[string\]\$Repository = "Kais80r\/RoTool-Extension"/);
 assert.match(gitignore, /^updater\/updater\.config\.json$/m);
 assert.match(gitignore, /^dist\/$/m);
 
@@ -116,7 +134,14 @@ const fixture = spawnSync(
     cwd: projectRoot,
     encoding: "utf8",
     maxBuffer: 8 * 1024 * 1024,
-    windowsHide: true
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PSModulePath: [
+        process.env.PSModulePath,
+        path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "Modules")
+      ].filter(Boolean).join(path.delimiter)
+    }
   }
 );
 
