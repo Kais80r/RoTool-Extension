@@ -9571,13 +9571,14 @@
         : `Latest stored observation: ${latestCount} players. ` +
           "Percentage change is unavailable because no adjacent stored observation exists.";
     }
-    const runDescription = change.runTrend === "up"
+    const sequenceDescription = change.runTrend === "up"
       ? "rising"
       : change.runTrend === "down"
         ? "falling"
         : "unchanged";
     return storedRange +
-      `Change across the latest ${runDescription} run: ${change.text}.`;
+      `Change across the latest uninterrupted ${sequenceDescription} ` +
+      `sequence of stored observations: ${change.text}.`;
   }
 
   function downsampleGameTileCcuGraphPoints(
@@ -9695,9 +9696,44 @@
       "div",
       "rsl-game-ccu-graph__heading"
     );
+    const titleGroup = makeGameTileCcuGraphElement(
+      "span",
+      "rsl-game-ccu-graph__title-group"
+    );
+    titleGroup.append(
+      makeGameTileCcuGraphElement(
+        "strong",
+        "rsl-game-ccu-graph__label",
+        "Chart CCU"
+      ),
+      makeGameTileCcuGraphElement(
+        "span",
+        "rsl-game-ccu-graph__window",
+        "\u00b7 12h"
+      )
+    );
     const latestSummary = makeGameTileCcuGraphElement(
       "span",
       "rsl-game-ccu-graph__latest-summary"
+    );
+    const latestRow = makeGameTileCcuGraphElement(
+      "span",
+      "rsl-game-ccu-graph__latest-row"
+    );
+    const latestLabel = makeGameTileCcuGraphElement(
+      "span",
+      "rsl-game-ccu-graph__latest-label",
+      "Latest"
+    );
+    const latestValue = makeGameTileCcuGraphElement(
+      "strong",
+      "rsl-game-ccu-graph__latest",
+      exactLatest
+    );
+    latestRow.append(latestLabel, latestValue);
+    latestRow.setAttribute(
+      "aria-label",
+      latest ? `Latest saved CCU: ${exactLatest}` : "No saved CCU observation"
     );
     const latestChange = makeGameTileCcuGraphElement(
       "span",
@@ -9711,43 +9747,41 @@
     latestChange.setAttribute("data-trend", latestPercentChange.trend);
     latestChange.setAttribute("aria-label", latestPercentLabel);
     latestChange.title = latestPercentLabel;
-    const latestRunElapsed = formatGameTileCcuGraphCompactElapsed(
+    const latestChangeElapsed = formatGameTileCcuGraphCompactElapsed(
       latestPercentChange.elapsedMs
     );
-    const latestRunDuration = latestRunElapsed
+    const latestChangePeriod = latestChangeElapsed
       ? makeGameTileCcuGraphElement(
           "span",
-          "rsl-game-ccu-graph__run-duration",
-          `\u00b7 ${latestRunElapsed} run`
+          "rsl-game-ccu-graph__change-period",
+          `in ${latestChangeElapsed}`
         )
       : null;
-    if (latestRunDuration) {
-      latestRunDuration.title =
-        `Latest stored directional run: ` +
+    if (latestChangePeriod) {
+      latestChangePeriod.title =
+        `Change period between the baseline and latest stored observations: ` +
         `${formatGameTileCcuGraphStoredElapsed(latestPercentChange.elapsedMs)}.`;
-      latestRunDuration.setAttribute(
+      latestChangePeriod.setAttribute(
         "aria-label",
-        `Latest stored directional run lasted ` +
+        `Percentage change covers ` +
           `${formatGameTileCcuGraphStoredElapsed(latestPercentChange.elapsedMs)}`
       );
     }
-    latestSummary.append(
-      makeGameTileCcuGraphElement(
-        "strong",
-        "rsl-game-ccu-graph__latest",
-        exactLatest
-      ),
-      latestChange,
-      ...(latestRunDuration ? [latestRunDuration] : [])
+    const latestChangeSummary = makeGameTileCcuGraphElement(
+      "span",
+      "rsl-game-ccu-graph__change-summary"
     );
-    heading.append(
+    latestChangeSummary.append(
       makeGameTileCcuGraphElement(
         "span",
-        "rsl-game-ccu-graph__label",
-        "CCU \u00b7 12 hours"
+        "rsl-game-ccu-graph__change-label",
+        "Change"
       ),
-      latestSummary
+      latestChange,
+      ...(latestChangePeriod ? [latestChangePeriod] : [])
     );
+    latestSummary.append(latestRow, latestChangeSummary);
+    heading.append(titleGroup, ...(latest ? [latestSummary] : []));
 
     const svg = makeGameTileCcuGraphSvgElement("svg");
     svg.classList.add("rsl-game-ccu-graph__plot");
@@ -10049,7 +10083,7 @@
       chart.append(makeGameTileCcuGraphElement(
         "span",
         "rsl-game-ccu-graph__empty-note",
-        "No observations in the last 12 hours"
+        "No saved CCU samples in the last 12h"
       ));
     }
 
@@ -10057,12 +10091,12 @@
       "div",
       "rsl-game-ccu-graph__footer"
     );
-    if (gapIntervals.length > 0) {
+    if (points.length > 0 && gapIntervals.length > 0) {
       footer.setAttribute("data-has-gaps", "");
       const gapKey = makeGameTileCcuGraphElement(
         "span",
         "rsl-game-ccu-graph__gap-key",
-        "No observations"
+        "Striped = no saved data"
       );
       gapKey.setAttribute(
         "aria-label",
@@ -10070,11 +10104,11 @@
       );
       gapKey.title = "Hatched intervals contain no saved Chart observation.";
       footer.append(gapKey);
-    } else {
+    } else if (points.length > 0) {
       footer.append(makeGameTileCcuGraphElement(
         "span",
         "rsl-game-ccu-graph__history-key",
-        "Charts history"
+        "Saved locally"
       ));
     }
     const footerMeta = makeGameTileCcuGraphElement(
@@ -10085,7 +10119,7 @@
       const latestTime = makeGameTileCcuGraphElement(
         "time",
         "rsl-game-ccu-graph__latest-time",
-        `Saved ${formatGameTileCcuGraphFreshness(latest.timestamp, now)}`
+        `Last saved ${formatGameTileCcuGraphFreshness(latest.timestamp, now)}`
       );
       const latestDate = new Date(latest.timestamp);
       const localizedLatestDate = latestDate.toLocaleString();
@@ -10097,11 +10131,19 @@
       latestTime.title = `Latest saved observation: ${localizedLatestDate}`;
       footerMeta.append(latestTime);
     }
-    footerMeta.append(makeGameTileCcuGraphElement(
+    const cadence = makeGameTileCcuGraphElement(
       "span",
       "rsl-game-ccu-graph__cadence",
-      "5 min"
-    ));
+      "every ~5 min"
+    );
+    cadence.setAttribute(
+      "aria-label",
+      "Chart observations are normally sampled about every 5 minutes"
+    );
+    cadence.title =
+      "Chart observations are normally sampled about every 5 minutes; " +
+      "missing samples remain marked as no saved data.";
+    footerMeta.append(cadence);
     footer.append(footerMeta);
     overlay.append(heading, chart, footer);
     const hasGaps = gapIntervals.length > 0;

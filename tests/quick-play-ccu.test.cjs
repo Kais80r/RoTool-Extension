@@ -2693,9 +2693,10 @@ async function runContentCcuGraphBehaviorContracts() {
     .exec(stylesSource)?.[1] || "";
   assert.match(
     stylesSource,
-    /\.rsl-game-ccu-graph__heading\s*,\s*\.rsl-game-ccu-graph__footer\s*\{[^}]*display:\s*flex/,
-    "the compact header and footer need a stable horizontal hierarchy"
+    /\.rsl-game-ccu-graph__heading\s*\{[^}]*(?:display:\s*(?:grid|flex))[^}]*\}/,
+    "the compact heading needs a stable semantic summary hierarchy"
   );
+  assert.match(graphFooterRule, /display:\s*flex/);
   assert.match(graphFooterRule, /white-space:\s*nowrap/);
   const graphYAxisRule = /\.rsl-game-ccu-graph__y-axis\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
@@ -3119,11 +3120,23 @@ async function runContentCcuGraphBehaviorContracts() {
       /rolling 12-hour window/i,
       "the empty plot description must announce the same visible window"
     );
-    assert.equal(
+    assert.match(
       emptyOverlay.querySelector(".rsl-game-ccu-graph__empty-note")
-        ?.textContent,
-      "No observations in the last 12 hours",
+        ?.textContent || "",
+      /no saved (?:Chart |CCU )?(?:observations?|samples?|data).*(?:12\s*h|12 hours?)/i,
       "the empty state must describe the visible window without implying that the game was never tracked"
+    );
+    const emptyStateCopy =
+      `${emptyOverlay.textContent} ${emptyOverlay.getAttribute("aria-label") || ""}`;
+    assert.doesNotMatch(
+      emptyStateCopy,
+      /(?:\b0\s*(?:CCU|players?|users?)\b|\bzero\s+(?:CCU|players?|users?))/i,
+      "missing observations must never be presented as a measured zero-player value"
+    );
+    assert.doesNotMatch(
+      emptyStateCopy,
+      /\b(?:live|current CCU|currently 0|right now)\b/i,
+      "an empty saved window must not imply a live/current reading"
     );
     assert.match(
       emptyOverlay.getAttribute("aria-label") || "",
@@ -4367,16 +4380,21 @@ async function runContentCcuGraphBehaviorContracts() {
     );
     assert.match(
       oneGapOverlay.textContent,
-      /No observations/i,
-      "the compact footer should label gaps without a sentence competing with the plot"
+      /(?:hatch(?:ed)?|striped?)\s*=\s*(?:no saved (?:data|observations?)|not recorded)/i,
+      "the compact footer must explicitly map the hatch to missing saved data"
     );
     const oneGapLegend = oneGapOverlay.querySelector(
       ".rsl-game-ccu-graph__gap-key"
     );
     assert.match(
       oneGapLegend?.textContent || "",
-      /no\s+(?:saved\s+)?(?:observations?|data)/i,
-      "the legend must name the data state instead of relying on color or pattern alone"
+      /(?:hatch(?:ed)?|striped?)\s*=\s*(?:no saved (?:data|observations?)|not recorded)/i,
+      "the legend must explain both the visible pattern and its data meaning"
+    );
+    assert.doesNotMatch(
+      oneGapLegend?.textContent || "",
+      /^\s*no observations\s*$/i,
+      "a vague no-observations label does not explain what the striped region means"
     );
     assert.match(
       oneGapLegend?.getAttribute("aria-label") || "",
@@ -4588,17 +4606,42 @@ async function runContentCcuGraphBehaviorContracts() {
       assert.equal(latestChange?.getAttribute("data-trend"), percentCase.trend);
       assert.match(latestChange?.getAttribute("aria-label") || "", percentCase.exactCounts);
       assert.equal(latestChange?.title, latestChange?.getAttribute("aria-label"));
-      const runDuration = percentOverlay.querySelector(
-        ".rsl-game-ccu-graph__run-duration"
+      const changePeriod = percentOverlay.querySelector(
+        ".rsl-game-ccu-graph__change-period"
       );
       assert.match(
-        runDuration?.textContent || "",
-        /5m run/i,
-        "a visible percentage must expose the elapsed run it summarizes"
+        changePeriod?.textContent || "",
+        /(?:over|across|during|in)\s+5\s*(?:m|min)/i,
+        "a visible percentage must state the elapsed period it summarizes in plain language"
       );
       assert.match(
-        runDuration?.getAttribute("aria-label") || "",
-        /lasted 5 minutes/i
+        changePeriod?.getAttribute("aria-label") || "",
+        /(?:percentage )?change (?:covers|spans|is measured over) 5 minutes/i,
+        "the compact change period needs a fully worded accessible explanation"
+      );
+      assert.match(
+        percentOverlay.querySelector(".rsl-game-ccu-graph__change-label")
+          ?.textContent || "",
+        /^Change:?$/i,
+        "the percentage must be explicitly labeled instead of appearing as an unexplained number"
+      );
+      const changeSummary = percentOverlay.querySelector(
+        ".rsl-game-ccu-graph__change-summary"
+      );
+      assert.equal(
+        changeSummary?.contains(latestChange),
+        true,
+        "the labeled change summary must own the exact percentage"
+      );
+      assert.equal(
+        changeSummary?.contains(changePeriod),
+        true,
+        "the labeled change summary must keep its comparison period attached"
+      );
+      assert.doesNotMatch(
+        changeSummary?.textContent || "",
+        /\b(?:live|current|right now)\b/i,
+        "a saved directional run must not be described as a live change"
       );
       assert.doesNotMatch(
         latestChange?.getAttribute("aria-label") || "",
@@ -4671,7 +4714,7 @@ async function runContentCcuGraphBehaviorContracts() {
     assert.equal(risingRunChange?.getAttribute("data-trend"), "up");
     assert.match(
       risingRunChange?.getAttribute("aria-label") || "",
-      /Baseline stored observation: 100 players\. Latest stored observation: 110 players\. Elapsed time between stored observations: 10 minutes\. Change across the latest rising run: \+10%\./i
+      /Baseline stored observation: 100 players\. Latest stored observation: 110 players\. Elapsed time between stored observations: 10 minutes\. Change across the latest uninterrupted rising sequence of stored observations: \+10%\./i
     );
     assert.match(
       risingRunOverlay.getAttribute("aria-label") || "",
@@ -4693,7 +4736,7 @@ async function runContentCcuGraphBehaviorContracts() {
     assert.equal(turningPointChange?.getAttribute("data-trend"), "down");
     assert.match(
       turningPointChange?.getAttribute("aria-label") || "",
-      /Baseline stored observation: 120 players\. Latest stored observation: 110 players\. Elapsed time between stored observations: 5 minutes\. Change across the latest falling run: \u22128\.3%\./i
+      /Baseline stored observation: 120 players\. Latest stored observation: 110 players\. Elapsed time between stored observations: 5 minutes\. Change across the latest uninterrupted falling sequence of stored observations: \u22128\.3%\./i
     );
     assert.doesNotMatch(
       turningPointChange?.getAttribute("aria-label") || "",
@@ -4737,7 +4780,7 @@ async function runContentCcuGraphBehaviorContracts() {
     assert.equal(flatRunChange?.getAttribute("data-trend"), "flat");
     assert.match(
       flatRunChange?.getAttribute("aria-label") || "",
-      /Baseline stored observation: 120 players\. Latest stored observation: 120 players\. Elapsed time between stored observations: 10 minutes\. Change across the latest unchanged run: 0%\./i
+      /Baseline stored observation: 120 players\. Latest stored observation: 120 players\. Elapsed time between stored observations: 10 minutes\. Change across the latest uninterrupted unchanged sequence of stored observations: 0%\./i
     );
 
     const missedBucketRunPoints = [
@@ -4995,10 +5038,23 @@ async function runContentCcuGraphBehaviorContracts() {
       { timestamp: currentBucket, playing: 930_925 }
     ]);
     const axes = assertSemanticGameCcuGraphAxes(overlay, "sub-day graph");
-    assert.equal(
-      overlay.querySelector(".rsl-game-ccu-graph__label")?.textContent,
-      "CCU \u00b7 12 hours",
-      "the compact heading must identify both the metric and its fixed window"
+    const titleGroup = overlay.querySelector(
+      ".rsl-game-ccu-graph__title-group"
+    );
+    assert.match(
+      titleGroup?.textContent || "",
+      /CCU[\s\S]*12\s*(?:h|hours?)/i,
+      "the compact heading must identify both the metric and fixed display window"
+    );
+    assert.match(
+      overlay.querySelector(".rsl-game-ccu-graph__window")?.textContent || "",
+      /12\s*(?:h|hours?)/i,
+      "the graph window must remain separately identifiable from the metric"
+    );
+    assert.doesNotMatch(
+      titleGroup?.textContent || "",
+      /\b(?:live|current|real[- ]?time)\b/i,
+      "the graph title must not describe locally saved history as live data"
     );
     assert.equal(
       overlay.querySelector(".rsl-game-ccu-graph__latest")?.textContent,
@@ -5009,6 +5065,24 @@ async function runContentCcuGraphBehaviorContracts() {
       overlay.querySelector(".rsl-game-ccu-graph__latest")?.textContent || "",
       /930[.,]9K|930,925/i
     );
+    const latestRow = overlay.querySelector(
+      ".rsl-game-ccu-graph__latest-row"
+    );
+    assert.match(
+      overlay.querySelector(".rsl-game-ccu-graph__latest-label")?.textContent || "",
+      /latest/i,
+      "the exact number must be visibly labeled as the latest saved observation"
+    );
+    assert.match(
+      latestRow?.getAttribute("aria-label") || "",
+      /latest saved CCU:\s*930\.925/i,
+      "the latest summary must expose the exact localized count to assistive technology"
+    );
+    assert.doesNotMatch(
+      `${latestRow?.textContent || ""} ${latestRow?.getAttribute("aria-label") || ""}`,
+      /\b(?:live|current|right now)\b/i,
+      "a saved snapshot must never be presented as live/current data"
+    );
     const latestTime = overlay.querySelector(
       ".rsl-game-ccu-graph__latest-time"
     );
@@ -5018,6 +5092,12 @@ async function runContentCcuGraphBehaviorContracts() {
       new Date(currentBucket).toISOString(),
       "the visible freshness status must refer to the exact latest saved observation"
     );
+    const localizedLatestTimestamp = new Date(currentBucket).toLocaleString();
+    assert.equal(
+      latestTime?.getAttribute("aria-label"),
+      `Latest saved observation ${localizedLatestTimestamp}`,
+      "the freshness element must expose the exact saved timestamp, not only a relative age"
+    );
     assert.ok(
       latestTime?.textContent.trim(),
       "the exact CCU heading must not imply a live value without visible sample freshness"
@@ -5026,6 +5106,50 @@ async function runContentCcuGraphBehaviorContracts() {
       latestTime?.getAttribute("aria-label") || latestTime?.title || "",
       /latest|saved|observation|sample/i,
       "the sample timestamp needs an accessible explanation"
+    );
+    const cadence = overlay.querySelector(".rsl-game-ccu-graph__cadence");
+    assert.notEqual(
+      cadence,
+      latestTime,
+      "sample cadence and latest-sample freshness must remain separate semantic facts"
+    );
+    assert.match(
+      latestTime?.textContent || "",
+      /(?:last\s+)?saved/i,
+      "freshness must visibly describe when data was saved"
+    );
+    assert.match(
+      cadence?.textContent || "",
+      /5\s*min/i,
+      "cadence must visibly explain the normal sampling interval"
+    );
+    assert.match(
+      cadence?.getAttribute("aria-label") || cadence?.title || "",
+      /sampled?.*(?:about|approximately|every).*5 minutes|every.*5 minutes.*sampl/i,
+      "cadence needs a standalone accessible explanation rather than looking like freshness"
+    );
+    assert.doesNotMatch(
+      cadence?.textContent || "",
+      /\bago\b/i,
+      "sample cadence must not be mistaken for the age of the latest point"
+    );
+    assert.doesNotMatch(
+      latestTime?.textContent || "",
+      /sampl(?:e|ed|ing).*every|every.*sampl/i,
+      "latest freshness must not be mistaken for the collection cadence"
+    );
+    const exactInspectorValue = overlay.querySelector(
+      ".rsl-game-ccu-graph__interaction"
+    )?.getAttribute("aria-valuetext") || "";
+    assert.equal(
+      exactInspectorValue,
+      `930.925 CCU at ${localizedLatestTimestamp}`,
+      "the graph inspector must expose the exact saved value and timestamp together"
+    );
+    assert.doesNotMatch(
+      exactInspectorValue,
+      /\b(?:ago|live|current|now)\b/i,
+      "the exact inspector value must not substitute relative or live wording for its timestamp"
     );
     assert.equal(axes.xLabels.at(-1), "Now");
     assert.equal(
