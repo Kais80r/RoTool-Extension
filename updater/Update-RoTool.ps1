@@ -70,6 +70,19 @@ function ConvertTo-RoToolVersionParts {
   return ,$parts
 }
 
+function Get-RoToolFileSha256 {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $stream = [IO.File]::OpenRead($Path)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "")
+  } finally {
+    $algorithm.Dispose()
+    $stream.Dispose()
+  }
+}
+
 function Compare-RoToolVersion {
   param(
     [Parameter(Mandatory = $true)][string]$Left,
@@ -253,7 +266,7 @@ function Assert-RoToolChecksum {
     throw "The release checksum file has an unexpected format."
   }
   $expected = $match.Groups[1].Value.ToUpperInvariant()
-  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $PackagePath).Hash.ToUpperInvariant()
+  $actual = (Get-RoToolFileSha256 $PackagePath).ToUpperInvariant()
   if ($actual -ne $expected) {
     throw "Downloaded package checksum does not match the published SHA-256."
   }
@@ -447,7 +460,7 @@ function Install-RoToolValidatedPackage {
       $temporary = "$destination.rotool-new-$([Guid]::NewGuid().ToString('N'))"
       $temporaryFiles.Add($temporary)
       Copy-Item -LiteralPath $source -Destination $temporary
-      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $temporary).Hash) {
+      if ((Get-RoToolFileSha256 $source) -ne (Get-RoToolFileSha256 $temporary)) {
         throw "Staged copy verification failed: $relative"
       }
       if (Test-Path -LiteralPath $destination -PathType Leaf) {
@@ -472,7 +485,7 @@ function Install-RoToolValidatedPackage {
     foreach ($relative in $ManagedFiles) {
       $source = Join-Path $StagingRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
       $destination = Join-Path $InstallRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
-      if ((Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash) {
+      if ((Get-RoToolFileSha256 $source) -ne (Get-RoToolFileSha256 $destination)) {
         throw "Post-update file verification failed: $relative"
       }
     }

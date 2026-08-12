@@ -222,7 +222,7 @@ try {
   $packagePath = Join-Path $checksumRoot "RoTool-extension.zip"
   $checksumPath = "$packagePath.sha256"
   Write-Utf8File -Path $packagePath -Value "package bytes"
-  $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $packagePath).Hash.ToLowerInvariant()
+  $expectedHash = (Get-RoToolFileSha256 $packagePath).ToLowerInvariant()
   Write-Utf8File -Path $checksumPath -Value "$expectedHash  RoTool-extension.zip`n"
   Assert-Equal (Assert-RoToolChecksum -PackagePath $packagePath -ChecksumPath $checksumPath) $expectedHash.ToUpperInvariant() "valid checksum is accepted"
   Write-Utf8File -Path $checksumPath -Value "$('0' * 64)  RoTool-extension.zip`n"
@@ -369,13 +369,13 @@ try {
   $embeddedConfiguration = Read-ZipTextEntry -Path $setupArchive -EntryName "updater/updater.config.json" | ConvertFrom-Json
   Assert-Equal ([string]$embeddedConfiguration.repository) "sample-owner/sample-repo" "setup archive embeds release repository"
   Assert-Equal ([string]$embeddedConfiguration.browser) "edge" "setup archive defaults to Edge"
-  Assert-Equal (Get-FileHash -Algorithm SHA256 -LiteralPath $extensionArchive).Hash (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $buildTwo "RoTool-extension.zip")).Hash "extension package is reproducible"
-  Assert-Equal (Get-FileHash -Algorithm SHA256 -LiteralPath $setupArchive).Hash (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $buildTwo "RoTool-setup.zip")).Hash "setup package is reproducible"
+  Assert-Equal (Get-RoToolFileSha256 $extensionArchive) (Get-RoToolFileSha256 (Join-Path $buildTwo "RoTool-extension.zip")) "extension package is reproducible"
+  Assert-Equal (Get-RoToolFileSha256 $setupArchive) (Get-RoToolFileSha256 (Join-Path $buildTwo "RoTool-setup.zip")) "setup package is reproducible"
 
   foreach ($archiveName in @("RoTool-extension.zip", "RoTool-setup.zip")) {
     $archivePath = Join-Path $buildOne $archiveName
     $publishedChecksum = Get-Content -Raw -LiteralPath "$archivePath.sha256"
-    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+    $actualHash = (Get-RoToolFileSha256 $archivePath).ToLowerInvariant()
     Assert-True ($publishedChecksum -cmatch "^$actualHash  $([regex]::Escape($archiveName))`n$") "$archiveName checksum names and hashes the matching asset"
   }
 

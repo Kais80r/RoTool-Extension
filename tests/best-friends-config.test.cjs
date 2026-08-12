@@ -12,7 +12,7 @@ const pageBridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.28");
+assert.equal(manifest.version, "0.16.29");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 const mainWorldEntry = manifest.content_scripts.find((entry) => entry.world === "MAIN");

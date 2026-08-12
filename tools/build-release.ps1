@@ -111,6 +111,19 @@ function New-RoToolArchive {
   }
 }
 
+function Get-RoToolBuildFileSha256 {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $stream = [IO.File]::OpenRead($Path)
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "")
+  } finally {
+    $algorithm.Dispose()
+    $stream.Dispose()
+  }
+}
+
 $runtimeEntries = @($packageFiles | ForEach-Object {
   [PSCustomObject]@{
     Source = Join-Path $root $_
@@ -143,7 +156,7 @@ try {
 function Write-ChecksumFile {
   param([string]$File, [string]$Destination)
   $name = Split-Path -Leaf $File
-  $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant()
+  $hash = (Get-RoToolBuildFileSha256 $File).ToLowerInvariant()
   [IO.File]::WriteAllText($Destination, "$hash  $name`n", (New-Object Text.UTF8Encoding($false)))
 }
 
@@ -170,6 +183,6 @@ try {
   Repository = $Repository
   ExtensionArchive = $extensionArchive
   SetupArchive = $setupArchive
-  ExtensionSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $extensionArchive).Hash
-  SetupSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $setupArchive).Hash
+  ExtensionSha256 = Get-RoToolBuildFileSha256 $extensionArchive
+  SetupSha256 = Get-RoToolBuildFileSha256 $setupArchive
 }
