@@ -8945,7 +8945,7 @@
     model.point.hidden = true;
     model.time.textContent = date.toLocaleString();
     model.time.setAttribute("datetime", date.toISOString());
-    model.count.textContent = "No observation stored";
+    model.count.textContent = "No saved data";
     interaction.removeAttribute("data-point-active");
     interaction.setAttribute("data-gap-active", "");
     interaction.setAttribute("aria-valuenow", String(nearestIndex));
@@ -10091,26 +10091,6 @@
       "div",
       "rsl-game-ccu-graph__footer"
     );
-    if (points.length > 0 && gapIntervals.length > 0) {
-      footer.setAttribute("data-has-gaps", "");
-      const gapKey = makeGameTileCcuGraphElement(
-        "span",
-        "rsl-game-ccu-graph__gap-key",
-        "Striped = no saved data"
-      );
-      gapKey.setAttribute(
-        "aria-label",
-        "Hatched intervals contain no saved Chart observation"
-      );
-      gapKey.title = "Hatched intervals contain no saved Chart observation.";
-      footer.append(gapKey);
-    } else if (points.length > 0) {
-      footer.append(makeGameTileCcuGraphElement(
-        "span",
-        "rsl-game-ccu-graph__history-key",
-        "Saved locally"
-      ));
-    }
     const footerMeta = makeGameTileCcuGraphElement(
       "span",
       "rsl-game-ccu-graph__footer-meta"

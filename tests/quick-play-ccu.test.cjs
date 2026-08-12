@@ -2611,6 +2611,50 @@ async function runContentCcuGraphBehaviorContracts() {
       }
       return edges;
     });
+  const assertMetadataOnlyGraphFooter = (
+    overlay,
+    { expectFreshness, message }
+  ) => {
+    const footer = overlay.querySelector(".rsl-game-ccu-graph__footer");
+    const footerMeta = footer?.querySelector(
+      ".rsl-game-ccu-graph__footer-meta"
+    );
+    assert.ok(footer && footerMeta, `${message}: metadata footer must exist`);
+    assert.equal(
+      footer.children.length,
+      1,
+      `${message}: footer must contain only freshness/cadence metadata`
+    );
+    assert.equal(
+      footer.children[0],
+      footerMeta,
+      `${message}: footer metadata must be the sole direct child`
+    );
+    assert.equal(
+      overlay.querySelector(".rsl-game-ccu-graph__gap-key"),
+      null,
+      `${message}: striped gaps are explained interactively, not by a bottom-left legend`
+    );
+    assert.equal(
+      overlay.querySelector(".rsl-game-ccu-graph__history-key"),
+      null,
+      `${message}: the footer must not reserve a redundant history label`
+    );
+    assert.ok(
+      footerMeta.querySelector(".rsl-game-ccu-graph__cadence"),
+      `${message}: normal sample cadence must remain visible`
+    );
+    assert.equal(
+      Boolean(footerMeta.querySelector(".rsl-game-ccu-graph__latest-time")),
+      expectFreshness,
+      `${message}: freshness exists only when a saved observation exists`
+    );
+    assert.equal(
+      footer.hasAttribute("data-has-gaps"),
+      false,
+      `${message}: removed legend must not leave a special split-footer layout state`
+    );
+  };
   const graphTriggerRule = /\[data-rsl-game-ccu-graph-trigger\]\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
   assert.doesNotMatch(
@@ -2847,31 +2891,10 @@ async function runContentCcuGraphBehaviorContracts() {
       "no-data pigments must remain non-red amber without pinning an exact shade"
     );
   }
-  const gapLegendSwatchRule =
-    /\.rsl-game-ccu-graph__gap-key::before\s*\{([^}]*)\}/
-      .exec(stylesSource)?.[1] || "";
-  assert.match(
-    gapLegendSwatchRule,
-    /repeating-linear-gradient\s*\(/i,
-    "the visible legend must repeat the plot's hatch semantics"
-  );
-  const legendHatchAngle = Number(
-    /repeating-linear-gradient\s*\(\s*(-?\d+(?:\.\d+)?)deg/i
-      .exec(gapLegendSwatchRule)?.[1]
-  );
-  assert.ok(
-    Number.isFinite(legendHatchAngle) && Math.abs(legendHatchAngle % 90) > 1,
-    "the legend hatch must be diagonal rather than resembling an axis or trend line"
-  );
-  const legendPaints = Array.from(
-    gapLegendSwatchRule.matchAll(/rgb\([^)]+\)/gi),
-    (match) => parseCssColor(match[0])
-  ).filter(Boolean);
-  assert.ok(
-    legendPaints.some((paint) =>
-      rgbDistance(paint.channels, gapStripePaint.channels) <= 64
-    ),
-    "the legend hatch must correspond to the plot hatch without requiring one exact color"
+  assert.doesNotMatch(
+    stylesSource,
+    /\.rsl-game-ccu-graph__(?:gap|history)-key\b/,
+    "removed bottom-left graph keys must not retain dead layout or swatch CSS"
   );
   const noObservationCrosshairRule =
     /\.rsl-game-ccu-graph__crosshair\[data-no-observation\][\s\S]*?\.rsl-game-ccu-graph__crosshair-line\s*\{([^}]*)\}/
@@ -3148,6 +3171,16 @@ async function runContentCcuGraphBehaviorContracts() {
       /7\s*days?|seven-day/i,
       "rendered graph copy must not describe the old seven-day display"
     );
+    assertMetadataOnlyGraphFooter(emptyOverlay, {
+      expectFreshness: false,
+      message: "empty graph"
+    });
+    assert.equal(
+      emptyOverlay.querySelector(".rsl-game-ccu-graph__footer-meta")
+        ?.children.length,
+      1,
+      "an empty graph footer must contain cadence only"
+    );
 
     const retainedOnlyOverlay = fixture.document.createElement("div");
     const retainedOnlyPoints = fixture.hooks.renderGameTileCcuGraph(
@@ -3187,6 +3220,10 @@ async function runContentCcuGraphBehaviorContracts() {
         ?.getAttribute("role"),
       "slider"
     );
+    assertMetadataOnlyGraphFooter(singletonOverlay, {
+      expectFreshness: true,
+      message: "collecting graph with one saved observation"
+    });
 
     const interactivePoints = [
       { timestamp: currentBucket - 30 * 60_000, playing: 1_001 },
@@ -3240,11 +3277,47 @@ async function runContentCcuGraphBehaviorContracts() {
         ?.hidden,
       true
     );
+    const gapTooltipValue = interactionOverlay.querySelector(
+      ".rsl-game-ccu-graph__point-ccu"
+    );
+    const gapTooltipTime = interactionOverlay.querySelector(
+      ".rsl-game-ccu-graph__point-time"
+    );
+    const expectedGapDate = new Date(
+      Math.round(gapTimestamp / bucketMs) * bucketMs
+    );
+    const expectedGapTimestamp = expectedGapDate.toLocaleString();
     assert.equal(
-      interactionOverlay.querySelector(".rsl-game-ccu-graph__point-ccu")
-        ?.textContent,
-      "No observation stored",
-      "pointer inspection inside a gap must never synthesize a CCU value"
+      gapTooltipValue?.textContent,
+      "No saved data",
+      "pointer inspection inside a striped interval needs concise user-facing missing-data copy"
+    );
+    assert.equal(
+      gapTooltipTime?.textContent,
+      expectedGapTimestamp,
+      "the no-data tooltip must retain the exact inspected timestamp"
+    );
+    assert.equal(
+      gapTooltipTime?.getAttribute("datetime"),
+      expectedGapDate.toISOString(),
+      "the no-data timestamp must remain machine-readable"
+    );
+    assert.equal(
+      gapTooltipTime?.localName,
+      "time",
+      "missing data still refers to a precise time on the graph"
+    );
+    const visibleGapTooltipCopy =
+      `${gapTooltipValue?.textContent || ""} ${gapTooltipTime?.textContent || ""}`;
+    assert.doesNotMatch(
+      visibleGapTooltipCopy,
+      /(?:\b0\s*(?:CCU|players?|users?)\b|\bzero\s+(?:CCU|players?|users?))/i,
+      "a missing sample must never look like a measured zero-player value"
+    );
+    assert.doesNotMatch(
+      visibleGapTooltipCopy,
+      /\b(?:offline|live|current(?:ly)?|right now)\b/i,
+      "missing saved data must not imply game availability or live state"
     );
     const gapAriaValue = Number(interaction.getAttribute("aria-valuenow"));
     assert.equal(Number.isInteger(gapAriaValue), true);
@@ -3252,9 +3325,21 @@ async function runContentCcuGraphBehaviorContracts() {
       gapAriaValue >= 0 && gapAriaValue < interactivePoints.length,
       "a slider must retain a valid real-observation index while its text describes a missing interval"
     );
+    const gapAriaText = interaction.getAttribute("aria-valuetext") || "";
     assert.match(
-      interaction.getAttribute("aria-valuetext") || "",
-      /No saved Chart CCU observation at/i
+      gapAriaText,
+      /No saved (?:Chart )?(?:CCU )?(?:data|observation) at/i,
+      "assistive technology must hear that this is an absence of saved data"
+    );
+    assert.match(
+      gapAriaText,
+      new RegExp(expectedGapTimestamp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      "the accessible no-data description must include the same exact timestamp"
+    );
+    assert.doesNotMatch(
+      gapAriaText,
+      /(?:\b0\s*(?:CCU|players?|users?)\b|\boffline\b|\blive\b|\bcurrent(?:ly)?\b)/i,
+      "accessible gap copy must not imply zero players, offline status, or a live value"
     );
 
     const finalGapBoundary = interactivePoints[2].timestamp - bucketMs / 2;
@@ -4232,6 +4317,23 @@ async function runContentCcuGraphBehaviorContracts() {
       []
     );
 
+    const completeWindowOverlay = fixture.document.createElement("div");
+    const completeWindowPoints = Array.from({ length: 145 }, (_, index) => ({
+      timestamp: currentBucket - (144 - index) * bucketMs,
+      playing: 1_000 + index
+    }));
+    fixture.hooks.renderGameTileCcuGraph(
+      completeWindowOverlay,
+      completeWindowPoints,
+      currentBucket
+    );
+    assert.equal(completeWindowOverlay.getAttribute("data-state"), "ready");
+    assert.equal(completeWindowOverlay.getAttribute("data-gap-count"), "0");
+    assertMetadataOnlyGraphFooter(completeWindowOverlay, {
+      expectFreshness: true,
+      message: "ready graph with a complete saved window"
+    });
+
     const missedBucketPoints = [
       { timestamp: baseTimestamp, playing: 100 },
       { timestamp: baseTimestamp + 5 * 60_000, playing: 110 },
@@ -4378,34 +4480,10 @@ async function runContentCcuGraphBehaviorContracts() {
       baseTimestamp + 17.5 * 60_000,
       "the band ends halfway before the resumed observation"
     );
-    assert.match(
-      oneGapOverlay.textContent,
-      /(?:hatch(?:ed)?|striped?)\s*=\s*(?:no saved (?:data|observations?)|not recorded)/i,
-      "the compact footer must explicitly map the hatch to missing saved data"
-    );
-    const oneGapLegend = oneGapOverlay.querySelector(
-      ".rsl-game-ccu-graph__gap-key"
-    );
-    assert.match(
-      oneGapLegend?.textContent || "",
-      /(?:hatch(?:ed)?|striped?)\s*=\s*(?:no saved (?:data|observations?)|not recorded)/i,
-      "the legend must explain both the visible pattern and its data meaning"
-    );
-    assert.doesNotMatch(
-      oneGapLegend?.textContent || "",
-      /^\s*no observations\s*$/i,
-      "a vague no-observations label does not explain what the striped region means"
-    );
-    assert.match(
-      oneGapLegend?.getAttribute("aria-label") || "",
-      /no saved Chart observation/i,
-      "assistive technology must receive the meaning of the hatch"
-    );
-    assert.doesNotMatch(
-      oneGapLegend?.getAttribute("aria-label") || "",
-      /\b(?:amber|blue|green|red)\b/i,
-      "the accessible legend must remain understandable without color perception"
-    );
+    assertMetadataOnlyGraphFooter(oneGapOverlay, {
+      expectFreshness: true,
+      message: "ready graph with internal and window gaps"
+    });
     assert.match(
       oneGapOverlay.getAttribute("aria-label"),
       /contains \d+ marked no-data intervals? where no Chart observation was stored/i
