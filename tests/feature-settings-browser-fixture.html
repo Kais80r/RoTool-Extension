@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RoTool feature settings fixture</title>
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+      :root {
+        color-scheme: dark;
+        --color-surface-100: #191a1f;
+        --color-surface-200: #24262c;
+        --color-surface-300: #4b4d57;
+        --color-content-emphasis: #f7f7f8;
+        --color-content-default: #b7bac3;
+        --color-stroke-default: rgb(255 255 255 / 14%);
+        --color-action-emphasis-background: #335fff;
+        --color-action-emphasis-foreground: #fff;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: #f7f7f8;
+        background: #0f1014;
+        font: 16px/1.4 Arial, sans-serif;
+      }
+
+      #header {
+        height: 40px;
+        background: #191a1f;
+      }
+
+      #right-navigation-header {
+        display: flex;
+        height: 40px;
+        margin: 0;
+        padding: 0 16px;
+        justify-content: flex-end;
+        list-style: none;
+      }
+
+      #navbar-settings {
+        display: flex;
+        width: 40px;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #navbar-settings > .btn-navigation-nav-settings-md {
+        display: flex;
+        width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        background: transparent;
+        border: 0;
+      }
+
+      #nav-settings {
+        display: block;
+        width: 24px;
+        height: 24px;
+      }
+    </style>
+  </head>
+  <body data-test-result="pending">
+    <header id="header" class="navbar-fixed-top rbx-header" role="navigation">
+      <ul id="right-navigation-header">
+        <li id="navbar-settings" class="navbar-icon-item">
+          <button type="button" aria-label="Settings">⚙</button>
+        </li>
+      </ul>
+    </header>
+    <script>
+      // Reproduce Roblox's live settings-button structure supplied from DevTools.
+      document.querySelector("#navbar-settings > button").outerHTML =
+        '<button type="button" class="btn-navigation-nav-settings-md" aria-label="Settings" aria-haspopup="true" aria-describedby="settings-popover">' +
+          '<span id="settings-icon" class="nav-settings-icon rbx-menu-item" aria-hidden="true">' +
+            '<span class="icon-nav-settings roblox-popover-close" id="nav-settings"></span>' +
+          '</span>' +
+        '</button>';
+    </script>
+    <script>
+      globalThis.__rslFixtureStorage = {};
+      globalThis.chrome = {
+        runtime: { lastError: null },
+        storage: {
+          local: {
+            set(values, callback) {
+              Object.assign(globalThis.__rslFixtureStorage, values);
+              callback?.();
+            }
+          }
+        }
+      };
+      globalThis.__rslContentTestHooks = { skipInitialize: true };
+    </script>
+    <script src="../content.js"></script>
+    <script>
+      (async () => {
+        const hooks = globalThis.__rslContentTestHooks;
+        try {
+          hooks.setFeatureSettingsForTests({
+            version: 1,
+            flags: {
+              sidebarShortcuts: true,
+              quickSettings: true,
+              bestFriends: true,
+              friendFilters: true,
+              quickPlay: true,
+              gameCcu: true,
+              copyRobloxIds: true
+            }
+          });
+          hooks.mountFeatureSettingsButton();
+          const roToolButton = document.querySelector("#rsl-navbar-settings button");
+          if (!roToolButton || roToolButton.parentElement.previousElementSibling?.id !== "navbar-settings") {
+            throw new Error("RoTool Settings was not mounted directly beside Roblox Settings");
+          }
+          const roToolButtonRect = roToolButton.getBoundingClientRect();
+          const roToolLogoRect = roToolButton.querySelector("svg").getBoundingClientRect();
+          if (
+            roToolButtonRect.width !== 36 ||
+            roToolButtonRect.height !== 36 ||
+            roToolLogoRect.width !== 24 ||
+            roToolLogoRect.height !== 24
+          ) {
+            throw new Error("RoTool Settings did not mirror the native control geometry");
+          }
+          roToolButton.click();
+          const dialog = document.getElementById("rsl-feature-settings-dialog");
+          const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
+          if (!dialog?.open || switches.length !== 7 || switches.some((input) => !input.checked)) {
+            throw new Error("Feature settings dialog did not open with seven enabled switches");
+          }
+          const headerLogo = roToolButton.querySelector(".rsl-navbar-settings-logo");
+          const dialogLogo = dialog.querySelector(".rsl-feature-settings__logo");
+          const buttonRect = roToolButton.getBoundingClientRect();
+          const headerLogoRect = headerLogo.getBoundingClientRect();
+          const dialogLogoRect = dialogLogo.getBoundingClientRect();
+          const headerCenterDelta = [
+            headerLogoRect.left + headerLogoRect.width / 2 -
+              (buttonRect.left + buttonRect.width / 2),
+            headerLogoRect.top + headerLogoRect.height / 2 -
+              (buttonRect.top + buttonRect.height / 2)
+          ];
+          if (headerCenterDelta.some((value) => Math.abs(value) > 0.1)) {
+            throw new Error("The header SVG box is not centered inside its button");
+          }
+          document.body.dataset.headerLogoRect = JSON.stringify({
+            left: headerLogoRect.left,
+            top: headerLogoRect.top,
+            width: headerLogoRect.width,
+            height: headerLogoRect.height
+          });
+          document.body.dataset.dialogLogoRect = JSON.stringify({
+            left: dialogLogoRect.left,
+            top: dialogLogoRect.top,
+            width: dialogLogoRect.width,
+            height: dialogLogoRect.height
+          });
+
+          await hooks.saveFeatureSettingsForTests({ quickPlay: false });
+          const saved = globalThis.__rslFixtureStorage.rslFeatureSettingsV1;
+          const quickPlaySwitch = dialog.querySelector("[data-rsl-feature-key='quickPlay']");
+          const gameCcuSwitch = dialog.querySelector("[data-rsl-feature-key='gameCcu']");
+          if (
+            saved?.version !== 1 ||
+            saved.flags?.quickPlay !== false ||
+            quickPlaySwitch.checked ||
+            !gameCcuSwitch?.checked
+          ) {
+            throw new Error("Feature settings did not persist and render a disabled feature");
+          }
+          await hooks.saveFeatureSettingsForTests({ quickPlay: true });
+          if (!quickPlaySwitch.checked) {
+            throw new Error("Feature settings did not re-enable a feature");
+          }
+
+          const homeHost = document.createElement("section");
+          homeHost.className = "rsl-best-friends-carousel";
+          homeHost.innerHTML = `
+            <section data-rsl-quick-settings>Quick Settings stays visible</section>
+            <div class="container-header"><h2>Best Friends</h2></div>
+            <div class="friends-carousel-container">
+              <div class="friends-carousel-list-container">Best Friends content</div>
+            </div>
+          `;
+          document.body.append(homeHost);
+          hooks.setBestFriendsHomeVisibility(homeHost, false);
+          const hiddenHeader = homeHost.querySelector(".container-header");
+          const hiddenBody = homeHost.querySelector(".friends-carousel-container");
+          const visibleQuickSettings = homeHost.querySelector("[data-rsl-quick-settings]");
+          if (
+            getComputedStyle(hiddenHeader).display !== "none" ||
+            getComputedStyle(hiddenBody).display !== "none" ||
+            getComputedStyle(visibleQuickSettings).display === "none"
+          ) {
+            throw new Error("Disabling Best Friends did not hide only its Home content");
+          }
+          homeHost.remove();
+
+          await Promise.resolve();
+          const finalButtonRect = roToolButton.getBoundingClientRect();
+          const finalHeaderLogoRect = headerLogo.getBoundingClientRect();
+          const finalDialogLogoRect = dialogLogo.getBoundingClientRect();
+          const finalHeaderCenterDelta = [
+            finalHeaderLogoRect.left + finalHeaderLogoRect.width / 2 -
+              (finalButtonRect.left + finalButtonRect.width / 2),
+            finalHeaderLogoRect.top + finalHeaderLogoRect.height / 2 -
+              (finalButtonRect.top + finalButtonRect.height / 2)
+          ];
+          if (finalHeaderCenterDelta.some((value) => Math.abs(value) > 0.1)) {
+            throw new Error("The final header SVG box is not centered inside its button");
+          }
+          document.body.dataset.headerLogoRect = JSON.stringify({
+            left: finalHeaderLogoRect.left,
+            top: finalHeaderLogoRect.top,
+            width: finalHeaderLogoRect.width,
+            height: finalHeaderLogoRect.height
+          });
+          document.body.dataset.dialogLogoRect = JSON.stringify({
+            left: finalDialogLogoRect.left,
+            top: finalDialogLogoRect.top,
+            width: finalDialogLogoRect.width,
+            height: finalDialogLogoRect.height
+          });
+
+          document.body.dataset.testResult = "pass";
+          document.body.dataset.testMessage = "Feature settings browser fixture passed";
+          document.title = "PASS: RoTool feature settings fixture";
+        } catch (error) {
+          document.body.dataset.testResult = "fail";
+          document.body.dataset.testMessage = error?.message || String(error);
+          document.title = `FAIL: ${document.body.dataset.testMessage}`;
+        }
+      })();
+    </script>
+  </body>
+</html>

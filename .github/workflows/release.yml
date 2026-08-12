@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rotool-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify version and syntax
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw manifest.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match manifest v$version"
+          }
+          node --check content.js
+          node --check background.js
+          $errors = $null
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'updater/Update-RoTool.ps1'), [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+      - name: Run complete test suite
+        shell: pwsh
+        run: |
+          Get-ChildItem tests -Filter '*.test.cjs' | Sort-Object Name | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          node tests/run-background-fixture.cjs
+      - name: Build updater-compatible packages
+        shell: pwsh
+        run: ./tools/build-release.ps1 -OutputDirectory dist -Repository $env:GITHUB_REPOSITORY -ExpectedTag $env:GITHUB_REF_NAME
+      - name: Publish immutable release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content -Raw manifest.json | ConvertFrom-Json).version
+          gh release create $env:GITHUB_REF_NAME `
+            dist/RoTool-extension.zip `
+            dist/RoTool-extension.zip.sha256 `
+            dist/RoTool-setup.zip `
+            dist/RoTool-setup.zip.sha256 `
+            --verify-tag `
+            --title "RoTool $version" `
+            --generate-notes `
+            --latest

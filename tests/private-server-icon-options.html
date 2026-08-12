@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoTool Private Server Icon Options</title>
+  <style>
+    :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111216;
+      color: #f7f7f8;
+    }
+    .options { display: flex; gap: 28px; align-items: flex-start; padding: 28px; }
+    .option { width: 130px; display: grid; justify-items: center; gap: 10px; }
+    .button {
+      position: relative;
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: #335fff;
+      color: white;
+      box-shadow: 0 2px 8px rgb(0 0 0 / 38%);
+    }
+    svg { display: block; width: 38px; height: 38px; }
+    .letter { font-size: 20px; font-weight: 800; line-height: 1; }
+    .name { min-height: 32px; color: #c9cbd2; font-size: 13px; font-weight: 600; text-align: center; }
+  </style>
+</head>
+<body>
+  <main class="options" aria-label="Private Server icon options">
+    <section class="option">
+      <div class="button" title="Server rack with centered padlock">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="3.5" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="12.75" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="22" width="27" height="6.5" rx="2.2"/>
+          </g>
+          <g stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11.75 13v-2.25a4.25 4.25 0 0 1 8.5 0V13" stroke="#335fff" stroke-width="6"/>
+            <rect x="8.75" y="12" width="14.5" height="13.5" rx="3" fill="#335fff" stroke="#335fff" stroke-width="5"/>
+            <path d="M11.75 13v-2.25a4.25 4.25 0 0 1 8.5 0V13" stroke="currentColor" stroke-width="2.2"/>
+            <rect x="8.75" y="12" width="14.5" height="13.5" rx="3" fill="#335fff" stroke="currentColor" stroke-width="2.2"/>
+            <circle cx="16" cy="18.25" r="1.35" fill="currentColor"/>
+            <path d="M16 19.5v2.15" stroke="currentColor" stroke-width="2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="letter">A</div>
+      <div class="name">Server + padlock</div>
+    </section>
+
+    <section class="option">
+      <div class="button" title="Server rack with key">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="3.5" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="12.75" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="22" width="27" height="6.5" rx="2.2"/>
+          </g>
+          <g stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="21.5" cy="10.5" r="4" fill="#335fff" stroke="#335fff" stroke-width="5.5"/>
+            <path d="M18.7 13.3 8.4 23.6m3.2-3.2 2 2m-5.2 1.2-1.8-1.8" stroke="#335fff" stroke-width="6"/>
+            <circle cx="21.5" cy="10.5" r="4" fill="#335fff" stroke="currentColor" stroke-width="2.2"/>
+            <path d="M18.7 13.3 8.4 23.6m3.2-3.2 2 2m-5.2 1.2-1.8-1.8" stroke="currentColor" stroke-width="2.2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="letter">B</div>
+      <div class="name">Server + key</div>
+    </section>
+
+    <section class="option">
+      <div class="button" title="Server rack with private shield">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="3.5" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="12.75" width="27" height="6.5" rx="2.2"/>
+            <rect x="2.5" y="22" width="27" height="6.5" rx="2.2"/>
+          </g>
+          <path d="M16 6.5 24 9.7v6.1c0 5.1-3.1 8.6-8 10.7-4.9-2.1-8-5.6-8-10.7V9.7L16 6.5Z" fill="#335fff" stroke="#335fff" stroke-width="5.5" stroke-linejoin="round"/>
+          <path d="M16 6.5 24 9.7v6.1c0 5.1-3.1 8.6-8 10.7-4.9-2.1-8-5.6-8-10.7V9.7L16 6.5Z" fill="#335fff" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          <circle cx="16" cy="15" r="1.5" fill="currentColor"/>
+          <path d="M16 16.5v3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="letter">C</div>
+      <div class="name">Server + shield</div>
+    </section>
+
+    <section class="option">
+      <div class="button" title="Server rack with lock badge">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="4" width="24" height="6.2" rx="2.1"/>
+            <rect x="2.5" y="13" width="24" height="6.2" rx="2.1"/>
+            <rect x="2.5" y="22" width="24" height="6.2" rx="2.1"/>
+          </g>
+          <g stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="24" cy="21" r="6.5" fill="#335fff" stroke="#335fff" stroke-width="4"/>
+            <path d="M21.25 20v-1.55a2.75 2.75 0 0 1 5.5 0V20" stroke="currentColor" stroke-width="2"/>
+            <rect x="20" y="20" width="8" height="6.5" rx="1.7" fill="#335fff" stroke="currentColor" stroke-width="2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="letter">D</div>
+      <div class="name">Lock badge</div>
+    </section>
+
+    <section class="option">
+      <div class="button" title="Private server with keyhole">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="24" height="24" rx="5"/>
+            <path d="M4 11h24M4 20h24"/>
+            <path d="M8 7.5h.01M8 15.5h.01M8 24h.01" stroke-width="3"/>
+          </g>
+          <circle cx="19.5" cy="15.5" r="3.2" fill="#335fff" stroke="#335fff" stroke-width="5"/>
+          <circle cx="19.5" cy="15.5" r="2.1" fill="currentColor"/>
+          <path d="M19.5 17v3" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="letter">E</div>
+      <div class="name">Keyhole server</div>
+    </section>
+  </main>
+</body>
+</html>

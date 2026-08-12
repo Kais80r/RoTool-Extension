@@ -1,0 +1,20 @@
+[
+  "manifest.json",
+  "background.js",
+  "content.js",
+  "styles.css",
+  "context-copy.css",
+  "context-copy.js",
+  "page-bridge.js",
+  "README.md",
+  "icons/id-16.png",
+  "icons/id-32.png",
+  "icons/id-48.png",
+  "icons/id-128.png",
+  "icons/rotool-16.png",
+  "icons/rotool-32.png",
+  "icons/rotool-48.png",
+  "icons/rotool-128.png",
+  "icons/rotool-source.svg",
+  "icons/THIRD_PARTY.md"
+]

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>RoTool icon centering fixture</title>
+    <style>
+      html,
+      body {
+        width: 200px;
+        height: 100px;
+        margin: 0;
+        overflow: hidden;
+        background: #191a1f;
+      }
+
+      .sample {
+        position: absolute;
+        top: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #191a1f;
+      }
+
+      #small {
+        left: 20px;
+        width: 40px;
+        height: 40px;
+      }
+
+      #small svg {
+        display: block;
+        width: 24px;
+        height: 24px;
+      }
+
+      #large {
+        left: 100px;
+        width: 48px;
+        height: 48px;
+      }
+
+      #large svg {
+        display: block;
+        width: 48px;
+        height: 48px;
+      }
+    </style>
+  </head>
+  <body data-test-result="pending">
+    <div id="small" class="sample"></div>
+    <div id="large" class="sample"></div>
+    <script>globalThis.__rslContentTestHooks = { skipInitialize: true };</script>
+    <script src="../content.js"></script>
+    <script>
+      try {
+        const markup = globalThis.__rslContentTestHooks.getRoToolLogoMarkup;
+        document.getElementById("small").innerHTML = markup("small-logo");
+        document.getElementById("large").innerHTML = markup("large-logo");
+        document.body.dataset.testResult = "pass";
+        document.title = "PASS: RoTool icon centering fixture";
+      } catch (error) {
+        document.body.dataset.testResult = "fail";
+        document.body.dataset.testMessage = error?.message || String(error);
+        document.title = `FAIL: ${document.body.dataset.testMessage}`;
+      }
+    </script>
+  </body>
+</html>

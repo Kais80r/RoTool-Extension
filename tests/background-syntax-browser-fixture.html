@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>RoTool background syntax fixture</title>
+  </head>
+  <body data-test-result="pending">
+    <script>
+      globalThis.__rslBackgroundTestHooks = {};
+      globalThis.__rslCreatedContextMenus = [];
+      globalThis.chrome = {
+        runtime: {
+          id: "fixture-extension",
+          lastError: null,
+          onInstalled: { addListener() {} },
+          onMessage: { addListener() {} }
+        },
+        contextMenus: {
+          create(properties, callback) {
+            globalThis.__rslCreatedContextMenus.push({ ...properties });
+            callback?.();
+          },
+          removeAll(callback) {
+            globalThis.__rslCreatedContextMenus.length = 0;
+            callback?.();
+          },
+          onClicked: { addListener() {} }
+        },
+        storage: {
+          local: {
+            get(defaults, callback) { callback?.({ ...defaults }); },
+            set(_values, callback) { callback?.(); }
+          },
+          onChanged: { addListener() {} }
+        },
+        tabs: { sendMessage() {} }
+      };
+    </script>
+    <script src="../background.js"></script>
+    <script>
+      try {
+        const hooks = globalThis.__rslBackgroundTestHooks;
+        if (hooks.getCopyRobloxIdsFeatureValue(null) !== true) {
+          throw new Error("Copy Roblox IDs did not default to enabled");
+        }
+        if (
+          hooks.getCopyRobloxIdsFeatureValue({
+            version: 1,
+            flags: { copyRobloxIds: false }
+          }) !== false
+        ) {
+          throw new Error("Copy Roblox IDs did not read its disabled setting");
+        }
+        hooks.setCopyRobloxIdsEnabledForTests(false);
+        hooks.setupContextMenus();
+        if (globalThis.__rslCreatedContextMenus.length !== 0) {
+          throw new Error("Disabled Copy Roblox IDs left context menus behind");
+        }
+        hooks.setCopyRobloxIdsEnabledForTests(true);
+        hooks.setupContextMenus();
+        if (globalThis.__rslCreatedContextMenus.length === 0) {
+          throw new Error("Enabled Copy Roblox IDs did not create context menus");
+        }
+        document.body.dataset.testResult = "pass";
+        document.body.dataset.testMessage = "Background settings behavior passed";
+        document.title = "PASS: RoTool background settings fixture";
+      } catch (error) {
+        document.body.dataset.testResult = "fail";
+        document.body.dataset.testMessage = error?.message || String(error);
+        document.title = `FAIL: ${document.body.dataset.testMessage}`;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+debug.log
+RoTool-*.zip
+dist/
+dist-*/
+updater/updater.config.json
+*.rotool-new-*

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RoTool Private Servers dialog visual fixture</title>
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+      :root {
+        color-scheme: dark;
+        --color-surface-100: #191a1f;
+        --color-surface-200: #24262d;
+        --color-surface-300: #30323b;
+        --color-content-emphasis: #f7f7f8;
+        --color-content-default: #c5c7cf;
+        --color-content-muted: #9497a2;
+        --color-stroke-default: #393c46;
+        --color-action-emphasis-background: #335fff;
+        --color-action-emphasis-foreground: #fff;
+        --color-action-standard-background: #30323b;
+        --color-action-standard-foreground: #f7f7f8;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background: #0f1014;
+        font: 500 14px/1.4 Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <dialog id="rsl-private-servers-dialog" class="rsl-dialog rsl-private-servers-dialog foundation-web-dialog-overlay padding-medium foundation-web-portal-zindex bg-common-backdrop" open>
+      <div class="rsl-dialog__surface rsl-private-servers-dialog__surface relative radius-large bg-surface-100 stroke-muted stroke-standard foundation-web-dialog-content shadow-transient-high" data-size="Medium">
+        <div class="rsl-dialog__close-container absolute foundation-web-dialog-close-container">
+          <button type="button" class="rsl-icon-button foundation-web-close-affordance" aria-label="Close">
+            <span aria-hidden="true" class="rsl-dialog__close-icon"></span>
+          </button>
+        </div>
+        <div class="rsl-dialog__body rsl-private-servers-dialog__body">
+          <div class="rsl-dialog__header rsl-private-servers-dialog__header">
+            <span class="rsl-private-servers-dialog__game-icon" aria-hidden="true">
+              <img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%2335b95d'/%3E%3Cpath d='M12 105 62 47l22 21 18-18 37 55' fill='%231d6938'/%3E%3Ccircle cx='107' cy='38' r='18' fill='%23f7d650'/%3E%3Crect x='54' y='66' width='43' height='43' rx='7' fill='%23f5f5f5' transform='rotate(12 75 87)'/%3E%3Crect x='68' y='78' width='15' height='15' fill='%2335b95d' transform='rotate(12 75 87)'/%3E%3C/svg%3E">
+            </span>
+            <div class="rsl-private-servers-dialog__header-copy">
+              <h2 class="content-emphasis text-title-large">Private Servers</h2>
+              <p class="content-default text-body-medium">Choose a private server for <a class="rsl-private-servers-dialog__game-link" href="/games/8737899170">Pet Simulator 99</a>.</p>
+              <p class="rsl-private-servers-dialog__price content-default text-body-medium" data-rsl-private-servers-price>Server cost: 400 Robux / month</p>
+            </div>
+          </div>
+          <label class="rsl-field rsl-private-servers-dialog__search">
+            <span class="rsl-sr-only">Search private servers</span>
+            <input type="search" class="rsl-private-servers-dialog__search-input" placeholder="Search private servers" autocomplete="off" maxlength="100" data-rsl-private-servers-search>
+          </label>
+          <div class="rsl-private-servers-dialog__status content-default text-body-medium">5 private servers available.</div>
+          <ul class="rsl-private-servers-dialog__list" aria-label="Private servers">
+            <li class="rsl-private-servers-dialog__row">
+              <span class="rsl-private-servers-dialog__owner-avatar"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%23434755'/%3E%3Ccircle cx='75' cy='61' r='35' fill='%23ffd19a'/%3E%3Cpath d='M35 58Q42 13 77 18q35 4 38 42-21-19-42-8-17 9-38 6' fill='%23704424'/%3E%3Cpath d='M22 150q9-50 53-50t53 50' fill='%233b6cc8'/%3E%3C/svg%3E"></span>
+              <div class="rsl-private-servers-dialog__info"><strong class="rsl-private-servers-dialog__name">daniel453987's server</strong><span class="rsl-private-servers-dialog__meta">Owned by <a class="rsl-private-servers-dialog__owner-link" href="/users/42/profile">daniel453987</a> · 0/9 players</span></div>
+              <button class="rsl-private-servers-dialog__join">Join</button>
+            </li>
+            <li class="rsl-private-servers-dialog__row">
+              <span class="rsl-private-servers-dialog__owner-avatar"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%232b3446'/%3E%3Ccircle cx='75' cy='62' r='35' fill='%23d7a675'/%3E%3Cpath d='M31 60q8-46 45-43 39 4 43 48-20-9-32-28-21 22-56 23' fill='%23171920'/%3E%3Cpath d='M20 150q12-51 55-51t55 51' fill='%231f222a'/%3E%3C/svg%3E"></span>
+              <div class="rsl-private-servers-dialog__info"><strong class="rsl-private-servers-dialog__name">KING_FROGGYFROG's server 1</strong><span class="rsl-private-servers-dialog__meta">Owned by <a class="rsl-private-servers-dialog__owner-link" href="/users/44/profile">KING_FROGGYFROG</a> · 0/9 players</span></div>
+              <button class="rsl-private-servers-dialog__join">Join</button>
+            </li>
+            <li class="rsl-private-servers-dialog__row">
+              <span class="rsl-private-servers-dialog__owner-avatar"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%23434852'/%3E%3Ccircle cx='75' cy='61' r='35' fill='%23e7ba8e'/%3E%3Cpath d='M32 65q3-45 42-47 40 1 45 46-24-13-43-28-17 22-44 29' fill='%23b12831'/%3E%3Cpath d='M20 150q12-51 55-51t55 51' fill='%233a252d'/%3E%3C/svg%3E"></span>
+              <div class="rsl-private-servers-dialog__info"><strong class="rsl-private-servers-dialog__name">KING_FROGGYFROG's server 3</strong><span class="rsl-private-servers-dialog__meta">Owned by <a class="rsl-private-servers-dialog__owner-link" href="/users/44/profile">KING_FROGGYFROG</a> · 0/9 players</span></div>
+              <button class="rsl-private-servers-dialog__join">Join</button>
+            </li>
+            <li class="rsl-private-servers-dialog__row">
+              <span class="rsl-private-servers-dialog__owner-avatar"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%2339444c'/%3E%3Ccircle cx='75' cy='61' r='35' fill='%23f1bf92'/%3E%3Cpath d='M31 62q9-47 45-44 36 2 43 44-15-11-29-30-22 24-59 30' fill='%23df9f34'/%3E%3Cpath d='M20 150q12-51 55-51t55 51' fill='%23464573'/%3E%3C/svg%3E"></span>
+              <div class="rsl-private-servers-dialog__info"><strong class="rsl-private-servers-dialog__name">Lyric's server 7</strong><span class="rsl-private-servers-dialog__meta">Owned by <a class="rsl-private-servers-dialog__owner-link" href="/users/45/profile">Lyric</a> · 0/9 players</span></div>
+              <button class="rsl-private-servers-dialog__join">Join</button>
+            </li>
+            <li class="rsl-private-servers-dialog__row">
+              <span class="rsl-private-servers-dialog__owner-avatar"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%233b3d45'/%3E%3Ccircle cx='75' cy='54' r='28' fill='%23787c88'/%3E%3Cpath d='M25 145c4-35 24-52 50-52s46 17 50 52' fill='%23787c88'/%3E%3C/svg%3E"></span>
+              <div class="rsl-private-servers-dialog__info"><strong class="rsl-private-servers-dialog__name">Private Server</strong><span class="rsl-private-servers-dialog__meta">0/9 players</span></div>
+              <button class="rsl-private-servers-dialog__join">Join</button>
+            </li>
+          </ul>
+        </div>
+        <div class="rsl-dialog__actions rsl-private-servers-dialog__footer">
+          <a class="rsl-button rsl-button--primary" href="/games/8737899170#!/game-instances" data-rsl-private-servers-page-link>View Private Servers</a>
+          <button class="rsl-button rsl-button--secondary">Close</button>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>

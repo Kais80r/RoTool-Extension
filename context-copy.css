@@ -1,0 +1,89 @@
+#rsl-context-copy-toast {
+  --rsl-toast-surface: #24262c;
+  --rsl-toast-content: #f7f7f8;
+  --rsl-toast-stroke: rgb(255 255 255 / 12%);
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  max-width: min(420px, calc(100vw - 32px));
+  min-height: 48px;
+  padding: 10px 14px;
+  gap: 10px;
+  border: 1px solid var(--color-stroke-default, var(--rsl-toast-stroke));
+  border-radius: 8px;
+  color: var(--color-content-emphasis, var(--rsl-toast-content));
+  background: var(--color-surface-200, var(--rsl-toast-surface));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  font: 600 14px/1.35 "Builder Sans", "Helvetica Neue", Arial, sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  translate: 0 8px;
+  transition: opacity 120ms ease, translate 120ms ease;
+}
+
+#rsl-context-copy-toast[data-state="open"] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.light-theme #rsl-context-copy-toast {
+  --rsl-toast-surface: #fff;
+  --rsl-toast-content: #202227;
+  --rsl-toast-stroke: rgb(27 37 75 / 14%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.rsl-context-toast__icon {
+  display: inline-flex;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  background: #00a84f;
+  font-size: 15px;
+  line-height: 1;
+}
+
+#rsl-context-copy-toast[data-kind="error"] .rsl-context-toast__icon {
+  background: #d93636;
+}
+
+#rsl-context-copy-toast[data-kind="progress"] .rsl-context-toast__icon {
+  background: #335fff;
+}
+
+.rsl-context-toast__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rsl-context-copy-target {
+  position: fixed !important;
+  left: -10000px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 520px) {
+  #rsl-context-copy-toast {
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #rsl-context-copy-toast {
+    transition: none;
+  }
+}

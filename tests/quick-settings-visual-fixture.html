@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RoTool compact Quick Settings fixture</title>
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+      :root {
+        color-scheme: dark;
+        --color-surface-100: #191a1f;
+        --color-surface-200: #24262d;
+        --color-content-emphasis: #f7f7f8;
+        --color-content-default: #c5c7cf;
+        --color-stroke-muted: #363943;
+        --color-stroke-default: #555862;
+        --color-action-emphasis-background: #335fff;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: #f7f7f8;
+        background: #101115;
+        font: 500 14px/1.4 Arial, sans-serif;
+      }
+
+      main {
+        box-sizing: border-box;
+        width: min(1100px, 100%);
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: 32px;
+      }
+
+      .fixture-best-friends {
+        margin-top: 0;
+      }
+
+      .fixture-best-friends h2 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+
+      .fixture-friends-row {
+        display: flex;
+        gap: 16px;
+      }
+
+      .fixture-friend {
+        display: grid;
+        width: 88px;
+        justify-items: center;
+        gap: 6px;
+        font-size: 12px;
+      }
+
+      .fixture-avatar {
+        width: 72px;
+        height: 72px;
+        background: #2c2e36;
+        border-radius: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Home</h1>
+      <section class="rsl-quick-settings" data-rsl-quick-settings aria-labelledby="rsl-quick-settings-title">
+        <div class="rsl-quick-settings__header">
+          <div class="rsl-quick-settings__heading-group">
+            <h2 id="rsl-quick-settings-title">Quick Settings</h2>
+          </div>
+          <span class="rsl-quick-settings__status" data-rsl-quick-settings-expanded-only role="status">Settings refreshed.</span>
+          <div class="rsl-quick-settings__actions">
+            <button type="button" class="rsl-quick-settings__action" data-rsl-quick-settings-expanded-only>Refresh</button>
+            <a class="rsl-quick-settings__action" data-rsl-quick-settings-expanded-only href="#privacy">More Settings</a>
+            <button type="button" class="rsl-quick-settings__action rsl-quick-settings__toggle" aria-expanded="true" aria-controls="rsl-quick-settings-controls">Hide</button>
+          </div>
+        </div>
+        <div id="rsl-quick-settings-controls" class="rsl-quick-settings__controls" role="group" aria-label="Roblox Quick Settings">
+          <article class="rsl-quick-setting-card">
+            <div class="rsl-quick-setting-card__text"><div class="rsl-quick-setting-card__label-row"><label class="rsl-quick-setting-card__label">Online Status</label><span class="rsl-quick-setting-info tooltip-container" role="button" tabindex="0" aria-label="About Online Status"><span class="icon-moreinfo-16x16" aria-hidden="true">ⓘ</span><span class="rsl-quick-setting-tooltip fade in tooltip bottom" role="tooltip"><span class="tooltip-arrow"></span><span class="tooltip-inner">Who can see when you are online.</span></span></span></div><span class="rsl-quick-setting-card__description">Who can see when you are online.</span></div>
+            <select class="rsl-quick-setting-select"><option>Friends</option></select>
+          </article>
+          <article class="rsl-quick-setting-card">
+            <div class="rsl-quick-setting-card__text"><div class="rsl-quick-setting-card__label-row"><label class="rsl-quick-setting-card__label">Current Experience</label><span class="rsl-quick-setting-info tooltip-container" role="button" tabindex="0" aria-label="About Current Experience"><span class="icon-moreinfo-16x16" aria-hidden="true">ⓘ</span><span class="rsl-quick-setting-tooltip fade in tooltip bottom" role="tooltip"><span class="tooltip-arrow"></span><span class="tooltip-inner">Who can see and join the experience you are currently playing.</span></span></span></div><span class="rsl-quick-setting-card__description">Who can see and join the experience you are currently playing.</span></div>
+            <select class="rsl-quick-setting-select"><option>Friends</option></select>
+          </article>
+          <article class="rsl-quick-setting-card">
+            <div class="rsl-quick-setting-card__text"><div class="rsl-quick-setting-card__label-row"><label class="rsl-quick-setting-card__label">Inventory Visibility</label><span class="rsl-quick-setting-info tooltip-container" role="button" tabindex="0" aria-label="About Inventory Visibility"><span class="icon-moreinfo-16x16" aria-hidden="true">ⓘ</span><span class="rsl-quick-setting-tooltip fade in tooltip bottom" role="tooltip"><span class="tooltip-arrow"></span><span class="tooltip-inner">Who can view your Roblox inventory.</span></span></span></div><span class="rsl-quick-setting-card__description">Who can view your Roblox inventory.</span></div>
+            <select class="rsl-quick-setting-select"><option>No one</option></select>
+          </article>
+        </div>
+      </section>
+      <section class="fixture-best-friends">
+        <h2>Best Friends (5)</h2>
+        <div class="fixture-friends-row">
+          <div class="fixture-friend"><span class="fixture-avatar"></span><span>Add Best Friend</span></div>
+          <div class="fixture-friend"><span class="fixture-avatar"></span><span>KING_FROGGY...</span></div>
+          <div class="fixture-friend"><span class="fixture-avatar"></span><span>00jstgojo</span></div>
+          <div class="fixture-friend"><span class="fixture-avatar"></span><span>00rivals</span></div>
+          <div class="fixture-friend"><span class="fixture-avatar"></span><span>00Tyler</span></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
