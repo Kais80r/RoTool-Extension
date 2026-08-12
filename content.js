@@ -721,6 +721,7 @@
   let gameTileCcuRefreshTimerDueAt = 0;
   let gameTileCcuIdentityByRoot = new WeakMap();
   let gameTileCcuGraphRequestId = 0;
+  let gameTileCcuGraphPatternId = 0;
   let gameTileCcuGraphLifecycleEpoch = 0;
   let gameTileCcuGraphEventsBound = false;
   let activeGameTileCcuGraph = null;
@@ -9771,8 +9772,34 @@
     );
     overlay.setAttribute("data-gap-count", String(gapIntervals.length));
     if (gapIntervals.length > 0) {
+      gameTileCcuGraphPatternId = gameTileCcuGraphPatternId >=
+        Number.MAX_SAFE_INTEGER
+        ? 1
+        : gameTileCcuGraphPatternId + 1;
+      const gapPatternId = `rsl-game-ccu-gap-${gameTileCcuGraphPatternId}`;
+      const definitions = makeGameTileCcuGraphSvgElement("defs");
+      const gapPattern = makeGameTileCcuGraphSvgElement("pattern");
+      gapPattern.classList.add("rsl-game-ccu-graph__gap-pattern");
+      gapPattern.setAttribute("id", gapPatternId);
+      gapPattern.setAttribute("patternUnits", "userSpaceOnUse");
+      gapPattern.setAttribute("width", "8");
+      gapPattern.setAttribute("height", "8");
+      const gapPatternBase = makeGameTileCcuGraphSvgElement("rect");
+      gapPatternBase.classList.add("rsl-game-ccu-graph__gap-pattern-base");
+      gapPatternBase.setAttribute("width", "8");
+      gapPatternBase.setAttribute("height", "8");
+      const gapPatternStripe = makeGameTileCcuGraphSvgElement("path");
+      gapPatternStripe.classList.add("rsl-game-ccu-graph__gap-pattern-stripe");
+      gapPatternStripe.setAttribute(
+        "d",
+        "M-2 2 L2 -2 M-2 10 L10 -2 M6 10 L10 6"
+      );
+      gapPattern.append(gapPatternBase, gapPatternStripe);
+      definitions.append(gapPattern);
+      svg.append(definitions);
       const gapBand = makeGameTileCcuGraphSvgElement("path");
       gapBand.classList.add("rsl-game-ccu-graph__gap-band");
+      gapBand.setAttribute("fill", `url(#${gapPatternId})`);
       gapBand.setAttribute(
         "d",
         gapIntervals.map((gap) => {
@@ -10032,11 +10059,17 @@
     );
     if (gapIntervals.length > 0) {
       footer.setAttribute("data-has-gaps", "");
-      footer.append(makeGameTileCcuGraphElement(
+      const gapKey = makeGameTileCcuGraphElement(
         "span",
         "rsl-game-ccu-graph__gap-key",
-        "Missing samples"
-      ));
+        "No observations"
+      );
+      gapKey.setAttribute(
+        "aria-label",
+        "Hatched intervals contain no saved Chart observation"
+      );
+      gapKey.title = "Hatched intervals contain no saved Chart observation.";
+      footer.append(gapKey);
     } else {
       footer.append(makeGameTileCcuGraphElement(
         "span",
@@ -10091,7 +10124,7 @@
       `Rolling 12-hour locally stored Chart CCU history from ` +
         `${points.length} observations. ${observationSummary}` +
         (hasGaps
-          ? ` The window contains ${gapIntervals.length} blue ` +
+          ? ` The window contains ${gapIntervals.length} marked no-data ` +
             `${gapIntervals.length === 1 ? "interval" : "intervals"} where ` +
             "no Chart observation was stored."
           : "")
@@ -10538,8 +10571,8 @@
           return;
         }
         // Even an empty or one-point response gets the real rolling twelve-hour
-        // timeline. Blue space is the honest visualization of time for which
-        // no Charts observation has been stored yet.
+        // timeline. Hatched space is the honest visualization of time for
+        // which no Charts observation has been stored yet.
         const visiblePoints = renderGameTileCcuGraph(overlay, history.points);
         // The worker deliberately retains seven days. Retry based on points in
         // the visible window, not older retained observations outside it.

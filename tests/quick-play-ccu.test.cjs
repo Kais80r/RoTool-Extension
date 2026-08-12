@@ -17,6 +17,77 @@ function getNamedFunctionSource(source, name) {
   return source.slice(start, next === -1 ? source.length : next);
 }
 
+function getCssDeclaration(ruleBody, property) {
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|;)\\s*${escapedProperty}:\\s*([^;\\r\\n]+)`, "i")
+    .exec(ruleBody)?.[1]?.trim() || "";
+}
+
+function parseCssColor(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const hex = /^#([\da-f]{3}|[\da-f]{6})$/.exec(text)?.[1];
+  if (hex) {
+    const normalized = hex.length === 3
+      ? hex.split("").map((channel) => channel + channel).join("")
+      : hex;
+    return {
+      channels: [0, 2, 4].map((offset) =>
+        Number.parseInt(normalized.slice(offset, offset + 2), 16)
+      ),
+      alpha: 1
+    };
+  }
+  const functional = /^rgba?\(([^)]+)\)$/.exec(text)?.[1];
+  if (!functional) {
+    return null;
+  }
+  const [channelText, alphaText] = functional.split("/").map((part) => part.trim());
+  const channelTokens = channelText.split(/[\s,]+/).filter(Boolean);
+  if (channelTokens.length !== 3) {
+    return null;
+  }
+  const channels = channelTokens.map((token) => token.endsWith("%")
+    ? Number.parseFloat(token) * 2.55
+    : Number.parseFloat(token));
+  const alpha = !alphaText
+    ? 1
+    : alphaText.endsWith("%")
+      ? Number.parseFloat(alphaText) / 100
+      : Number.parseFloat(alphaText);
+  if (![...channels, alpha].every(Number.isFinite)) {
+    return null;
+  }
+  return { channels, alpha };
+}
+
+function compositeCssColor(foreground, background, opacityMultiplier = 1) {
+  const alpha = Math.max(0, Math.min(1, foreground.alpha * opacityMultiplier));
+  return foreground.channels.map((channel, index) =>
+    channel * alpha + background[index] * (1 - alpha)
+  );
+}
+
+function relativeLuminance(channels) {
+  const linear = channels.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(first, second) {
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  return (Math.max(firstLuminance, secondLuminance) + 0.05) /
+    (Math.min(firstLuminance, secondLuminance) + 0.05);
+}
+
+function rgbDistance(first, second) {
+  return Math.hypot(...first.map((channel, index) => channel - second[index]));
+}
+
 // RoTool owns only its own metric. Coexistence is based on meaningful page
 // metadata, not the identity or load timing of a particular extension.
 assert.match(
@@ -2642,15 +2713,19 @@ async function runContentCcuGraphBehaviorContracts() {
   );
   const gapBandRule = /\.rsl-game-ccu-graph__gap-band\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
-  const gapFillHex = /fill:\s*#([\da-f]{6})/i.exec(gapBandRule)?.[1];
-  assert.ok(gapFillHex, "missing Chart intervals must have an explicit fill");
+  const gapPatternBaseRule =
+    /\.rsl-game-ccu-graph__gap-pattern-base\s*\{([^}]*)\}/
+      .exec(stylesSource)?.[1] || "";
+  const gapFillHex = /fill:\s*#([\da-f]{6})/i
+    .exec(gapPatternBaseRule)?.[1];
+  assert.ok(gapFillHex, "missing Chart intervals need an explicit hatch base");
   const gapFillChannels = [0, 2, 4].map((offset) =>
     Number.parseInt(gapFillHex.slice(offset, offset + 2), 16)
   );
   assert.ok(
-    gapFillChannels[2] > gapFillChannels[0] &&
-      gapFillChannels[2] >= gapFillChannels[1],
-    "missing Chart intervals must remain blue without locking the design to one shade"
+    gapFillChannels[0] > gapFillChannels[2] &&
+      gapFillChannels[1] > gapFillChannels[2],
+    "missing Chart intervals must remain amber without locking the design to one shade"
   );
   const gapStroke = /(?:^|;)\s*stroke:\s*([^;\r\n]+)/i
     .exec(gapBandRule)?.[1]?.trim();
@@ -2664,9 +2739,84 @@ async function runContentCcuGraphBehaviorContracts() {
     "missing-data bands must not add dashed offset lines around the real series"
   );
   assert.doesNotMatch(
-    gapBandRule,
+    gapPatternBaseRule,
     /fill:\s*#ff4d61/i,
-    "the blue no-data band must remain visually distinct from the red CCU series"
+    "the amber no-data band must remain visually distinct from the red CCU series"
+  );
+  const gapStripeRule = /\.rsl-game-ccu-graph__gap-pattern-stripe\s*\{([^}]*)\}/
+    .exec(stylesSource)?.[1] || "";
+  assert.match(
+    gapStripeRule,
+    /stroke:\s*#(?:[\da-f]{6})/i,
+    "no-data hatching needs a visible amber stripe"
+  );
+  assert.match(
+    gapStripeRule,
+    /vector-effect:\s*non-scaling-stroke/i,
+    "no-data hatching must stay legible when the compact SVG scales"
+  );
+  const graphSurfaceDeclaration = getCssDeclaration(
+    graphPopoverRule,
+    "background"
+  );
+  const graphSurfaceFallback =
+    /var\([^,]+,\s*(#[\da-f]{3,6})\s*\)/i.exec(graphSurfaceDeclaration)?.[1] ||
+    graphSurfaceDeclaration;
+  const graphSurfacePaint = parseCssColor(graphSurfaceFallback);
+  const plotBackgroundPaint = parseCssColor(
+    getCssDeclaration(graphPlotRule, "background")
+  );
+  const gapBasePaint = parseCssColor(
+    getCssDeclaration(gapPatternBaseRule, "fill")
+  );
+  const gapStripePaint = parseCssColor(
+    getCssDeclaration(gapStripeRule, "stroke")
+  );
+  const gapBaseOpacity = Number.parseFloat(
+    getCssDeclaration(gapPatternBaseRule, "fill-opacity") || "1"
+  );
+  const gapStripeOpacity = Number.parseFloat(
+    getCssDeclaration(gapStripeRule, "stroke-opacity") || "1"
+  );
+  assert.ok(
+    graphSurfacePaint && plotBackgroundPaint && gapBasePaint && gapStripePaint &&
+      Number.isFinite(gapBaseOpacity) && Number.isFinite(gapStripeOpacity),
+    "no-data contrast must be measurable from semantic base and hatch paints"
+  );
+  const plotBackgroundChannels = compositeCssColor(
+    plotBackgroundPaint,
+    graphSurfacePaint.channels
+  );
+  const gapBaseChannels = compositeCssColor(
+    gapBasePaint,
+    plotBackgroundChannels,
+    gapBaseOpacity
+  );
+  const gapStripeChannels = compositeCssColor(
+    gapStripePaint,
+    gapBaseChannels,
+    gapStripeOpacity
+  );
+  const gapBaseContrast = contrastRatio(
+    gapBaseChannels,
+    plotBackgroundChannels
+  );
+  const gapStripeContrast = contrastRatio(
+    gapStripeChannels,
+    plotBackgroundChannels
+  );
+  assert.ok(
+    gapBaseContrast >= 1.08,
+    `the full missing-data region needs a visible tint; received ${gapBaseContrast.toFixed(3)}:1`
+  );
+  assert.ok(
+    gapStripeContrast >= 1.5 && gapStripeContrast >= gapBaseContrast + 0.35,
+    `hatching must materially distinguish no-data from the plot; received ${gapStripeContrast.toFixed(3)}:1`
+  );
+  assert.doesNotMatch(
+    stylesSource,
+    /\.rsl-game-ccu-graph__gap-boundary\b/,
+    "no-data intervals must not add offset-looking vertical boundaries"
   );
   const upLineRule = /\.rsl-game-ccu-graph__line--up\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
@@ -2676,6 +2826,64 @@ async function runContentCcuGraphBehaviorContracts() {
     .exec(stylesSource)?.[1] || "";
   const graphLineRule = /\.rsl-game-ccu-graph__line\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
+  const upStrokePaint = parseCssColor(getCssDeclaration(upLineRule, "stroke"));
+  const downStrokePaint = parseCssColor(
+    getCssDeclaration(downLineRule, "stroke")
+  );
+  assert.ok(
+    upStrokePaint && downStrokePaint,
+    "directional paths need resolvable colors for semantic differentiation"
+  );
+  for (const noDataPaint of [gapBasePaint, gapStripePaint]) {
+    assert.ok(
+      rgbDistance(noDataPaint.channels, upStrokePaint.channels) >= 64 &&
+        rgbDistance(noDataPaint.channels, downStrokePaint.channels) >= 64,
+      "no-data pigments must stay distinct from both rising and falling trend paths"
+    );
+    assert.ok(
+      noDataPaint.channels[0] > noDataPaint.channels[2] &&
+        noDataPaint.channels[1] > noDataPaint.channels[2],
+      "no-data pigments must remain non-red amber without pinning an exact shade"
+    );
+  }
+  const gapLegendSwatchRule =
+    /\.rsl-game-ccu-graph__gap-key::before\s*\{([^}]*)\}/
+      .exec(stylesSource)?.[1] || "";
+  assert.match(
+    gapLegendSwatchRule,
+    /repeating-linear-gradient\s*\(/i,
+    "the visible legend must repeat the plot's hatch semantics"
+  );
+  const legendHatchAngle = Number(
+    /repeating-linear-gradient\s*\(\s*(-?\d+(?:\.\d+)?)deg/i
+      .exec(gapLegendSwatchRule)?.[1]
+  );
+  assert.ok(
+    Number.isFinite(legendHatchAngle) && Math.abs(legendHatchAngle % 90) > 1,
+    "the legend hatch must be diagonal rather than resembling an axis or trend line"
+  );
+  const legendPaints = Array.from(
+    gapLegendSwatchRule.matchAll(/rgb\([^)]+\)/gi),
+    (match) => parseCssColor(match[0])
+  ).filter(Boolean);
+  assert.ok(
+    legendPaints.some((paint) =>
+      rgbDistance(paint.channels, gapStripePaint.channels) <= 64
+    ),
+    "the legend hatch must correspond to the plot hatch without requiring one exact color"
+  );
+  const noObservationCrosshairRule =
+    /\.rsl-game-ccu-graph__crosshair\[data-no-observation\][\s\S]*?\.rsl-game-ccu-graph__crosshair-line\s*\{([^}]*)\}/
+      .exec(stylesSource)?.[1] || "";
+  const noObservationCrosshairPaint = parseCssColor(
+    getCssDeclaration(noObservationCrosshairRule, "background")
+  );
+  assert.ok(
+    noObservationCrosshairPaint &&
+      rgbDistance(noObservationCrosshairPaint.channels, upStrokePaint.channels) >= 64 &&
+      rgbDistance(noObservationCrosshairPaint.channels, downStrokePaint.channels) >= 64,
+    "gap inspection must retain the no-data visual language instead of looking like trend data"
+  );
   const graphLineWidth = Number(
     /stroke-width:\s*(\d+(?:\.\d+)?)/.exec(graphLineRule)?.[1]
   );
@@ -2710,6 +2918,16 @@ async function runContentCcuGraphBehaviorContracts() {
   );
   const areaRule = /\.rsl-game-ccu-graph__area\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
+  const areaFillPaint = parseCssColor(getCssDeclaration(areaRule, "fill"));
+  assert.ok(areaFillPaint, "the observed-data area fill must be measurable");
+  const areaContrast = contrastRatio(
+    compositeCssColor(areaFillPaint, plotBackgroundChannels),
+    plotBackgroundChannels
+  );
+  assert.ok(
+    gapStripeContrast >= areaContrast + 0.35,
+    "the missing-data hatch must stand out materially more than the neutral observed-data area"
+  );
   const areaOpacity = Number(
     /fill:\s*rgb\(174\s+181\s+194\s*\/\s*(\d+(?:\.\d+)?)%\)/i
       .exec(areaRule)?.[1]
@@ -4049,7 +4267,58 @@ async function runContentCcuGraphBehaviorContracts() {
     const oneGapBand = oneGapOverlay.querySelector(
       ".rsl-game-ccu-graph__gap-band"
     );
-    assert.ok(oneGapBand?.getAttribute("d"), "a missed bucket needs a blue no-data band");
+    assert.ok(oneGapBand?.getAttribute("d"), "a missed bucket needs a hatched no-data band");
+    const oneGapPattern = oneGapOverlay.querySelector(
+      ".rsl-game-ccu-graph__gap-pattern"
+    );
+    const oneGapPatternId = oneGapPattern?.getAttribute("id") || "";
+    assert.match(oneGapPatternId, /^rsl-game-ccu-gap-\d+$/);
+    assert.equal(
+      oneGapPattern?.getAttribute("patternUnits"),
+      "userSpaceOnUse",
+      "the hatch must keep a stable visual scale when the graph stretches"
+    );
+    const patternWidth = Number(oneGapPattern?.getAttribute("width"));
+    const patternHeight = Number(oneGapPattern?.getAttribute("height"));
+    assert.ok(
+      patternWidth >= 4 && patternWidth <= 16 &&
+        patternHeight >= 4 && patternHeight <= 16,
+      "the hatch cell must remain compact enough to read as a region"
+    );
+    const oneGapPatternBase = oneGapPattern?.querySelector(
+      ".rsl-game-ccu-graph__gap-pattern-base"
+    );
+    const oneGapPatternStripe = oneGapPattern?.querySelector(
+      ".rsl-game-ccu-graph__gap-pattern-stripe"
+    );
+    assert.ok(oneGapPatternBase, "the hatch needs a full-region base tint");
+    const stripeCommands = Array.from(
+      (oneGapPatternStripe?.getAttribute("d") || "").matchAll(
+        /[ML](-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g
+      ),
+      (match) => ({ x: Number(match[1]), y: Number(match[2]) })
+    );
+    assert.ok(
+      stripeCommands.some((point, index) => index > 0 &&
+        point.x !== stripeCommands[index - 1].x &&
+        point.y !== stripeCommands[index - 1].y),
+      "the SVG hatch must be diagonal so it cannot resemble a time or CCU guide"
+    );
+    assert.equal(
+      oneGapBand?.getAttribute("fill"),
+      `url(#${oneGapPatternId})`,
+      "the no-data band must use its overlay-local hatch"
+    );
+    assert.equal(
+      oneGapOverlay.querySelectorAll(".rsl-game-ccu-graph__gap-pattern").length,
+      1,
+      "one graph needs exactly one shared hatch definition"
+    );
+    assert.equal(
+      oneGapOverlay.querySelector(".rsl-game-ccu-graph__gap-boundary"),
+      null,
+      "no-data hatching must not introduce offset-looking boundary lines"
+    );
     const oneGapLine = getDirectionalGraphPathData(oneGapOverlay);
     const lineCommands = Array.from(oneGapLine.matchAll(
       /([ML])(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g
@@ -4098,15 +4367,49 @@ async function runContentCcuGraphBehaviorContracts() {
     );
     assert.match(
       oneGapOverlay.textContent,
-      /Missing samples/i,
+      /No observations/i,
       "the compact footer should label gaps without a sentence competing with the plot"
+    );
+    const oneGapLegend = oneGapOverlay.querySelector(
+      ".rsl-game-ccu-graph__gap-key"
+    );
+    assert.match(
+      oneGapLegend?.textContent || "",
+      /no\s+(?:saved\s+)?(?:observations?|data)/i,
+      "the legend must name the data state instead of relying on color or pattern alone"
+    );
+    assert.match(
+      oneGapLegend?.getAttribute("aria-label") || "",
+      /no saved Chart observation/i,
+      "assistive technology must receive the meaning of the hatch"
+    );
+    assert.doesNotMatch(
+      oneGapLegend?.getAttribute("aria-label") || "",
+      /\b(?:amber|blue|green|red)\b/i,
+      "the accessible legend must remain understandable without color perception"
     );
     assert.match(
       oneGapOverlay.getAttribute("aria-label"),
-      /contains \d+ blue intervals? where no Chart observation was stored/i
+      /contains \d+ marked no-data intervals? where no Chart observation was stored/i
+    );
+    assert.doesNotMatch(
+      oneGapOverlay.getAttribute("aria-label"),
+      /\b(?:amber|blue|green|red)\b/i,
+      "the graph description must explain missing data without color-only language"
     );
     const oneGapSvgChildren = oneGapOverlay
       .querySelector(".rsl-game-ccu-graph__plot").children;
+    const oneGapDefinitions = oneGapOverlay.querySelector("defs");
+    const oneGapGrid = oneGapOverlay.querySelector(
+      ".rsl-game-ccu-graph__grid"
+    );
+    assert.ok(
+      oneGapSvgChildren.indexOf(oneGapDefinitions) <
+        oneGapSvgChildren.indexOf(oneGapBand) &&
+        oneGapSvgChildren.indexOf(oneGapBand) <
+          oneGapSvgChildren.indexOf(oneGapGrid),
+      "the local hatch definition and no-data band must paint beneath guides and observations"
+    );
     assert.ok(
       oneGapSvgChildren.indexOf(oneGapBand) <
         oneGapSvgChildren.indexOf(
@@ -4128,6 +4431,14 @@ async function runContentCcuGraphBehaviorContracts() {
       multipleGapOverlay,
       multipleGapPoints,
       currentBucket
+    );
+    const multipleGapPatternId = multipleGapOverlay.querySelector(
+      ".rsl-game-ccu-graph__gap-pattern"
+    )?.getAttribute("id") || "";
+    assert.notEqual(
+      multipleGapPatternId,
+      oneGapPatternId,
+      "each graph overlay needs a unique SVG pattern identifier"
     );
     const multipleGapLine = getDirectionalGraphPathData(multipleGapOverlay);
     assert.equal((multipleGapLine.match(/M/g) || []).length, 3);

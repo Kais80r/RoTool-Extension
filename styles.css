@@ -2752,9 +2752,20 @@
 }
 
 .rsl-game-ccu-graph__gap-band {
-  fill: #78b4ff;
-  fill-opacity: 0.05;
   stroke: none;
+}
+
+.rsl-game-ccu-graph__gap-pattern-base {
+  fill: #dca44e;
+  fill-opacity: 0.07;
+}
+
+.rsl-game-ccu-graph__gap-pattern-stripe {
+  fill: none;
+  stroke: #e6ad51;
+  stroke-opacity: 0.22;
+  stroke-width: 0.65;
+  vector-effect: non-scaling-stroke;
 }
 
 .rsl-game-ccu-graph__area {
@@ -2833,9 +2844,15 @@
   width: 5px;
   height: 5px;
   flex: none;
-  border: 1px solid rgb(120 180 255 / 48%);
+  border: 1px solid rgb(230 173 81 / 72%);
   border-radius: 2px;
-  background: rgb(77 156 255 / 20%);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(230 173 81 / 68%) 0 1px,
+      transparent 1px 3px
+    ),
+    rgb(220 164 78 / 16%);
   content: "";
 }
 
@@ -2960,12 +2977,12 @@
 
 .rsl-game-ccu-graph__crosshair[data-no-observation]
   .rsl-game-ccu-graph__crosshair-line {
-  background: rgb(120 180 255 / 64%);
+  background: rgb(230 173 81 / 76%);
 }
 
 .rsl-game-ccu-graph__crosshair[data-no-observation]
   .rsl-game-ccu-graph__point-ccu {
-  color: #9bc8ff;
+  color: #efbd69;
   font-weight: 600;
 }
 
