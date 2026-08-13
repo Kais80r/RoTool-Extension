@@ -12,6 +12,10 @@ const styles = fs
   .readFileSync(path.join(root, "styles.css"), "utf8")
   .replace(/\r\n/g, "\n");
 
+globalThis.__rslContentTestHooks = { skipInitialize: true };
+require(path.join(root, "content.js"));
+const hooks = globalThis.__rslContentTestHooks;
+
 function extractFunction(name) {
   const marker = `function ${name}(`;
   const start = source.indexOf(marker);
@@ -51,8 +55,8 @@ function extractRule(selectorFragment, fromIndex = 0) {
   return styles.slice(bodyStart + 1, bodyEnd);
 }
 
-// Long text is retained for both the visible ellipsis and its native tooltip.
-// This guards against solving clipping by shortening the actual friend/game data.
+// Full values remain available to the tile and its tooltip while the visible
+// experience label mirrors Roblox's compact Home-carousel representation.
 const tileSource = extractFunction("makeBestFriendTile");
 assert.match(tileSource, /name\.textContent = friend\.displayName;/);
 assert.match(tileSource, /name\.title = friend\.displayName;/);
@@ -61,14 +65,222 @@ assert.match(
   /appendFriendNameBadges\(name\.parentElement, friend, true\);/,
   "0-, 1-, and 2-badge layouts must reserve space in the name row only"
 );
-assert.match(tileSource, /sublabel\.classList\.add\("friends-carousel-tile-experience"\);/);
-assert.match(tileSource, /sublabel\.textContent = presence\.label;/);
-assert.match(tileSource, /sublabel\.title = presence\.label;/);
+assert.match(tileSource, /setBestFriendSublabel\(sublabel, presence\.label\);/);
 assert.doesNotMatch(
   tileSource,
-  /(?:const experience|experience\.className|sublabel\.append\(experience\))/,
-  "experience text must stay directly in Roblox's native sublabel clamp"
+  /sublabel\.classList\.add\("friends-carousel-tile-experience"\)|sublabel\.textContent = presence\.label/,
+  "a clone must not flatten Roblox's wrapper and visible experience into one node"
 );
+
+assert.equal(typeof hooks.formatBestFriendExperienceLabel, "function");
+assert.equal(typeof hooks.setBestFriendSublabel, "function");
+
+// The captured Roblox Home DOM uses two distinct nodes:
+//   a.friends-carousel-tile-labels
+//     > div.friends-carousel-tile-sublabel
+//       > div.friends-carousel-tile-experience
+// Model that exact boundary instead of inferring truncation from CSS alone.
+function makeFixtureElement(className = "", initialChildren = []) {
+  const classes = new Set(className.split(/\s+/).filter(Boolean));
+  let ownText = "";
+  const element = {
+    children: [],
+    parentElement: null,
+    title: "",
+    fixtureMarker: null,
+    classList: {
+      add(...names) {
+        names.forEach((name) => classes.add(name));
+      },
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+      contains(name) {
+        return classes.has(name);
+      }
+    },
+    replaceChildren(...children) {
+      this.children.forEach((child) => {
+        child.parentElement = null;
+      });
+      ownText = "";
+      this.children = children;
+      children.forEach((child) => {
+        child.parentElement = this;
+      });
+    }
+  };
+  Object.defineProperties(element, {
+    className: {
+      get() {
+        return Array.from(classes).join(" ");
+      },
+      set(value) {
+        classes.clear();
+        String(value || "").split(/\s+/).filter(Boolean).forEach((name) => {
+          classes.add(name);
+        });
+      }
+    },
+    textContent: {
+      get() {
+        return this.children.length
+          ? this.children.map((child) => child.textContent).join("")
+          : ownText;
+      },
+      set(value) {
+        this.replaceChildren();
+        ownText = String(value ?? "");
+      }
+    }
+  });
+  element.replaceChildren(...initialChildren);
+  return element;
+}
+
+const originalDocument = globalThis.document;
+globalThis.document = {
+  createElement() {
+    return makeFixtureElement();
+  }
+};
+
+function assertLiveSublabelFixture({
+  description,
+  fullLabel,
+  expectedVisible,
+  shape
+}) {
+  const existingExperience = shape === "native"
+    ? makeFixtureElement("friends-carousel-tile-experience")
+    : null;
+  if (existingExperience) {
+    existingExperience.textContent = "Roblox's previous visible value";
+    existingExperience.fixtureMarker = "reuse-me";
+  }
+  const outerClasses = shape === "flattened"
+    ? "friends-carousel-tile-sublabel friends-carousel-tile-experience"
+    : "friends-carousel-tile-sublabel";
+  const sublabel = makeFixtureElement(
+    outerClasses,
+    existingExperience ? [existingExperience] : []
+  );
+  if (shape === "flattened") sublabel.textContent = fullLabel;
+  const labels = makeFixtureElement("friends-carousel-tile-labels", [sublabel]);
+
+  const visible = hooks.setBestFriendSublabel(sublabel, fullLabel);
+  assert.equal(labels.children[0], sublabel, description);
+  assert.equal(sublabel.parentElement, labels, description);
+  assert.equal(
+    sublabel.classList.contains("friends-carousel-tile-sublabel"),
+    true,
+    description
+  );
+  assert.equal(
+    sublabel.classList.contains("friends-carousel-tile-experience"),
+    false,
+    `${description}: the outer native lane must not also be the visible text node`
+  );
+  assert.equal(sublabel.children.length, 1, `${description}: exactly one visible row`);
+  assert.equal(sublabel.children[0], visible, description);
+  assert.equal(visible.parentElement, sublabel, description);
+  assert.equal(
+    visible.classList.contains("friends-carousel-tile-experience"),
+    true,
+    description
+  );
+  assert.equal(visible.textContent, expectedVisible, description);
+  assert.equal(sublabel.textContent, expectedVisible, description);
+  assert.equal(sublabel.title, fullLabel, `${description}: retain the complete hover title`);
+  if (existingExperience) {
+    assert.equal(visible, existingExperience, `${description}: reuse Roblox's native inner node`);
+    assert.equal(visible.fixtureMarker, "reuse-me", description);
+  }
+}
+
+const capturedLabelFixtures = [
+  {
+    description: "captured PIÑATA title with a surrogate-pair emoji",
+    fullLabel: "🎉 [PIÑATA MAZE] Pet Simulator 99! 🔥",
+    expectedVisible: "🎉 [PIÑATA MAZE...",
+    shape: "native"
+  },
+  {
+    description: "captured DEVOUR title with two surrogate-pair emoji",
+    fullLabel: "🦈 DEVOUR 🐠 Eat Fish & Ocean Animals",
+    expectedVisible: "🦈 DEVOUR 🐠 Ea...",
+    shape: "flattened"
+  },
+  {
+    description: "captured Sol's RNG title",
+    fullLabel: "Sol's RNG [ Summer Event 🏖️]",
+    expectedVisible: "Sol's RNG [ Sum...",
+    shape: "empty"
+  }
+];
+for (const fixture of capturedLabelFixtures) {
+  assert.equal(
+    hooks.formatBestFriendExperienceLabel(fixture.fullLabel),
+    fixture.expectedVisible,
+    `${fixture.description}: truncate by the same UTF-16 boundary as Roblox`
+  );
+  assertLiveSublabelFixture(fixture);
+}
+
+const nativeFriendsVisible = makeFixtureElement("friends-carousel-tile-experience");
+nativeFriendsVisible.textContent = "🎉 [PIÑATA MAZE...";
+const nativeFriendsSublabel = makeFixtureElement(
+  "friends-carousel-tile-sublabel",
+  [nativeFriendsVisible]
+);
+const nativeFriendsLabels = makeFixtureElement(
+  "friends-carousel-tile-labels",
+  [nativeFriendsSublabel]
+);
+assertLiveSublabelFixture({
+  description: "separate cloned Best Friend beside the native Friends control",
+  fullLabel: "🎉 [PIÑATA MAZE] Pet Simulator 99! 🔥",
+  expectedVisible: "🎉 [PIÑATA MAZE...",
+  shape: "flattened"
+});
+assert.equal(nativeFriendsLabels.children[0], nativeFriendsSublabel);
+assert.equal(nativeFriendsSublabel.children[0], nativeFriendsVisible);
+assert.equal(
+  nativeFriendsVisible.textContent,
+  "🎉 [PIÑATA MAZE...",
+  "repairing a cloned Best Friend must not rewrite the normal Friends DOM"
+);
+assert.equal(
+  nativeFriendsSublabel.className,
+  "friends-carousel-tile-sublabel",
+  "the normal Friends wrapper remains untouched"
+);
+
+for (const status of ["RIVALS", "Online", "Offline"]) {
+  assert.equal(hooks.formatBestFriendExperienceLabel(status), status);
+  assertLiveSublabelFixture({
+    description: `captured short ${status} status`,
+    fullLabel: status,
+    expectedVisible: status,
+    shape: "empty"
+  });
+}
+assert.equal(
+  hooks.formatBestFriendExperienceLabel("123456789012345678"),
+  "123456789012345678",
+  "an 18-code-unit label already fits and must remain unchanged"
+);
+assert.equal(
+  hooks.formatBestFriendExperienceLabel("1234567890123456789"),
+  "123456789012345...",
+  "a 19-code-unit label uses Roblox's 15-code-unit visible prefix"
+);
+
+if (originalDocument === undefined) {
+  delete globalThis.document;
+} else {
+  globalThis.document = originalDocument;
+}
 
 // Exercise the content combinations that exposed the alignment bug: a long
 // experience title with two badges, a short Online status with one badge, and

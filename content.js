@@ -5873,6 +5873,30 @@
     }
   }
 
+  function formatBestFriendExperienceLabel(label) {
+    const text = typeof label === "string" ? label : "";
+    return text.length > 18 ? `${text.slice(0, 15)}...` : text;
+  }
+
+  function setBestFriendSublabel(sublabel, label) {
+    if (!sublabel) {
+      return null;
+    }
+    const fullLabel = typeof label === "string" ? label : "";
+    sublabel.classList.remove("friends-carousel-tile-experience");
+    let experience = Array.from(sublabel.children || []).find((child) =>
+      child.classList?.contains("friends-carousel-tile-experience")
+    );
+    if (!experience) {
+      experience = document.createElement("div");
+      experience.className = "friends-carousel-tile-experience";
+    }
+    sublabel.replaceChildren(experience);
+    sublabel.title = fullLabel;
+    experience.textContent = formatBestFriendExperienceLabel(fullLabel);
+    return experience;
+  }
+
   function makeBestFriendTile(nativeCarousel, friend) {
     const nativeList = getNativeHomeFriendList(nativeCarousel);
     const template = Array.from(nativeList?.children || []).find((child) =>
@@ -5937,11 +5961,9 @@
       sublabel.className = "friends-carousel-tile-sublabel";
       wrapper.querySelector(".friends-carousel-tile-labels")?.append(sublabel);
     }
-    // Keep the text directly in Roblox's native sublabel clamp. Wrapping it in
-    // another block changes the available line box and truncates sooner.
-    sublabel.classList.add("friends-carousel-tile-experience");
-    sublabel.textContent = presence.label;
-    sublabel.title = presence.label;
+    // Preserve Roblox's live wrapper > experience structure and its compact
+    // visible title. The complete title remains available through hover text.
+    setBestFriendSublabel(sublabel, presence.label);
 
     let avatarStatus = wrapper.querySelector(".avatar-status");
     if (!avatarStatus) {
@@ -16985,6 +17007,9 @@
     contentTestHooks.flushFeatureSettingsReconcileForTests =
       flushFeatureSettingsReconcile;
     contentTestHooks.setBestFriendsHomeVisibility = setBestFriendsHomeVisibility;
+    contentTestHooks.formatBestFriendExperienceLabel =
+      formatBestFriendExperienceLabel;
+    contentTestHooks.setBestFriendSublabel = setBestFriendSublabel;
     contentTestHooks.getRoToolLogoMarkup = getRoToolLogoMarkup;
     contentTestHooks.syncFeatureSettingsButtonGeometry =
       syncFeatureSettingsButtonGeometry;

@@ -12,7 +12,7 @@ const pageBridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.17.4");
+assert.equal(manifest.version, "0.17.5");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 const mainWorldEntry = manifest.content_scripts.find((entry) => entry.world === "MAIN");
@@ -412,7 +412,23 @@ assert.match(
 );
 assert.match(
   contentSource,
-  /sublabel\.classList\.add\("friends-carousel-tile-experience"\);\s*sublabel\.textContent = presence\.label;\s*sublabel\.title = presence\.label;/
+  /function formatBestFriendExperienceLabel\(label\)[\s\S]*?text\.length > 18[\s\S]*?text\.slice\(0, 15\)/
+);
+assert.match(
+  contentSource,
+  /function setBestFriendSublabel\(sublabel, label\)[\s\S]*?sublabel\.classList\.remove\("friends-carousel-tile-experience"\)[\s\S]*?sublabel\.replaceChildren\(experience\)[\s\S]*?sublabel\.title = fullLabel[\s\S]*?formatBestFriendExperienceLabel\(fullLabel\)/
+);
+assert.match(
+  contentSource,
+  /setBestFriendSublabel\(sublabel, presence\.label\);/
+);
+assert.doesNotMatch(
+  contentSource.slice(
+    contentSource.indexOf("function makeBestFriendTile("),
+    contentSource.indexOf("function sendQuickSettingsRuntimeMessage(")
+  ),
+  /sublabel\.classList\.add\("friends-carousel-tile-experience"\)|sublabel\.textContent = presence\.label/,
+  "Best Friends must preserve Roblox's nested sublabel DOM instead of flattening it"
 );
 assert.match(
   stylesSource,
