@@ -151,6 +151,53 @@ assert.equal(hooks.formatServerHistoryDuration(NOW, NOW + 5 * 60_000), "5 minute
 assert.equal(hooks.formatServerHistoryCompactDuration(NOW, NOW + 30_000), "<1m");
 assert.equal(hooks.formatServerHistoryCompactDuration(NOW, NOW + 5 * 60_000), "5m");
 assert.equal(hooks.formatServerHistoryCompactDuration(NOW, NOW + 65 * 60_000), "1h 5m");
+assert.equal(hooks.formatServerHistoryRelativeLastSeen(Number.NaN, NOW, "en-US"), "Unknown");
+assert.equal(hooks.formatServerHistoryRelativeLastSeen(NOW, NOW, "en-US"), "now");
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 59_000, NOW, "en-US"),
+  "now"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 60_000, NOW, "en-US"),
+  "1m ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 30 * 60_000, NOW, "en-US"),
+  "30m ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 59 * 60_000, NOW, "en-US"),
+  "59m ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 60 * 60_000, NOW, "en-US"),
+  "1h ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 23 * 60 * 60_000, NOW, "en-US"),
+  "23h ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 24 * 60 * 60_000, NOW, "en-US"),
+  "1d ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 3 * 24 * 60 * 60_000, NOW, "en-US"),
+  "3d ago"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW + 30 * 60_000, NOW, "en-US"),
+  "now",
+  "future observations caused by clock skew must not claim they happen in the future"
+);
+assert.equal(
+  hooks.formatServerHistoryRelativeLastSeen(NOW - 30 * 60_000, NOW, "de-DE"),
+  new Intl.RelativeTimeFormat("de-DE", {
+    numeric: "always",
+    style: "narrow"
+  }).format(-30, "minute"),
+  "relative recency must follow the Roblox page locale"
+);
 assert.equal(hooks.formatServerHistoryCompactTimestamp(Number.NaN), "Unknown");
 const compactTimestamp = hooks.formatServerHistoryCompactTimestamp(NOW);
 const compactTimeOnly = hooks.formatServerHistoryCompactTimestamp(NOW, true);
@@ -406,6 +453,7 @@ const renderSource = sourceBetween(
 for (const copy of [
   "First seen",
   "Last seen",
+  "Played ",
   "View Game",
   "Rejoin Server",
   "Loading your recent servers…",
@@ -465,29 +513,64 @@ const timingSource = renderSource.match(
 assert.ok(timingSource, "missing compact Server History timing row");
 assert.equal(
   (timingSource.match(/document\.createElement\("time"\)/g) || []).length,
+  3,
+  "compact timing must keep semantic relative, First seen, and Last seen time elements"
+);
+assert.match(
+  timingSource,
+  /const relativeLastSeen = formatServerHistoryRelativeLastSeen\(session\.lastSeenAt\)/,
+  "each card must show how long ago its last observation was"
+);
+assert.match(
+  timingSource,
+  /const timingSummary = document\.createElement\("div"\)[\s\S]*?timingSummary\.className = "rsl-server-history__timing-summary"[\s\S]*?const relativeTime = document\.createElement\("time"\)[\s\S]*?relativeTime\.className = "rsl-server-history__relative-time"/,
+  "relative recency and played duration need their own compact semantic summary line"
+);
+assert.match(
+  timingSource,
+  /relativeTime\.dateTime = lastDate\.toISOString\(\)[\s\S]*?relativeTime\.dataset\.rslServerHistoryLastSeenAt = String\(session\.lastSeenAt\)[\s\S]*?relativeTime\.textContent = relativeLastSeen/,
+  "the relative label must preserve its exact machine-readable observation time for refreshes"
+);
+assert.match(
+  timingSource,
+  /timingSummary\.append\([\s\S]*?relativeTime,[\s\S]*?` · Played \$\{formatServerHistoryCompactDuration\([\s\S]*?session\.firstSeenAt,[\s\S]*?session\.lastSeenAt[\s\S]*?\)\}`[\s\S]*?\)/,
+  "the visible summary must pair recency with the amount of time played"
+);
+assert.match(
+  timingSource,
+  /const timeRange = document\.createElement\("div"\)[\s\S]*?timeRange\.className = "rsl-server-history__time-range"/,
+  "the explicit from–to times need a separate compact line"
+);
+assert.equal(
+  (timingSource.match(/formatServerHistoryCompactTimestamp\([\s\S]*?sameLocalDay[\s\S]*?\)/g) || []).length,
   2,
-  "compact timing must keep semantic First seen and Last seen time elements"
-);
-assert.match(
-  timingSource,
-  /formatServerHistoryCompactTimestamp\([\s\S]*?session\.firstSeenAt,[\s\S]*?sameLocalDay[\s\S]*?\)/,
-  "same-day cards must omit the date from their first compact timestamp"
-);
-assert.match(
-  timingSource,
-  /formatServerHistoryCompactTimestamp\([\s\S]*?session\.lastSeenAt,[\s\S]*?true[\s\S]*?\)/,
-  "the last compact timestamp must rely on its date-group heading instead of repeating the date"
+  "both range endpoints must omit dates only when the session stays within one local day"
 );
 assert.match(
   timingSource,
   /const sameLocalDay = firstDate\.getFullYear\(\) === lastDate\.getFullYear\(\)[\s\S]*?firstDate\.getMonth\(\) === lastDate\.getMonth\(\)[\s\S]*?firstDate\.getDate\(\) === lastDate\.getDate\(\)/,
   "cross-midnight cards must retain the first timestamp's full date"
 );
-assert.match(timingSource, /formatServerHistoryCompactDuration/);
+assert.match(
+  timingSource,
+  /timeRange\.append\([\s\S]*?firstTime,[\s\S]*?document\.createTextNode\(" – "\),[\s\S]*?lastTime[\s\S]*?\)/,
+  "the visible range must read from the first observation to the last observation"
+);
+assert.match(timingSource, /timing\.append\(timingSummary, timeRange\)/);
 assert.match(timingSource, /timing\.title = fullTimingText/);
 assert.match(timingSource, /timing\.setAttribute\("aria-hidden", "true"\)/);
 assert.match(timingSource, /accessibleTiming\.className = "rsl-sr-only"/);
 assert.match(timingSource, /accessibleTiming\.textContent = fullTimingText/);
+assert.match(
+  timingSource,
+  /const fullTimingText =\s*`First seen: \$\{formatServerHistoryTimestamp\(session\.firstSeenAt\)\} · `[\s\S]*?`Last seen: \$\{formatServerHistoryTimestamp\(session\.lastSeenAt\)\} · `[\s\S]*?`Observed for \$\{formatServerHistoryDuration\(/,
+  "assistive text and hover text must state both absolute endpoints and the full duration"
+);
+assert.doesNotMatch(
+  timingSource,
+  /const fullTimingText =[\s\S]*?relativeLastSeen/,
+  "minute refreshes must not leave a stale relative label in the static accessible text or tooltip"
+);
 assert.doesNotMatch(
   timingSource,
   /document\.createElement\("strong"\)|for \(const \[label, timestamp\]/,
@@ -534,6 +617,43 @@ assert.match(
   renderSource,
   /status\.textContent = serverHistoryNotice/,
   "Server History operation notices must be exposed through the dialog's polite live region"
+);
+const relativeRefreshSource = sourceBetween(
+  "  function clearServerHistoryRelativeTimeTimer(",
+  "  function scheduleServerHistoryMidnightRefresh("
+);
+assert.match(
+  relativeRefreshSource,
+  /function refreshServerHistoryRelativeTimes\(\)[\s\S]*?const now = Date\.now\(\)[\s\S]*?querySelectorAll\("\[data-rsl-server-history-last-seen-at\]"\)[\s\S]*?node\.textContent = formatServerHistoryRelativeLastSeen\(lastSeenAt, now\)/,
+  "the minute refresh must update only relative labels from one shared time snapshot"
+);
+assert.doesNotMatch(
+  relativeRefreshSource,
+  /renderServerHistoryDialog|replaceChildren|innerHTML/,
+  "relative-time refreshes must not rebuild cards or disturb focus"
+);
+assert.match(
+  relativeRefreshSource,
+  /function scheduleServerHistoryRelativeTimeRefresh\(\)[\s\S]*?clearServerHistoryRelativeTimeTimer\(\)[\s\S]*?60_000 - \(Date\.now\(\) % 60_000\)[\s\S]*?refreshServerHistoryRelativeTimes\(\)[\s\S]*?scheduleServerHistoryRelativeTimeRefresh\(\)/,
+  "relative labels must keep updating near minute boundaries while the dialog is open"
+);
+const resetDialogStateSource = sourceBetween(
+  "  function resetServerHistoryDialogState(",
+  "  function closeServerHistoryDialog("
+);
+assert.match(
+  resetDialogStateSource,
+  /clearServerHistoryRelativeTimeTimer\(\)/,
+  "closing or resetting Server History must remove its minute timer"
+);
+const openDialogSource = sourceBetween(
+  "  function openServerHistoryDialog(",
+  "  function cleanupServerHistoryFeature("
+);
+assert.match(
+  openDialogSource,
+  /dialog\.showModal\(\)[\s\S]*?scheduleServerHistoryRelativeTimeRefresh\(\)/,
+  "opening Server History must start the targeted minute refresh"
 );
 assert.doesNotMatch(
   contentSource,
@@ -658,9 +778,15 @@ assert.doesNotMatch(
   "removed Recent/Past badges must not leave compact-card CSS behind"
 );
 const desktopTimingCss = cssBlock(".rsl-server-history__timing");
-assert.match(desktopTimingCss, /overflow:\s*hidden/, "timing must not widen the compact card");
-assert.match(desktopTimingCss, /text-overflow:\s*ellipsis/, "timing must ellipsize when narrow");
-assert.match(desktopTimingCss, /white-space:\s*nowrap/, "timing must stay on one compact line");
+assert.match(desktopTimingCss, /display:\s*grid/);
+assert.match(desktopTimingCss, /min-width:\s*0/, "timing must not widen the compact card");
+const desktopTimingLineCss = cssBlock(".rsl-server-history__timing-summary,");
+assert.match(desktopTimingLineCss, /min-width:\s*0/);
+assert.match(desktopTimingLineCss, /overflow:\s*hidden/, "both timing lines must stay inside the compact card");
+assert.match(desktopTimingLineCss, /text-overflow:\s*ellipsis/, "both timing lines must ellipsize when narrow");
+assert.match(desktopTimingLineCss, /white-space:\s*nowrap/, "each timing detail must stay on one compact line");
+const relativeTimeCss = cssBlock(".rsl-server-history__relative-time");
+assert.match(relativeTimeCss, /font-weight:\s*600/, "relative recency should remain easy to scan");
 assert.doesNotMatch(
   stylesSource,
   /\.rsl-server-history__status(?:\s|,|\{|--)/,

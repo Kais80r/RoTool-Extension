@@ -772,6 +772,7 @@
   let serverHistoryNotice = "";
   let serverHistoryMessageSenderForTests = null;
   let serverHistoryMidnightTimer = null;
+  let serverHistoryRelativeTimeTimer = null;
   const serverHistoryThumbnailByUniverseId = new Map();
   const serverHistoryThumbnailRequestByUniverseId = new Map();
   let mountQueued = false;
@@ -15176,6 +15177,43 @@
     return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
   }
 
+  function formatServerHistoryRelativeLastSeen(
+    timestamp,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    const observedAt = new Date(timestamp).getTime();
+    const currentTime = new Date(now).getTime();
+    if (!Number.isFinite(observedAt) || !Number.isFinite(currentTime)) {
+      return "Unknown";
+    }
+    const elapsed = Math.max(0, currentTime - observedAt);
+    if (elapsed < 60_000) {
+      try {
+        return new Intl.RelativeTimeFormat(locale, {
+          numeric: "auto",
+          style: "narrow"
+        }).format(0, "second");
+      } catch {
+        return "now";
+      }
+    }
+    const [unit, unitMilliseconds, fallbackSuffix] = elapsed < 3_600_000
+      ? ["minute", 60_000, "m"]
+      : elapsed < 86_400_000
+        ? ["hour", 3_600_000, "h"]
+        : ["day", 86_400_000, "d"];
+    const magnitude = Math.max(1, Math.floor(elapsed / unitMilliseconds));
+    try {
+      return new Intl.RelativeTimeFormat(locale, {
+        numeric: "always",
+        style: "narrow"
+      }).format(-magnitude, unit);
+    } catch {
+      return `${magnitude}${fallbackSuffix} ago`;
+    }
+  }
+
   function getServerHistoryLocalDayOrdinal(timestamp) {
     const date = new Date(timestamp);
     if (!Number.isFinite(date.getTime())) return null;
@@ -15398,6 +15436,25 @@
     const sameLocalDay = firstDate.getFullYear() === lastDate.getFullYear() &&
       firstDate.getMonth() === lastDate.getMonth() &&
       firstDate.getDate() === lastDate.getDate();
+    const relativeLastSeen = formatServerHistoryRelativeLastSeen(session.lastSeenAt);
+    const timingSummary = document.createElement("div");
+    timingSummary.className = "rsl-server-history__timing-summary";
+    const relativeTime = document.createElement("time");
+    relativeTime.className = "rsl-server-history__relative-time";
+    relativeTime.dateTime = lastDate.toISOString();
+    relativeTime.dataset.rslServerHistoryLastSeenAt = String(session.lastSeenAt);
+    relativeTime.textContent = relativeLastSeen;
+    timingSummary.append(
+      relativeTime,
+      document.createTextNode(
+        ` · Played ${formatServerHistoryCompactDuration(
+          session.firstSeenAt,
+          session.lastSeenAt
+        )}`
+      )
+    );
+    const timeRange = document.createElement("div");
+    timeRange.className = "rsl-server-history__time-range";
     const firstTime = document.createElement("time");
     firstTime.dateTime = firstDate.toISOString();
     firstTime.textContent = formatServerHistoryCompactTimestamp(
@@ -15408,19 +15465,14 @@
     lastTime.dateTime = lastDate.toISOString();
     lastTime.textContent = formatServerHistoryCompactTimestamp(
       session.lastSeenAt,
-      true
+      sameLocalDay
     );
-    timing.append(
+    timeRange.append(
       firstTime,
       document.createTextNode(" – "),
-      lastTime,
-      document.createTextNode(
-        ` · ${formatServerHistoryCompactDuration(
-          session.firstSeenAt,
-          session.lastSeenAt
-        )}`
-      )
+      lastTime
     );
+    timing.append(timingSummary, timeRange);
     const fullTimingText =
       `First seen: ${formatServerHistoryTimestamp(session.firstSeenAt)} · ` +
       `Last seen: ${formatServerHistoryTimestamp(session.lastSeenAt)} · ` +
@@ -15556,6 +15608,39 @@
       window.clearTimeout(serverHistoryMidnightTimer);
       serverHistoryMidnightTimer = null;
     }
+  }
+
+  function clearServerHistoryRelativeTimeTimer() {
+    if (serverHistoryRelativeTimeTimer !== null) {
+      window.clearTimeout(serverHistoryRelativeTimeTimer);
+      serverHistoryRelativeTimeTimer = null;
+    }
+  }
+
+  function refreshServerHistoryRelativeTimes() {
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (!dialog?.open) return;
+    const now = Date.now();
+    dialog.querySelectorAll("[data-rsl-server-history-last-seen-at]").forEach((node) => {
+      const lastSeenAt = normalizeServerHistoryTimestamp(
+        node.getAttribute("data-rsl-server-history-last-seen-at")
+      );
+      if (lastSeenAt !== null) {
+        node.textContent = formatServerHistoryRelativeLastSeen(lastSeenAt, now);
+      }
+    });
+  }
+
+  function scheduleServerHistoryRelativeTimeRefresh() {
+    clearServerHistoryRelativeTimeTimer();
+    if (!document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open) return;
+    const delay = Math.max(250, 60_000 - (Date.now() % 60_000) + 50);
+    serverHistoryRelativeTimeTimer = window.setTimeout(() => {
+      serverHistoryRelativeTimeTimer = null;
+      if (!document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open) return;
+      refreshServerHistoryRelativeTimes();
+      scheduleServerHistoryRelativeTimeRefresh();
+    }, delay);
   }
 
   function scheduleServerHistoryMidnightRefresh() {
@@ -15707,6 +15792,7 @@
 
   function resetServerHistoryDialogState() {
     clearServerHistoryMidnightTimer();
+    clearServerHistoryRelativeTimeTimer();
     serverHistoryLifecycleEpoch += 1;
     serverHistoryLoadState = "idle";
     serverHistoryErrorCode = "";
@@ -15840,6 +15926,7 @@
     renderServerHistoryDialog();
     dialog.showModal();
     scheduleServerHistoryMidnightRefresh();
+    scheduleServerHistoryRelativeTimeRefresh();
     dialog.querySelector("[data-rsl-server-history-close]")?.focus();
     void loadServerHistory();
     return dialog;
@@ -16935,6 +17022,8 @@
       formatServerHistoryCompactTimestamp;
     contentTestHooks.formatServerHistoryCompactDuration =
       formatServerHistoryCompactDuration;
+    contentTestHooks.formatServerHistoryRelativeLastSeen =
+      formatServerHistoryRelativeLastSeen;
     contentTestHooks.getServerHistoryLocalDayOrdinal =
       getServerHistoryLocalDayOrdinal;
     contentTestHooks.formatServerHistoryDateGroupLabel =

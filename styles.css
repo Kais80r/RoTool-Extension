@@ -2622,14 +2622,28 @@
 }
 
 .rsl-server-history__timing {
-  display: block;
+  display: grid;
   min-width: 0;
-  overflow: hidden;
+  gap: 0;
   color: var(--color-content-default, var(--rsl-fallback-default));
   font-size: 11px;
-  line-height: 17px;
+  line-height: 15px;
+}
+
+.rsl-server-history__timing-summary,
+.rsl-server-history__time-range {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rsl-server-history__relative-time {
+  font-weight: 600;
+}
+
+.rsl-server-history__time-range {
+  color: var(--color-content-muted, var(--rsl-fallback-muted));
 }
 
 .rsl-server-history__actions {
