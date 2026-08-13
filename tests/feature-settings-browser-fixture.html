@@ -166,8 +166,18 @@
           roToolButton.click();
           const dialog = document.getElementById("rsl-feature-settings-dialog");
           const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
-          if (!dialog?.open || switches.length !== 27 || switches.some((input) => !input.checked)) {
-            throw new Error("Feature settings dialog did not open with twenty-seven enabled switches");
+          const serverHistorySwitch = dialog?.querySelector(
+            '[data-rsl-feature-key="serverHistory"]'
+          );
+          if (
+            !dialog?.open ||
+            switches.length !== 29 ||
+            serverHistorySwitch?.checked !== false ||
+            switches.some((input) => input !== serverHistorySwitch && !input.checked)
+          ) {
+            throw new Error(
+              "Feature settings dialog did not preserve twenty-eight enabled switches and the Server History opt-in"
+            );
           }
           const advancedButtons = Array.from(
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")

@@ -238,6 +238,25 @@ const GAME_CCU_HISTORY_RETRY_DELAY_MS = 750;
 const GAME_CCU_HISTORY_RATE_LIMIT_FALLBACK_MS = 5 * 60_000;
 const GAME_CCU_HISTORY_MAX_BACKOFF_MS = 30 * 60_000;
 const GAME_CCU_HISTORY_UINT32_MAX = 0xffff_ffff;
+const SERVER_HISTORY_FEATURE_KEY = "serverHistory";
+const SERVER_HISTORY_STORAGE_KEY = "rslServerHistoryV1";
+const SERVER_HISTORY_STORAGE_VERSION = 1;
+const SERVER_HISTORY_ALARM_NAME = "rsl-server-history-v1";
+const SERVER_HISTORY_ALARM_PERIOD_MINUTES = 1;
+const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
+const SERVER_HISTORY_STATUS_MESSAGE_TYPE = "rsl:check-server-history-status";
+const SERVER_HISTORY_CLEAR_MESSAGE_TYPE = "rsl:clear-server-history";
+const SERVER_HISTORY_REJOIN_MESSAGE_TYPE = "rsl:rejoin-server-history";
+const SERVER_HISTORY_MAX_SESSIONS = 30;
+const SERVER_HISTORY_MAX_ACCOUNTS = 8;
+const SERVER_HISTORY_CONTINUITY_GAP_MS = 3 * 60_000;
+const SERVER_HISTORY_STATUS_CACHE_TTL_MS = 60_000;
+// Roblox heavily limits its consumer server directory. Scan the high- and
+// low-occupancy edges instead of exhausting the shared browser/IP quota by
+// walking middle pages that Roblox may cap anyway.
+const SERVER_HISTORY_MAX_SERVER_REQUESTS = 2;
+const SERVER_HISTORY_SERVER_PAGE_SIZE = 100;
+const SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH = 100;
 const PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE = "rsl:get-private-server-support";
 const PRIVATE_SERVER_LIST_MESSAGE_TYPE = "rsl:get-private-servers";
 const PRIVATE_SERVER_JOIN_MESSAGE_TYPE = "rsl:join-private-server";
@@ -351,6 +370,16 @@ let gameCcuHistoryRetryNotBefore = 0;
 let gameCcuHistoryStorageOverride = null;
 let gameCcuHistorySnapshotCache = null;
 let gameCcuHistorySnapshotCachePromise = null;
+let serverHistoryFeatureEnabled = false;
+let serverHistoryFeatureReady = false;
+let serverHistoryFeatureSyncPromise = null;
+let serverHistoryLifecycleGeneration = 0;
+let serverHistoryPollPromise = null;
+let serverHistoryStorageWriteTail = Promise.resolve();
+let serverHistoryStorageOverride = null;
+let serverHistorySessionIdSequence = 0;
+const serverHistoryStatusCache = new Map();
+const serverHistoryStatusRequests = new Map();
 const privateServerSupportCache = new Map();
 const privateServerSupportByPlaceId = new Map();
 const privateServerSupportRequestsByPlaceId = new Map();
@@ -6151,6 +6180,1083 @@ function resetGameCcuHistoryStateForTests() {
   gameCcuHistorySnapshotCachePromise = null;
 }
 
+function getServerHistoryFeatureValue(rawValue) {
+  return Boolean(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === FEATURE_SETTINGS_VERSION &&
+    rawValue.flags &&
+    typeof rawValue.flags === "object" &&
+    !Array.isArray(rawValue.flags) &&
+    rawValue.flags[SERVER_HISTORY_FEATURE_KEY] === true
+  );
+}
+
+function normalizeServerHistoryRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeServerHistorySessionId(value) {
+  if (
+    typeof value !== "string" ||
+    value !== value.trim() ||
+    value.length < 1 ||
+    value.length > 128 ||
+    !/^[A-Za-z0-9_-]+$/.test(value)
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function normalizeServerHistoryTimestamp(value, now = Date.now()) {
+  const timestamp = Number(value);
+  return Number.isSafeInteger(timestamp) &&
+    timestamp > 0 &&
+    timestamp <= now + 60_000
+    ? timestamp
+    : null;
+}
+
+function normalizeServerHistoryText(value, maxLength) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized.length <= maxLength &&
+    !/[\u0000-\u001f\u007f]/.test(normalized)
+    ? normalized
+    : "";
+}
+
+function normalizeStoredServerHistorySession(rawSession, now = Date.now()) {
+  if (!rawSession || typeof rawSession !== "object" || Array.isArray(rawSession)) {
+    return null;
+  }
+  const sessionId = normalizeServerHistorySessionId(rawSession.sessionId);
+  const placeId = normalizeId(rawSession.placeId);
+  const gameInstanceId = normalizeGameInstanceId(rawSession.gameInstanceId);
+  const firstSeenAt = normalizeServerHistoryTimestamp(rawSession.firstSeenAt, now);
+  const lastSeenAt = normalizeServerHistoryTimestamp(rawSession.lastSeenAt, now);
+  if (
+    !sessionId ||
+    !placeId ||
+    !gameInstanceId ||
+    !firstSeenAt ||
+    !lastSeenAt ||
+    lastSeenAt < firstSeenAt
+  ) {
+    return null;
+  }
+  const endedAt = normalizeServerHistoryTimestamp(rawSession.endedAt, now);
+  const allowedEndReasons = new Set([
+    "left",
+    "server-changed",
+    "observation-gap",
+    "recovered"
+  ]);
+  const isOpen = rawSession.isOpen === true && !endedAt;
+  const observationCount = Number.isSafeInteger(rawSession.observationCount) &&
+    rawSession.observationCount > 0
+    ? Math.min(rawSession.observationCount, Number.MAX_SAFE_INTEGER)
+    : 1;
+  return {
+    sessionId,
+    placeId,
+    universeId: normalizeOptionalId(rawSession.universeId),
+    rootPlaceId: normalizeOptionalId(rawSession.rootPlaceId),
+    gameInstanceId: gameInstanceId.toLowerCase(),
+    lastLocation: normalizeServerHistoryText(
+      rawSession.lastLocation,
+      SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
+    ),
+    firstSeenAt,
+    lastSeenAt,
+    observationCount,
+    isOpen,
+    endedAt: isOpen ? null : endedAt || lastSeenAt,
+    endReason: isOpen
+      ? null
+      : allowedEndReasons.has(rawSession.endReason)
+        ? rawSession.endReason
+        : "recovered"
+  };
+}
+
+function createEmptyServerHistoryAccount() {
+  return {
+    sessions: [],
+    pendingNonGameCount: 0,
+    lastCheckedAt: 0,
+    trackingState: "waiting",
+    updatedAt: 0
+  };
+}
+
+function normalizeStoredServerHistoryAccount(rawAccount, now = Date.now()) {
+  const account = createEmptyServerHistoryAccount();
+  if (!rawAccount || typeof rawAccount !== "object" || Array.isArray(rawAccount)) {
+    return account;
+  }
+  const seenSessionIds = new Set();
+  const sessions = [];
+  for (const rawSession of Array.isArray(rawAccount.sessions)
+    ? rawAccount.sessions
+    : []) {
+    const session = normalizeStoredServerHistorySession(rawSession, now);
+    if (!session || seenSessionIds.has(session.sessionId)) {
+      continue;
+    }
+    seenSessionIds.add(session.sessionId);
+    sessions.push(session);
+  }
+  sessions.sort((left, right) =>
+    right.firstSeenAt - left.firstSeenAt ||
+    right.lastSeenAt - left.lastSeenAt
+  );
+  let foundOpen = false;
+  for (const session of sessions) {
+    if (!session.isOpen) {
+      continue;
+    }
+    if (!foundOpen) {
+      foundOpen = true;
+      continue;
+    }
+    session.isOpen = false;
+    session.endedAt = session.lastSeenAt;
+    session.endReason = "recovered";
+  }
+  account.sessions = sessions.slice(0, SERVER_HISTORY_MAX_SESSIONS);
+  account.pendingNonGameCount = rawAccount.pendingNonGameCount === 1 ? 1 : 0;
+  account.lastCheckedAt = normalizeServerHistoryTimestamp(
+    rawAccount.lastCheckedAt,
+    now
+  ) || 0;
+  account.trackingState = ["in-game", "not-in-game", "waiting", "error"].includes(
+    rawAccount.trackingState
+  )
+    ? rawAccount.trackingState
+    : "waiting";
+  account.updatedAt = normalizeServerHistoryTimestamp(rawAccount.updatedAt, now) ||
+    account.lastCheckedAt ||
+    account.sessions[0]?.lastSeenAt ||
+    0;
+  return account;
+}
+
+function createEmptyServerHistoryStorage() {
+  return { version: SERVER_HISTORY_STORAGE_VERSION, accounts: {} };
+}
+
+function normalizeServerHistoryStorage(rawValue, now = Date.now()) {
+  const storage = createEmptyServerHistoryStorage();
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    Array.isArray(rawValue) ||
+    rawValue.version !== SERVER_HISTORY_STORAGE_VERSION ||
+    !rawValue.accounts ||
+    typeof rawValue.accounts !== "object" ||
+    Array.isArray(rawValue.accounts)
+  ) {
+    return storage;
+  }
+  const accounts = [];
+  for (const [rawViewerUserId, rawAccount] of Object.entries(rawValue.accounts)) {
+    const viewerUserId = normalizeId(rawViewerUserId);
+    if (!viewerUserId) {
+      continue;
+    }
+    accounts.push([
+      viewerUserId,
+      normalizeStoredServerHistoryAccount(rawAccount, now)
+    ]);
+  }
+  accounts.sort((left, right) => right[1].updatedAt - left[1].updatedAt);
+  for (const [viewerUserId, account] of accounts.slice(
+    0,
+    SERVER_HISTORY_MAX_ACCOUNTS
+  )) {
+    storage.accounts[viewerUserId] = account;
+  }
+  return storage;
+}
+
+function getServerHistoryStorageArea() {
+  return chrome.storage?.local || null;
+}
+
+async function readServerHistoryStorage(now = Date.now()) {
+  if (typeof serverHistoryStorageOverride?.read === "function") {
+    return normalizeServerHistoryStorage(
+      await serverHistoryStorageOverride.read(),
+      now
+    );
+  }
+  const storageArea = getServerHistoryStorageArea();
+  if (!storageArea?.get) {
+    return createEmptyServerHistoryStorage();
+  }
+  const rawValue = await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (value, error = null) => {
+      if (settled) return;
+      settled = true;
+      error ? reject(error) : resolve(value);
+    };
+    try {
+      const result = storageArea.get(
+        { [SERVER_HISTORY_STORAGE_KEY]: null },
+        (values) => {
+          const readError = chrome.runtime?.lastError;
+          if (readError) {
+            finish(null, new Error(readError.message));
+            return;
+          }
+          finish(values?.[SERVER_HISTORY_STORAGE_KEY] ?? null);
+        }
+      );
+      if (result?.then) {
+        result.then(
+          (values) => finish(values?.[SERVER_HISTORY_STORAGE_KEY] ?? null),
+          (error) => finish(null, error)
+        );
+      }
+    } catch (error) {
+      finish(null, error);
+    }
+  });
+  return normalizeServerHistoryStorage(rawValue, now);
+}
+
+async function writeServerHistoryStorage(value) {
+  const normalized = normalizeServerHistoryStorage(value);
+  if (typeof serverHistoryStorageOverride?.write === "function") {
+    await serverHistoryStorageOverride.write(normalized);
+    return;
+  }
+  const storageArea = getServerHistoryStorageArea();
+  if (!storageArea?.set) {
+    throw new Error("Server History storage is unavailable");
+  }
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      error ? reject(error) : resolve();
+    };
+    try {
+      const result = storageArea.set(
+        { [SERVER_HISTORY_STORAGE_KEY]: normalized },
+        () => {
+          const writeError = chrome.runtime?.lastError;
+          finish(writeError ? new Error(writeError.message) : null);
+        }
+      );
+      if (result?.then) {
+        result.then(() => finish(), (error) => finish(error));
+      }
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+function createServerHistorySessionId() {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === "function") {
+      return globalThis.crypto.randomUUID().toLowerCase();
+    }
+  } catch {
+    // Continue to the opaque random fallback.
+  }
+  const randomBytes = new Uint8Array(18);
+  try {
+    globalThis.crypto.getRandomValues(randomBytes);
+    return Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    serverHistorySessionIdSequence += 1;
+    return `local_${Date.now().toString(36)}_${serverHistorySessionIdSequence.toString(36)}_${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function normalizeServerHistoryPresence(rawPresence, viewerUserId = null) {
+  if (!rawPresence || typeof rawPresence !== "object" || Array.isArray(rawPresence)) {
+    return { kind: "not-in-game" };
+  }
+  const presenceUserId = normalizeId(rawPresence.userId);
+  if (viewerUserId && presenceUserId !== viewerUserId) {
+    return { kind: "not-in-game" };
+  }
+  if (Number(rawPresence.userPresenceType) !== 2) {
+    return { kind: "not-in-game" };
+  }
+  const placeId = normalizeId(rawPresence.placeId);
+  const gameInstanceId = normalizeGameInstanceId(rawPresence.gameId);
+  if (!placeId || !gameInstanceId) {
+    return { kind: "not-in-game" };
+  }
+  return {
+    kind: "in-game",
+    placeId,
+    universeId: normalizeOptionalId(rawPresence.universeId),
+    rootPlaceId: normalizeOptionalId(rawPresence.rootPlaceId),
+    gameInstanceId: gameInstanceId.toLowerCase(),
+    lastLocation: normalizeServerHistoryText(
+      rawPresence.lastLocation,
+      SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
+    )
+  };
+}
+
+function reduceServerHistoryAccount(
+  rawAccount,
+  rawSample,
+  now = Date.now(),
+  createSessionId = createServerHistorySessionId
+) {
+  const account = normalizeStoredServerHistoryAccount(rawAccount, now);
+  const sample = rawSample?.kind === "in-game"
+    ? normalizeServerHistoryPresence(
+        {
+          ...rawSample,
+          userPresenceType: 2,
+          gameId: rawSample.gameInstanceId
+        }
+      )
+    : { kind: "not-in-game" };
+  account.lastCheckedAt = now;
+  account.updatedAt = now;
+  const openSession = account.sessions.find((session) => session.isOpen) || null;
+
+  if (sample.kind !== "in-game") {
+    account.trackingState = "not-in-game";
+    if (!openSession) {
+      account.pendingNonGameCount = 0;
+      return account;
+    }
+    account.pendingNonGameCount = Math.min(2, account.pendingNonGameCount + 1);
+    if (openSession && account.pendingNonGameCount >= 2) {
+      openSession.isOpen = false;
+      openSession.endedAt = now;
+      openSession.endReason = "left";
+      account.pendingNonGameCount = 0;
+    }
+    return account;
+  }
+
+  account.trackingState = "in-game";
+  account.pendingNonGameCount = 0;
+  if (openSession) {
+    const sameServer = openSession.placeId === sample.placeId &&
+      openSession.gameInstanceId === sample.gameInstanceId;
+    const continuityGap = now - openSession.lastSeenAt;
+    if (
+      sameServer &&
+      continuityGap >= 0 &&
+      continuityGap <= SERVER_HISTORY_CONTINUITY_GAP_MS
+    ) {
+      openSession.lastSeenAt = now;
+      openSession.observationCount = Math.min(
+        Number.MAX_SAFE_INTEGER,
+        openSession.observationCount + 1
+      );
+      openSession.universeId = sample.universeId || openSession.universeId;
+      openSession.rootPlaceId = sample.rootPlaceId || openSession.rootPlaceId;
+      openSession.lastLocation = sample.lastLocation || openSession.lastLocation;
+      account.sessions.sort((left, right) => right.firstSeenAt - left.firstSeenAt);
+      return account;
+    }
+    openSession.isOpen = false;
+    openSession.endedAt = sameServer ? openSession.lastSeenAt : now;
+    openSession.endReason = sameServer ? "observation-gap" : "server-changed";
+  }
+
+  account.sessions.unshift({
+    sessionId: normalizeServerHistorySessionId(createSessionId()) ||
+      createServerHistorySessionId(),
+    placeId: sample.placeId,
+    universeId: sample.universeId,
+    rootPlaceId: sample.rootPlaceId,
+    gameInstanceId: sample.gameInstanceId,
+    lastLocation: sample.lastLocation,
+    firstSeenAt: now,
+    lastSeenAt: now,
+    observationCount: 1,
+    isOpen: true,
+    endedAt: null,
+    endReason: null
+  });
+  account.sessions = account.sessions
+    .sort((left, right) => right.firstSeenAt - left.firstSeenAt)
+    .slice(0, SERVER_HISTORY_MAX_SESSIONS);
+  return account;
+}
+
+async function fetchServerHistoryPresence(viewerUserId) {
+  const payload = await fetchJson("https://presence.roblox.com/v1/presence/users", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ userIds: [Number(viewerUserId)] })
+  });
+  if (!Array.isArray(payload?.userPresences)) {
+    throw new RobloxApiError(502);
+  }
+  const rawPresence = payload.userPresences.find(
+    (entry) => normalizeId(entry?.userId) === viewerUserId
+  );
+  const presenceType = Number(rawPresence?.userPresenceType);
+  if (
+    !rawPresence ||
+    !Number.isInteger(presenceType) ||
+    presenceType < 0 ||
+    presenceType > 3
+  ) {
+    throw new RobloxApiError(502);
+  }
+  const sample = normalizeServerHistoryPresence(rawPresence, viewerUserId);
+  if (presenceType === 2 && sample.kind !== "in-game") {
+    throw new RobloxApiError(502);
+  }
+  return sample;
+}
+
+function isServerHistoryLifecycleCurrent(generation) {
+  return serverHistoryFeatureReady &&
+    serverHistoryFeatureEnabled &&
+    generation === serverHistoryLifecycleGeneration;
+}
+
+function enqueueServerHistoryPollWrite(viewerUserId, sample, now, generation) {
+  const operation = serverHistoryStorageWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      if (!isServerHistoryLifecycleCurrent(generation)) {
+        return false;
+      }
+      const storage = await readServerHistoryStorage(now);
+      if (!isServerHistoryLifecycleCurrent(generation)) {
+        return false;
+      }
+      storage.accounts[viewerUserId] = reduceServerHistoryAccount(
+        storage.accounts[viewerUserId],
+        sample,
+        now
+      );
+      if (!isServerHistoryLifecycleCurrent(generation)) {
+        return false;
+      }
+      await writeServerHistoryStorage(storage);
+      return true;
+    });
+  serverHistoryStorageWriteTail = operation.catch(() => undefined);
+  return operation;
+}
+
+async function runServerHistoryPoll(options = {}) {
+  if (!serverHistoryFeatureReady || !serverHistoryFeatureEnabled) {
+    return { ok: false, errorCode: "disabled" };
+  }
+  if (serverHistoryPollPromise) {
+    return serverHistoryPollPromise;
+  }
+  const generation = serverHistoryLifecycleGeneration;
+  const poll = (async () => {
+    try {
+      const viewerUserId = normalizeId(options.viewerUserId) ||
+        await getAuthenticatedViewerUserId();
+      if (!isServerHistoryLifecycleCurrent(generation)) {
+        return { ok: false, errorCode: "disabled" };
+      }
+      const sample = typeof options.fetchPresence === "function"
+        ? await options.fetchPresence(viewerUserId)
+        : await fetchServerHistoryPresence(viewerUserId);
+      if (!isServerHistoryLifecycleCurrent(generation)) {
+        return { ok: false, errorCode: "disabled" };
+      }
+      const now = Number.isSafeInteger(options.now) && options.now > 0
+        ? options.now
+        : Date.now();
+      const stored = await enqueueServerHistoryPollWrite(
+        viewerUserId,
+        sample,
+        now,
+        generation
+      );
+      return stored
+        ? { ok: true, viewerUserId, sample }
+        : { ok: false, errorCode: "disabled" };
+    } catch (error) {
+      if (error?.status === 401) {
+        authenticatedUserRequest = null;
+        return { ok: false, errorCode: "signed-out" };
+      }
+      return { ok: false, errorCode: "unavailable" };
+    }
+  })();
+  const wrappedPoll = poll.finally(() => {
+    if (serverHistoryPollPromise === wrappedPoll) {
+      serverHistoryPollPromise = null;
+    }
+  });
+  serverHistoryPollPromise = wrappedPoll;
+  return wrappedPoll;
+}
+
+function ensureServerHistoryAlarm() {
+  if (
+    !serverHistoryFeatureReady ||
+    !serverHistoryFeatureEnabled ||
+    !chrome.alarms?.create
+  ) {
+    return;
+  }
+  const generation = serverHistoryLifecycleGeneration;
+  const lifecycleStillEnabled = () =>
+    serverHistoryFeatureReady &&
+    serverHistoryFeatureEnabled &&
+    generation === serverHistoryLifecycleGeneration;
+  const createAlarm = () => {
+    if (!lifecycleStillEnabled()) return;
+    chrome.alarms.create(SERVER_HISTORY_ALARM_NAME, {
+      periodInMinutes: SERVER_HISTORY_ALARM_PERIOD_MINUTES
+    });
+  };
+  if (!chrome.alarms.get) {
+    createAlarm();
+    return;
+  }
+  chrome.alarms.get(SERVER_HISTORY_ALARM_NAME, (alarm) => {
+    void chrome.runtime.lastError;
+    if (!lifecycleStillEnabled()) return;
+    if (!alarm || alarm.periodInMinutes !== SERVER_HISTORY_ALARM_PERIOD_MINUTES) {
+      createAlarm();
+    }
+  });
+}
+
+function clearServerHistoryAlarm() {
+  chrome.alarms?.clear?.(SERVER_HISTORY_ALARM_NAME, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+function applyServerHistoryFeatureValue(rawValue, runWhenEnabled = false) {
+  const wasEnabled = serverHistoryFeatureEnabled;
+  const nextEnabled = getServerHistoryFeatureValue(rawValue);
+  serverHistoryFeatureReady = true;
+  if (wasEnabled !== nextEnabled) {
+    serverHistoryLifecycleGeneration += 1;
+    serverHistoryStatusCache.clear();
+    serverHistoryStatusRequests.clear();
+  }
+  serverHistoryFeatureEnabled = nextEnabled;
+  if (!nextEnabled) {
+    clearServerHistoryAlarm();
+    return;
+  }
+  ensureServerHistoryAlarm();
+  if (runWhenEnabled && (!wasEnabled || runWhenEnabled === "startup")) {
+    void runServerHistoryPoll();
+  }
+}
+
+function syncServerHistoryFeatureFromStorage(runWhenEnabled = false) {
+  if (!chrome.storage?.local?.get) {
+    applyServerHistoryFeatureValue(null, false);
+    return Promise.resolve();
+  }
+  const sync = new Promise((resolve) => {
+    chrome.storage.local.get(
+      { [FEATURE_SETTINGS_STORAGE_KEY]: null },
+      (result) => {
+        void chrome.runtime.lastError;
+        applyServerHistoryFeatureValue(
+          result?.[FEATURE_SETTINGS_STORAGE_KEY],
+          runWhenEnabled
+        );
+        resolve();
+      }
+    );
+  });
+  const trackedSync = sync.finally(() => {
+    if (serverHistoryFeatureSyncPromise === trackedSync) {
+      serverHistoryFeatureSyncPromise = null;
+    }
+  });
+  serverHistoryFeatureSyncPromise = trackedSync;
+  return trackedSync;
+}
+
+async function fetchServerHistoryExperienceDetails(universeIds) {
+  const ids = [...new Set(universeIds.map(normalizeId).filter(Boolean))].slice(
+    0,
+    SERVER_HISTORY_MAX_SESSIONS
+  );
+  const details = new Map();
+  if (ids.length === 0) {
+    return details;
+  }
+  const endpoint = new URL("/v1/games", "https://games.roblox.com");
+  endpoint.searchParams.set("universeIds", ids.join(","));
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  if (!Array.isArray(payload?.data)) {
+    throw new RobloxApiError(502);
+  }
+  for (const entry of payload.data) {
+    const universeId = normalizeId(entry?.id);
+    if (!universeId || !ids.includes(universeId)) {
+      continue;
+    }
+    details.set(universeId, {
+      experienceName: normalizeServerHistoryText(
+        entry?.name,
+        SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
+      ),
+      rootPlaceId: normalizeOptionalId(entry?.rootPlaceId)
+    });
+  }
+  return details;
+}
+
+function sanitizeServerHistorySessionForResponse(session, details = null) {
+  const experienceName = details?.experienceName ||
+    session.lastLocation ||
+    "Unknown Experience";
+  return Object.freeze({
+    sessionId: session.sessionId,
+    placeId: session.placeId,
+    universeId: session.universeId,
+    rootPlaceId: details?.rootPlaceId || session.rootPlaceId || session.placeId,
+    experienceName,
+    firstSeenAt: session.firstSeenAt,
+    lastSeenAt: session.lastSeenAt,
+    endedAt: session.endedAt,
+    observationCount: session.observationCount,
+    isCurrent: session.isOpen === true,
+    endReason: session.endReason
+  });
+}
+
+async function getServerHistoryResponse(requestId) {
+  if (!serverHistoryFeatureReady) {
+    await (serverHistoryFeatureSyncPromise ||
+      syncServerHistoryFeatureFromStorage(false));
+  }
+  if (!serverHistoryFeatureReady || !serverHistoryFeatureEnabled) {
+    return {
+      ok: true,
+      requestId,
+      enabled: false,
+      sessions: [],
+      tracking: { state: "disabled", lastCheckedAt: 0, approximate: true }
+    };
+  }
+  let viewerUserId;
+  try {
+    viewerUserId = await getAuthenticatedViewerUserId();
+  } catch (error) {
+    if (error?.status === 401) authenticatedUserRequest = null;
+    return {
+      ok: false,
+      requestId,
+      errorCode: error?.status === 401 ? "signed-out" : "unavailable"
+    };
+  }
+  const pollResult = await runServerHistoryPoll({ viewerUserId });
+  let storage;
+  try {
+    await serverHistoryStorageWriteTail.catch(() => undefined);
+    storage = await readServerHistoryStorage();
+  } catch {
+    return { ok: false, requestId, errorCode: "unavailable" };
+  }
+  const account = storage.accounts[viewerUserId] || createEmptyServerHistoryAccount();
+  let details = new Map();
+  try {
+    details = await fetchServerHistoryExperienceDetails(
+      account.sessions.map((session) => session.universeId).filter(Boolean)
+    );
+  } catch {
+    // Stored place/location data still makes the local history useful offline.
+  }
+  return {
+    ok: true,
+    requestId,
+    enabled: true,
+    sessions: account.sessions.map((session) =>
+      sanitizeServerHistorySessionForResponse(
+        session,
+        session.universeId ? details.get(session.universeId) : null
+      )
+    ),
+    tracking: {
+      state: pollResult.ok ? account.trackingState : "error",
+      lastCheckedAt: account.lastCheckedAt,
+      approximate: true,
+      ...(pollResult.ok ? {} : { errorCode: pollResult.errorCode })
+    }
+  };
+}
+
+function handleGetServerHistoryMessage(message, sender, sendResponse) {
+  if (message?.type !== SERVER_HISTORY_GET_MESSAGE_TYPE) return false;
+  const requestId = normalizeServerHistoryRequestId(message.requestId);
+  if (requestId === null || getTrustedRobloxTopFrameTabId(sender) === null) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
+    return false;
+  }
+  getServerHistoryResponse(requestId)
+    .then(sendResponse)
+    .catch(() => sendResponse({ ok: false, requestId, errorCode: "unavailable" }));
+  return true;
+}
+
+async function getOwnedServerHistorySession(viewerUserId, sessionId) {
+  await serverHistoryStorageWriteTail.catch(() => undefined);
+  const storage = await readServerHistoryStorage();
+  const account = storage.accounts[viewerUserId];
+  const session = account?.sessions.find((entry) => entry.sessionId === sessionId);
+  return session || null;
+}
+
+async function scanServerHistoryPublicServers(session) {
+  const sortOrders = ["Desc", "Asc"];
+  let listWasLimited = false;
+  for (
+    let requestIndex = 0;
+    requestIndex < SERVER_HISTORY_MAX_SERVER_REQUESTS;
+    requestIndex += 1
+  ) {
+    const endpoint = new URL(
+      `/v1/games/${session.placeId}/servers/Public`,
+      "https://games.roblox.com"
+    );
+    endpoint.searchParams.set("sortOrder", sortOrders[requestIndex]);
+    endpoint.searchParams.set("excludeFullGames", "false");
+    endpoint.searchParams.set("limit", String(SERVER_HISTORY_SERVER_PAGE_SIZE));
+    let payload;
+    try {
+      payload = await fetchJson(endpoint, {
+        cache: "no-store",
+        credentials: "include",
+        headers: { Accept: "application/json" }
+      }, { maxAttempts: 1 });
+    } catch (error) {
+      return {
+        status: "unknown",
+        playing: null,
+        maxPlayers: null,
+        source: null,
+        reason: error?.status === 429 ? "rate-limited" : "unavailable"
+      };
+    }
+    if (!Array.isArray(payload?.data)) {
+      return {
+        status: "unknown",
+        playing: null,
+        maxPlayers: null,
+        source: null,
+        reason: "unavailable"
+      };
+    }
+    for (const entry of payload.data) {
+      const gameInstanceId = normalizeGameInstanceId(entry?.id);
+      if (gameInstanceId?.toLowerCase() === session.gameInstanceId) {
+        const playing = Number(entry?.playing);
+        const maxPlayers = Number(entry?.maxPlayers);
+        const hasValidCount = Number.isSafeInteger(playing) &&
+          playing >= 0 &&
+          Number.isSafeInteger(maxPlayers) &&
+          maxPlayers > 0 &&
+          playing <= maxPlayers;
+        return {
+          status: "active",
+          playing: hasValidCount ? playing : null,
+          maxPlayers: hasValidCount ? maxPlayers : null,
+          source: "public-server-list",
+          reason: null
+        };
+      }
+    }
+    const hasMore = typeof payload.nextPageCursor === "string" &&
+      payload.nextPageCursor.length <= 2_048 &&
+      payload.nextPageCursor.trim() === payload.nextPageCursor &&
+      payload.nextPageCursor.length > 0;
+    if (!hasMore) {
+      // One direction returned the complete public directory.
+      break;
+    }
+    listWasLimited = true;
+  }
+  return {
+    status: "unknown",
+    playing: null,
+    maxPlayers: null,
+    source: null,
+    reason: listWasLimited ? "list-limited" : "not-visible"
+  };
+}
+
+async function checkServerHistoryStatus(viewerUserId, session, options = {}) {
+  const now = Number.isSafeInteger(options.now) && options.now > 0
+    ? options.now
+    : Date.now();
+  const cacheKey = `${viewerUserId}:${session.sessionId}`;
+  const generation = serverHistoryLifecycleGeneration;
+  const cached = serverHistoryStatusCache.get(cacheKey);
+  if (!options.forceRefresh && cached && now - cached.checkedAt <= SERVER_HISTORY_STATUS_CACHE_TTL_MS) {
+    return cached;
+  }
+  // A manual refresh bypasses only a completed cache entry. Reuse an identical
+  // in-flight scan so overlapping tabs cannot multiply Roblox server-list
+  // requests against the same small shared quota.
+  if (serverHistoryStatusRequests.has(cacheKey)) {
+    return serverHistoryStatusRequests.get(cacheKey);
+  }
+  const request = (async () => {
+    const [publicResult, presenceResult] = await Promise.all([
+      typeof options.scanPublicServers === "function"
+        ? options.scanPublicServers(session)
+        : scanServerHistoryPublicServers(session),
+      (typeof options.fetchPresence === "function"
+        ? options.fetchPresence(viewerUserId)
+        : fetchServerHistoryPresence(viewerUserId)
+      ).catch(() => null)
+    ]);
+    let result = publicResult;
+    if (
+      result.status !== "active" &&
+      presenceResult?.kind === "in-game" &&
+      presenceResult.placeId === session.placeId &&
+      presenceResult.gameInstanceId === session.gameInstanceId
+    ) {
+      result = {
+        status: "active",
+        playing: null,
+        maxPlayers: null,
+        source: "current-presence",
+        reason: null
+      };
+    }
+    const normalizedResult = Object.freeze({
+      status: result.status === "active" ? "active" : "unknown",
+      playing: Number.isSafeInteger(result.playing) ? result.playing : null,
+      maxPlayers: Number.isSafeInteger(result.maxPlayers) ? result.maxPlayers : null,
+      checkedAt: now,
+      source: result.source === "public-server-list" || result.source === "current-presence"
+        ? result.source
+        : null,
+      reason: typeof result.reason === "string" ? result.reason : null
+    });
+    if (
+      options.allowCacheWhenDisabled === true ||
+      isServerHistoryLifecycleCurrent(generation)
+    ) {
+      serverHistoryStatusCache.set(cacheKey, normalizedResult);
+    }
+    return normalizedResult;
+  })().finally(() => {
+    // Disabling and re-enabling the feature clears the request map. An older
+    // lifecycle's eventual completion must not evict a newer replacement scan
+    // registered under the same account/session key.
+    if (serverHistoryStatusRequests.get(cacheKey) === request) {
+      serverHistoryStatusRequests.delete(cacheKey);
+    }
+  });
+  serverHistoryStatusRequests.set(cacheKey, request);
+  return request;
+}
+
+function handleCheckServerHistoryStatusMessage(message, sender, sendResponse) {
+  if (message?.type !== SERVER_HISTORY_STATUS_MESSAGE_TYPE) return false;
+  const requestId = normalizeServerHistoryRequestId(message.requestId);
+  const sessionId = normalizeServerHistorySessionId(message.sessionId);
+  if (
+    requestId === null ||
+    !sessionId ||
+    (message.forceRefresh !== undefined && typeof message.forceRefresh !== "boolean") ||
+    getTrustedRobloxTopFrameTabId(sender) === null
+  ) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
+    return false;
+  }
+  (async () => {
+    if (!serverHistoryFeatureEnabled) {
+      return { ok: false, requestId, sessionId, errorCode: "disabled" };
+    }
+    const viewerUserId = await getAuthenticatedViewerUserId();
+    const session = await getOwnedServerHistorySession(viewerUserId, sessionId);
+    if (!session) {
+      return { ok: false, requestId, sessionId, errorCode: "not-found" };
+    }
+    const status = await checkServerHistoryStatus(viewerUserId, session, {
+      forceRefresh: message.forceRefresh === true
+    });
+    return { ok: true, requestId, sessionId, ...status };
+  })().then(sendResponse).catch((error) => {
+    if (error?.status === 401) authenticatedUserRequest = null;
+    sendResponse({
+      ok: false,
+      requestId,
+      errorCode: error?.status === 401 ? "signed-out" : "unavailable"
+    });
+  });
+  return true;
+}
+
+async function clearServerHistoryForViewer(viewerUserId) {
+  const operation = serverHistoryStorageWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      const storage = await readServerHistoryStorage();
+      const cleared = storage.accounts[viewerUserId]?.sessions.length || 0;
+      delete storage.accounts[viewerUserId];
+      await writeServerHistoryStorage(storage);
+      for (const key of serverHistoryStatusCache.keys()) {
+        if (key.startsWith(`${viewerUserId}:`)) serverHistoryStatusCache.delete(key);
+      }
+      return cleared;
+    });
+  serverHistoryStorageWriteTail = operation.catch(() => undefined);
+  return operation;
+}
+
+function handleClearServerHistoryMessage(message, sender, sendResponse) {
+  if (message?.type !== SERVER_HISTORY_CLEAR_MESSAGE_TYPE) return false;
+  const requestId = normalizeServerHistoryRequestId(message.requestId);
+  const expectedSessionId = normalizeServerHistorySessionId(
+    message.expectedSessionId
+  );
+  if (
+    requestId === null ||
+    !expectedSessionId ||
+    getTrustedRobloxTopFrameTabId(sender) === null
+  ) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
+    return false;
+  }
+  (async () => {
+    const viewerUserId = await getAuthenticatedViewerUserId();
+    const expectedSession = await getOwnedServerHistorySession(
+      viewerUserId,
+      expectedSessionId
+    );
+    if (!expectedSession) {
+      return { ok: false, requestId, errorCode: "account-changed" };
+    }
+    const cleared = await clearServerHistoryForViewer(viewerUserId);
+    return { ok: true, requestId, cleared };
+  })().then(sendResponse).catch((error) => {
+    if (error?.status === 401) authenticatedUserRequest = null;
+    sendResponse({
+      ok: false,
+      requestId,
+      errorCode: error?.status === 401 ? "signed-out" : "unavailable"
+    });
+  });
+  return true;
+}
+
+async function executeServerHistoryRejoin(tabId, placeId, gameInstanceId) {
+  if (typeof chrome.scripting?.executeScript !== "function") return "unavailable";
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      world: "MAIN",
+      args: [Number(placeId), gameInstanceId],
+      func: async (numericPlaceId, serverId) => {
+        const launcher = globalThis.Roblox?.GameLauncher;
+        if (typeof launcher?.joinGameInstance === "function") {
+          try {
+            const result = Reflect.apply(launcher.joinGameInstance, launcher, [
+              numericPlaceId,
+              serverId
+            ]);
+            if (result && typeof result.then === "function") await result;
+            return "started";
+          } catch {
+            return "failed";
+          }
+        }
+        // Deep-link fallbacks are not exact: Roblox can ignore gameInstanceId
+        // and route to another server. Fail closed unless its own exact
+        // GameLauncher instance API is available.
+        return "unavailable";
+      }
+    });
+    const result = Array.isArray(results)
+      ? results.find((entry) => entry?.frameId === 0)?.result
+      : null;
+    return ["started", "unavailable", "failed"].includes(result)
+      ? result
+      : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+function handleRejoinServerHistoryMessage(message, sender, sendResponse) {
+  if (message?.type !== SERVER_HISTORY_REJOIN_MESSAGE_TYPE) return false;
+  const requestId = normalizeServerHistoryRequestId(message.requestId);
+  const sessionId = normalizeServerHistorySessionId(message.sessionId);
+  const tabId = getTrustedRobloxTopFrameTabId(sender);
+  if (requestId === null || !sessionId || tabId === null) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
+    return false;
+  }
+  (async () => {
+    if (!serverHistoryFeatureEnabled) {
+      return { ok: false, requestId, errorCode: "disabled" };
+    }
+    const viewerUserId = await getAuthenticatedViewerUserId();
+    const session = await getOwnedServerHistorySession(viewerUserId, sessionId);
+    if (!session) return { ok: false, requestId, errorCode: "not-found" };
+    const code = await executeServerHistoryRejoin(
+      tabId,
+      session.placeId,
+      session.gameInstanceId
+    );
+    return code === "started"
+      ? { ok: true, requestId, sessionId }
+      : { ok: false, requestId, sessionId, errorCode: code };
+  })().then(sendResponse).catch((error) => {
+    if (error?.status === 401) authenticatedUserRequest = null;
+    sendResponse({
+      ok: false,
+      requestId,
+      sessionId,
+      errorCode: error?.status === 401 ? "signed-out" : "unavailable"
+    });
+  });
+  return true;
+}
+
+function resetServerHistoryStateForTests() {
+  serverHistoryFeatureEnabled = false;
+  serverHistoryFeatureReady = false;
+  serverHistoryFeatureSyncPromise = null;
+  serverHistoryLifecycleGeneration += 1;
+  serverHistoryPollPromise = null;
+  serverHistoryStorageWriteTail = Promise.resolve();
+  serverHistoryStorageOverride = null;
+  serverHistorySessionIdSequence = 0;
+  serverHistoryStatusCache.clear();
+  serverHistoryStatusRequests.clear();
+}
+
 function normalizePrivateServerPlaceId(value) {
   return normalizeRandomServerPlaceId(value);
 }
@@ -7696,6 +8802,84 @@ if (globalThis.__rslBackgroundTestHooks) {
       maxChartPages: GAME_CCU_HISTORY_MAX_CHART_PAGES,
       feedVersion: GAME_CCU_HISTORY_FEED_VERSION
     }),
+    getServerHistoryFeatureValue,
+    normalizeServerHistoryRequestId,
+    normalizeServerHistorySessionId,
+    normalizeServerHistoryTimestamp,
+    normalizeStoredServerHistorySession,
+    normalizeStoredServerHistoryAccount,
+    normalizeServerHistoryStorage,
+    normalizeServerHistoryPresence,
+    reduceServerHistoryAccount,
+    createEmptyServerHistoryAccount,
+    createEmptyServerHistoryStorage,
+    createServerHistorySessionId,
+    readServerHistoryStorage,
+    writeServerHistoryStorage,
+    fetchServerHistoryPresence,
+    enqueueServerHistoryPollWrite,
+    runServerHistoryPoll,
+    ensureServerHistoryAlarm,
+    clearServerHistoryAlarm,
+    applyServerHistoryFeatureValue,
+    syncServerHistoryFeatureFromStorage,
+    fetchServerHistoryExperienceDetails,
+    sanitizeServerHistorySessionForResponse,
+    getServerHistoryResponse,
+    scanServerHistoryPublicServers,
+    checkServerHistoryStatus,
+    clearServerHistoryForViewer,
+    executeServerHistoryRejoin,
+    handleGetServerHistoryMessage,
+    handleCheckServerHistoryStatusMessage,
+    handleClearServerHistoryMessage,
+    handleRejoinServerHistoryMessage,
+    resetServerHistoryStateForTests,
+    setServerHistoryStorageOverrideForTests(override) {
+      serverHistoryStorageOverride = override;
+    },
+    setServerHistoryFeatureStateForTests(enabled, ready = true) {
+      serverHistoryFeatureReady = ready === true;
+      serverHistoryFeatureEnabled = enabled === true;
+      serverHistoryLifecycleGeneration += 1;
+    },
+    invalidateServerHistoryLifecycleForTests() {
+      serverHistoryLifecycleGeneration += 1;
+      serverHistoryFeatureEnabled = false;
+    },
+    waitForServerHistoryWritesForTests() {
+      return serverHistoryStorageWriteTail.catch(() => undefined);
+    },
+    getServerHistoryStatusCacheForTests() {
+      return new Map(serverHistoryStatusCache);
+    },
+    getServerHistoryStateForTests() {
+      return {
+        featureEnabled: serverHistoryFeatureEnabled,
+        featureReady: serverHistoryFeatureReady,
+        generation: serverHistoryLifecycleGeneration,
+        pollInFlight: Boolean(serverHistoryPollPromise),
+        statusCacheSize: serverHistoryStatusCache.size,
+        statusRequestsInFlight: serverHistoryStatusRequests.size
+      };
+    },
+    serverHistoryConstants: Object.freeze({
+      featureKey: SERVER_HISTORY_FEATURE_KEY,
+      storageKey: SERVER_HISTORY_STORAGE_KEY,
+      storageVersion: SERVER_HISTORY_STORAGE_VERSION,
+      alarmName: SERVER_HISTORY_ALARM_NAME,
+      alarmPeriodMinutes: SERVER_HISTORY_ALARM_PERIOD_MINUTES,
+      getMessageType: SERVER_HISTORY_GET_MESSAGE_TYPE,
+      statusMessageType: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
+      clearMessageType: SERVER_HISTORY_CLEAR_MESSAGE_TYPE,
+      rejoinMessageType: SERVER_HISTORY_REJOIN_MESSAGE_TYPE,
+      maxSessions: SERVER_HISTORY_MAX_SESSIONS,
+      maxAccounts: SERVER_HISTORY_MAX_ACCOUNTS,
+      continuityGapMs: SERVER_HISTORY_CONTINUITY_GAP_MS,
+      statusCacheTtlMs: SERVER_HISTORY_STATUS_CACHE_TTL_MS,
+      maxServerRequests: SERVER_HISTORY_MAX_SERVER_REQUESTS,
+      serverPageSize: SERVER_HISTORY_SERVER_PAGE_SIZE
+    }),
     parsePrivateServerCursor,
     getPrivateServerSupport,
     getPrivateServerSupportForUniverse,
@@ -7751,10 +8935,12 @@ if (globalThis.__rslBackgroundTestHooks) {
 chrome.runtime.onInstalled?.addListener(() => {
   syncContextMenusFromStorage();
   syncGameCcuHistoryFeatureFromStorage(true);
+  syncServerHistoryFeatureFromStorage(true);
 });
 
 chrome.runtime.onStartup?.addListener(() => {
   syncGameCcuHistoryFeatureFromStorage("stale");
+  syncServerHistoryFeatureFromStorage("startup");
 });
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
@@ -7763,6 +8949,13 @@ chrome.alarms?.onAlarm?.addListener((alarm) => {
     gameCcuHistoryFeatureEnabled
   ) {
     void runGameCcuHistoryCollection();
+  }
+  if (
+    alarm?.name === SERVER_HISTORY_ALARM_NAME &&
+    serverHistoryFeatureReady &&
+    serverHistoryFeatureEnabled
+  ) {
+    void runServerHistoryPoll();
   }
 });
 
@@ -7774,6 +8967,10 @@ chrome.storage?.onChanged?.addListener((changes, areaName) => {
     changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
   );
   applyGameCcuHistoryFeatureValue(
+    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
+    true
+  );
+  applyServerHistoryFeatureValue(
     changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
     true
   );
@@ -7815,6 +9012,22 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === GAME_CCU_HISTORY_MESSAGE_TYPE) {
     return handleGameCcuHistoryMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === SERVER_HISTORY_GET_MESSAGE_TYPE) {
+    return handleGetServerHistoryMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === SERVER_HISTORY_STATUS_MESSAGE_TYPE) {
+    return handleCheckServerHistoryStatusMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === SERVER_HISTORY_CLEAR_MESSAGE_TYPE) {
+    return handleClearServerHistoryMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === SERVER_HISTORY_REJOIN_MESSAGE_TYPE) {
+    return handleRejoinServerHistoryMessage(message, sender, sendResponse);
   }
 
   if (message?.type === PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE) {
@@ -7916,3 +9129,4 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 syncGameCcuHistoryFeatureFromStorage("stale");
+syncServerHistoryFeatureFromStorage("startup");

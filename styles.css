@@ -2469,6 +2469,271 @@
   cursor: wait;
 }
 
+/* Server History is a large local-history surface, but keeps the same Roblox
+   Foundation colors, radii, controls, and focus treatment as RoTool's other dialogs. */
+.rsl-server-history-dialog .rsl-server-history__surface {
+  width: min(920px, 100%);
+  height: min(760px, calc(100dvh - 32px));
+}
+
+.rsl-server-history__body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  padding: 24px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: hidden;
+}
+
+.rsl-server-history__header {
+  gap: 6px;
+}
+
+.rsl-server-history__accuracy {
+  max-width: 760px;
+  padding: 10px 12px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  background: var(--color-surface-200, var(--rsl-fallback-raised));
+  border-left: 3px solid var(--color-system-warning, #d99b35);
+  border-radius: var(--radius-small, 6px);
+}
+
+.rsl-server-history__tracking {
+  color: var(--color-content-muted, var(--rsl-fallback-muted));
+  font-size: 13px;
+}
+
+.rsl-server-history__live-status {
+  min-height: 20px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rsl-server-history__live-status:empty {
+  display: none;
+}
+
+.rsl-server-history__live-status--error,
+.rsl-server-history__empty--error {
+  color: var(--color-system-alert, #ff8a8a);
+}
+
+.rsl-server-history__list {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 6px 2px 2px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-color: var(--color-content-muted, var(--rsl-fallback-muted)) transparent;
+  scrollbar-width: thin;
+}
+
+.rsl-server-history__item {
+  display: grid;
+  min-width: 0;
+  min-height: 108px;
+  padding: 14px;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(150px, auto);
+  align-items: center;
+  gap: 14px;
+  background: var(--color-surface-200, var(--rsl-fallback-raised));
+  border: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+  border-radius: var(--radius-medium, 8px);
+}
+
+.rsl-server-history__thumbnail,
+.rsl-server-history__thumbnail img {
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+
+.rsl-server-history__thumbnail {
+  overflow: hidden;
+  background: var(--color-surface-300, var(--rsl-fallback-raised));
+  border-radius: var(--radius-medium, 8px);
+}
+
+.rsl-server-history__thumbnail img {
+  object-fit: cover;
+}
+
+.rsl-server-history__main {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.rsl-server-history__title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.rsl-server-history__game-link {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rsl-server-history__game-link:hover {
+  text-decoration: underline;
+}
+
+.rsl-server-history__game-link:focus-visible {
+  border-radius: var(--radius-xsmall, 4px);
+  outline: var(--stroke-thicker, 2px) solid
+    var(--color-selection-start, #6aa7ff);
+  outline-offset: 2px;
+}
+
+.rsl-server-history__session-state {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  background: var(--color-surface-300, rgb(255 255 255 / 8%));
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.rsl-server-history__session-state--current {
+  color: var(--color-system-success, #55d685);
+}
+
+.rsl-server-history__timing {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.rsl-server-history__status {
+  min-height: 20px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.rsl-server-history__status--active {
+  color: var(--color-system-success, #55d685);
+  font-weight: 700;
+}
+
+.rsl-server-history__status--unknown {
+  display: grid;
+  gap: 1px;
+  color: var(--color-system-warning, #e6aa47);
+}
+
+.rsl-server-history__status--unknown > span {
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 12px;
+}
+
+.rsl-server-history__status-checked {
+  display: block;
+  color: var(--color-content-muted, var(--rsl-fallback-muted));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.rsl-server-history__actions {
+  display: grid;
+  min-width: 150px;
+  gap: 7px;
+}
+
+.rsl-server-history__action {
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 12px;
+  font-size: 13px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.rsl-server-history__action:disabled,
+.rsl-server-history__action[aria-disabled="true"],
+.rsl-server-history__footer .rsl-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.rsl-server-history__empty {
+  display: grid;
+  min-height: 220px;
+  padding: 28px;
+  place-content: center;
+  gap: 7px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  text-align: center;
+}
+
+.rsl-server-history__empty strong {
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  font-size: 17px;
+}
+
+.rsl-server-history__footer {
+  padding-top: 16px;
+  border-top: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+}
+
+.rsl-server-history__footer [data-rsl-server-history-clear] {
+  margin-inline-end: auto;
+}
+
+.rsl-server-history__clear-confirmation {
+  display: flex;
+  min-height: 64px;
+  padding: 10px 24px;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-surface-200, var(--rsl-fallback-raised));
+  border-top: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+}
+
+.rsl-server-history__clear-confirmation[hidden] {
+  display: none;
+}
+
+.rsl-server-history__clear-confirmation > span {
+  min-width: 0;
+  margin-inline-end: auto;
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rsl-server-history__clear-confirmation .rsl-button {
+  min-height: 44px;
+}
+
 /* Player counts reuse existing native-shaped leaves when metadata exists. */
 .rsl-game-tile-ccu-metadata {
   display: flex;
@@ -3449,6 +3714,50 @@
     padding: 16px 20px 20px;
   }
 
+  .rsl-server-history-dialog {
+    padding: 8px;
+  }
+
+  .rsl-server-history-dialog .rsl-server-history__surface {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .rsl-server-history__body {
+    padding: 18px;
+  }
+
+  .rsl-server-history__item {
+    grid-template-columns: 56px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .rsl-server-history__thumbnail,
+  .rsl-server-history__thumbnail img {
+    width: 56px;
+    height: 56px;
+  }
+
+  .rsl-server-history__actions {
+    grid-column: 1 / -1;
+    min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rsl-server-history__clear-confirmation {
+    padding: 12px 18px;
+    flex-wrap: wrap;
+  }
+
+  .rsl-server-history__clear-confirmation > span {
+    flex-basis: 100%;
+  }
+
+  .rsl-server-history__footer {
+    padding: 14px 18px 18px;
+  }
+
   .rsl-manager__item {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -3456,6 +3765,16 @@
 
   .rsl-manager__controls {
     margin-left: 40px;
+  }
+}
+
+@media (max-width: 390px) {
+  .rsl-server-history__actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rsl-server-history__footer .rsl-button {
+    flex-basis: 100%;
   }
 }
 

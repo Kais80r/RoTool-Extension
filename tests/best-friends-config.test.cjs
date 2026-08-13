@@ -12,7 +12,7 @@ const pageBridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.41");
+assert.equal(manifest.version, "0.17.0");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 const mainWorldEntry = manifest.content_scripts.find((entry) => entry.world === "MAIN");
@@ -453,7 +453,10 @@ assert.match(
 
 assert.match(readme, /On Roblox \*\*Home\*\*, RoTool adds a \*\*Best Friends\*\* carousel/);
 assert.match(readme, /stored separately for each signed-in Roblox account/);
-assert.match(readme, /Only the selected Best Friends user IDs are saved locally/);
+assert.match(
+  readme,
+  /Best Friends presence results, enriched names, and thumbnails stay in memory; only its selected user IDs are saved/
+);
 assert.match(readme, /\*\*Chat\*\* is included only when Roblox reports that app chat is enabled/);
 assert.match(readme, /Verified and Roblox Plus badges/);
 

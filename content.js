@@ -13,6 +13,12 @@
   const BEST_FRIENDS_DIALOG_ID = "rsl-best-friends-dialog";
   const PRIVATE_SERVERS_DIALOG_ID = "rsl-private-servers-dialog";
   const FEATURE_SETTINGS_DIALOG_ID = "rsl-feature-settings-dialog";
+  const SERVER_HISTORY_DIALOG_ID = "rsl-server-history-dialog";
+  const SERVER_HISTORY_ROW_ID = "rsl-server-history-row";
+  const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
+  const SERVER_HISTORY_STATUS_MESSAGE_TYPE = "rsl:check-server-history-status";
+  const SERVER_HISTORY_CLEAR_MESSAGE_TYPE = "rsl:clear-server-history";
+  const SERVER_HISTORY_REJOIN_MESSAGE_TYPE = "rsl:rejoin-server-history";
   const FEATURE_SETTINGS_NAV_ID = "rsl-navbar-settings";
   const NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE = "data-rsl-native-sidebar-hidden";
   const BEST_FRIENDS_CAROUSEL_ATTRIBUTE = "data-rsl-best-friends-carousel";
@@ -162,6 +168,8 @@
   const PRIVATE_SERVER_MAX_AUTO_PAGES = 100;
   const PRIVATE_SERVER_OWNER_THUMBNAIL_CACHE_MAX_ENTRIES = 500;
   const PRIVATE_SERVER_OWNER_THUMBNAIL_UNAVAILABLE_TTL_MS = 5 * 60_000;
+  const SERVER_HISTORY_REQUEST_TIMEOUT_MS = 120_000;
+  const SERVER_HISTORY_LIMIT = 30;
 
   const QUICK_PLAY_NATIVE_HOST_SELECTOR = [
     ".game-card-thumb-container",
@@ -518,6 +526,12 @@
       description: "Customize shortcuts and native links in Roblox's sidebar.",
       children: [
         Object.freeze({
+          key: "sidebarServerHistory",
+          label: "Server History",
+          description: "Show RoTool's Server History sidebar button.",
+          section: "RoTool"
+        }),
+        Object.freeze({
           key: "sidebarCustomShortcuts",
           label: "Custom Shortcuts",
           description: "Show saved sidebar links and the Add shortcut button.",
@@ -668,6 +682,13 @@
       description: "Show the 12-hour graph when hovering or focusing any player count."
     }),
     Object.freeze({
+      key: "serverHistory",
+      group: "Tools",
+      label: "Server History",
+      description: "Keep the latest 30 servers you join on this device.",
+      defaultEnabled: false
+    }),
+    Object.freeze({
       key: "copyRobloxIds",
       group: "Tools",
       label: "Copy Roblox IDs",
@@ -683,7 +704,12 @@
     ])
   );
   const DEFAULT_FEATURE_SETTINGS = Object.freeze(
-    Object.fromEntries(FEATURE_SETTING_DEFINITIONS.map(({ key }) => [key, true]))
+    Object.fromEntries(
+      FEATURE_SETTING_DEFINITIONS.map(({ key, defaultEnabled }) => [
+        key,
+        defaultEnabled !== false
+      ])
+    )
   );
 
   const NATIVE_ANCHOR_SELECTORS = [
@@ -714,6 +740,7 @@
     gift: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M12 7v13"/><path d="M12 7H8.5a2 2 0 1 1 2-2c0 1.2 1.5 2 1.5 2ZM12 7h3.5a2 2 0 1 0-2-2c0 1.2-1.5 2-1.5 2Z"/>',
     premium: '<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
     create: '<path d="m14 5 5 5M4 20l3.5-.8L20 6.7 17.3 4 4.8 16.5 4 20Z"/><path d="m13 6 5 5"/>',
+    history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7"/><path d="M3.5 4.5v5h5"/><path d="M12 7.5V12l3 2"/>',
     external: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>',
     link: '<path d="m9.5 14.5 5-5"/><path d="m7.5 16.5-1.7 1.7A3 3 0 0 1 1.6 14l3.2-3.2A3 3 0 0 1 9 10.7"/><path d="m16.5 7.5 1.7-1.7a3 3 0 0 1 4.2 4.2l-3.2 3.2a3 3 0 0 1-4.2.1"/>'
   });
@@ -734,6 +761,23 @@
   let featureSettingsDialogOpener = null;
   let featureSettingsNotice = "";
   let featureSettingsNoticeIsError = false;
+  let serverHistoryDialogOpener = null;
+  let serverHistoryLifecycleEpoch = 0;
+  let serverHistoryRequestSequence = 0;
+  let serverHistoryLoadState = "idle";
+  let serverHistoryErrorCode = "";
+  let serverHistoryTracking = null;
+  let serverHistorySessions = [];
+  let serverHistoryStatusBySessionId = new Map();
+  let serverHistoryPendingStatusIds = new Set();
+  let serverHistoryStatusRequestBySessionId = new Map();
+  let serverHistoryPendingRejoinId = null;
+  let serverHistoryConfirmClear = false;
+  let serverHistoryClearPending = false;
+  let serverHistoryNotice = "";
+  let serverHistoryMessageSenderForTests = null;
+  const serverHistoryThumbnailByUniverseId = new Map();
+  const serverHistoryThumbnailRequestByUniverseId = new Map();
   let mountQueued = false;
   let lastFocusedElement = null;
   let draggedShortcutId = null;
@@ -2000,6 +2044,97 @@
       openDialog();
     });
 
+    return row;
+  }
+
+  function setServerHistorySidebarIcon(icon) {
+    if (!icon) return;
+    icon.classList.remove(
+      "rsl-sidebar-icon--plus",
+      "rsl-sidebar-icon--link",
+      "rsl-sidebar-icon--thumbnail",
+      "rsl-sidebar-icon--thumbnail-profile",
+      "rsl-owned-thumbnail-frame"
+    );
+    icon.classList.add("rsl-sidebar-icon--shortcut");
+    icon.dataset.rslIconType = "history";
+    delete icon.dataset.rslThumbnailKey;
+    delete icon.dataset.rslThumbnailState;
+    icon.innerHTML =
+      `<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">` +
+      `${SHORTCUT_ICON_MARKUP.history}</svg>`;
+  }
+
+  function makeServerHistorySidebarRow(templateRow) {
+    const { row, anchor, label, icon } = createNativeLookingRow(
+      templateRow,
+      "shortcut",
+      "/home"
+    );
+    row.id = SERVER_HISTORY_ROW_ID;
+    row.dataset.rslControl = "server-history";
+    anchor.href = "#";
+    anchor.setAttribute("role", "button");
+    anchor.setAttribute("aria-haspopup", "dialog");
+    anchor.setAttribute("aria-controls", SERVER_HISTORY_DIALOG_ID);
+    anchor.setAttribute("aria-label", "Server History");
+    anchor.title = "Server History";
+    if (label) label.textContent = "Server History";
+    setServerHistorySidebarIcon(icon);
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (event.isTrusted !== true) return;
+      openServerHistoryDialog(anchor);
+    });
+    return row;
+  }
+
+  function placeServerHistorySidebarRow(list, row) {
+    const customRows = Array.from(list.querySelectorAll(`[${ROW_ATTRIBUTE}]`));
+    const addRow = document.getElementById(ADD_ROW_ID);
+    const firstOwnedCustomRow = customRows[0] ||
+      (addRow?.parentElement === list ? addRow : null);
+    if (firstOwnedCustomRow && firstOwnedCustomRow !== row) {
+      if (
+        row.parentElement !== list ||
+        row.nextElementSibling !== firstOwnedCustomRow
+      ) {
+        list.insertBefore(row, firstOwnedCustomRow);
+      }
+      return;
+    }
+    const boundary = findSidebarInsertBoundary(list, row);
+    if (boundary && boundary !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== boundary) {
+        list.insertBefore(row, boundary);
+      }
+    } else if (row.parentElement !== list || row !== list.lastElementChild) {
+      list.append(row);
+    }
+  }
+
+  function mountServerHistorySidebarRow() {
+    if (
+      !isFeatureEnabled("serverHistory") ||
+      !isFeatureEnabled("sidebarShortcuts") ||
+      !isFeatureEnabled("sidebarServerHistory")
+    ) {
+      document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
+      return null;
+    }
+    const native = findNativeRow();
+    if (!native) return null;
+    const duplicates = Array.from(
+      document.querySelectorAll(`#${SERVER_HISTORY_ROW_ID}`)
+    );
+    let row = duplicates.shift() || null;
+    duplicates.forEach((duplicate) => duplicate.remove());
+    if (!row || row._rslServerHistoryRowBound !== true) {
+      row?.remove();
+      row = makeServerHistorySidebarRow(native.row);
+      row._rslServerHistoryRowBound = true;
+    }
+    placeServerHistorySidebarRow(native.list, row);
     return row;
   }
 
@@ -14904,6 +15039,855 @@
     dialog.querySelector("[data-rsl-feature-key]")?.focus();
   }
 
+  function normalizeServerHistoryOpaqueId(rawValue) {
+    const value = typeof rawValue === "string" ? rawValue : "";
+    return value === value.trim() && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+      ? value
+      : null;
+  }
+
+  function normalizeServerHistoryTimestamp(rawValue) {
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 && value < 9e15
+      ? Math.round(value)
+      : null;
+  }
+
+  function normalizeServerHistorySession(rawValue) {
+    if (!rawValue || typeof rawValue !== "object") return null;
+    const sessionId = normalizeServerHistoryOpaqueId(rawValue.sessionId);
+    const placeId = normalizeQuickPlayPlaceId(rawValue.placeId);
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const firstSeenAt = normalizeServerHistoryTimestamp(rawValue.firstSeenAt);
+    const lastSeenAt = normalizeServerHistoryTimestamp(rawValue.lastSeenAt);
+    if (!sessionId || !placeId || !firstSeenAt || !lastSeenAt) return null;
+    const responseName = typeof rawValue.experienceName === "string"
+      ? rawValue.experienceName
+      : rawValue.name;
+    const rawName = typeof responseName === "string"
+      ? responseName.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
+      : "";
+    return Object.freeze({
+      sessionId,
+      placeId,
+      universeId,
+      name: (rawName || "Roblox experience").slice(0, 150),
+      firstSeenAt: Math.min(firstSeenAt, lastSeenAt),
+      lastSeenAt: Math.max(firstSeenAt, lastSeenAt),
+      observationCount: Math.max(
+        1,
+        Math.min(100_000, Number.parseInt(rawValue.observationCount, 10) || 1)
+      ),
+      isOpen: rawValue.isCurrent === true || rawValue.isOpen === true
+    });
+  }
+
+  function normalizeServerHistoryResponse(rawValue) {
+    if (!rawValue || typeof rawValue !== "object" || rawValue.ok !== true) {
+      return null;
+    }
+    const sessions = [];
+    const seenIds = new Set();
+    for (const rawSession of Array.isArray(rawValue.sessions) ? rawValue.sessions : []) {
+      const session = normalizeServerHistorySession(rawSession);
+      if (!session || seenIds.has(session.sessionId)) continue;
+      seenIds.add(session.sessionId);
+      sessions.push(session);
+      if (sessions.length >= SERVER_HISTORY_LIMIT) break;
+    }
+    sessions.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+    const trackingState = ["in-game", "not-in-game", "waiting", "error"]
+      .includes(rawValue.tracking?.state)
+      ? rawValue.tracking.state
+      : "waiting";
+    return Object.freeze({
+      enabled: rawValue.enabled !== false,
+      sessions,
+      tracking: Object.freeze({
+        state: trackingState,
+        lastCheckedAt: normalizeServerHistoryTimestamp(
+          rawValue.tracking?.lastCheckedAt
+        )
+      })
+    });
+  }
+
+  function normalizeServerHistoryStatus(rawValue, expectedSessionId = null) {
+    if (!rawValue || typeof rawValue !== "object" || rawValue.ok !== true) {
+      return null;
+    }
+    const sessionId = normalizeServerHistoryOpaqueId(rawValue.sessionId);
+    if (!sessionId || (expectedSessionId && sessionId !== expectedSessionId)) {
+      return null;
+    }
+    const status = rawValue.status === "active" ? "active" :
+      rawValue.status === "unknown" ? "unknown" : null;
+    const checkedAt = normalizeServerHistoryTimestamp(rawValue.checkedAt);
+    if (!status || !checkedAt) return null;
+    const playing = Number.isSafeInteger(Number(rawValue.playing)) &&
+      Number(rawValue.playing) >= 0
+      ? Number(rawValue.playing)
+      : null;
+    const maxPlayers = Number.isSafeInteger(Number(rawValue.maxPlayers)) &&
+      Number(rawValue.maxPlayers) > 0
+      ? Number(rawValue.maxPlayers)
+      : null;
+    return Object.freeze({
+      sessionId,
+      status,
+      playing,
+      maxPlayers,
+      checkedAt,
+      source: rawValue.source === "public-server-list" ||
+        rawValue.source === "current-presence"
+        ? rawValue.source
+        : null,
+      reason: typeof rawValue.reason === "string"
+        ? rawValue.reason.slice(0, 80).toLowerCase()
+        : ""
+    });
+  }
+
+  function formatServerHistoryTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Unknown";
+  }
+
+  function formatServerHistoryDuration(firstSeenAt, lastSeenAt) {
+    const elapsed = Math.max(0, lastSeenAt - firstSeenAt);
+    if (elapsed < 60_000) return "under 1 minute";
+    const minutes = Math.round(elapsed / 60_000);
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder
+      ? `${hours}h ${remainder}m`
+      : `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+
+  function getServerHistoryUnknownExplanation(reason = "") {
+    if (reason.includes("rate")) {
+      return "Player count unavailable because Roblox temporarily limited the check. Try rejoining anyway, or check again later.";
+    }
+    if (reason.includes("sign") || reason.includes("auth")) {
+      return "Player count unavailable. Sign in to Roblox, then check again or try rejoining.";
+    }
+    if (
+      reason.includes("visible") ||
+      reason.includes("not-found") ||
+      reason.includes("list-limited")
+    ) {
+      return "Player count unavailable. RoTool cannot tell whether it is still running: it may have ended, or it may be private, hidden, or outside the public servers Roblox made available to this check. Try rejoining if you want; Roblox decides.";
+    }
+    return "Player count unavailable. Roblox could not confirm it. Try rejoining if you want; Roblox decides.";
+  }
+
+  function canRejoinServerHistoryStatus() {
+    // A list result is informational. Only Roblox can make the final decision
+    // when the user explicitly tries the saved Job ID.
+    return true;
+  }
+
+  function sendServerHistoryRuntimeMessage(message) {
+    if (typeof serverHistoryMessageSenderForTests === "function") {
+      return Promise.resolve().then(() => serverHistoryMessageSenderForTests(message));
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const error = new Error("Server History request timed out");
+        error.code = "TIMEOUT";
+        reject(error);
+      }, SERVER_HISTORY_REQUEST_TIMEOUT_MS);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) {
+            finish(reject, new Error(runtimeError.message));
+          } else {
+            finish(resolve, response);
+          }
+        });
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  function getServerHistoryTrackingText() {
+    switch (serverHistoryTracking?.state) {
+      case "in-game":
+        return "Your current server was observed recently.";
+      case "not-in-game":
+        return "RoTool is waiting for the next server you join.";
+      case "error":
+        return "Roblox presence could not be checked right now.";
+      default:
+        return "Waiting for the next roughly one-minute presence observation.";
+    }
+  }
+
+  function getServerHistoryLoadErrorText(code) {
+    const normalized = String(code || "").toUpperCase();
+    if (normalized.includes("SIGNED") || normalized.includes("AUTH")) {
+      return "Sign in to Roblox to view this account's Server History.";
+    }
+    if (normalized.includes("DISABLED")) {
+      return "Server History is currently disabled in RoTool Settings.";
+    }
+    return "Server History could not be loaded. Try again.";
+  }
+
+  function requestServerHistoryThumbnail(image, universeId, epoch) {
+    if (!image || !universeId) return;
+    const cachedUrl = serverHistoryThumbnailByUniverseId.get(universeId);
+    if (isSafeThumbnailImageUrl(cachedUrl)) {
+      image.src = cachedUrl;
+      image.closest(".rsl-owned-thumbnail-frame")?.setAttribute(
+        "data-rsl-thumbnail-state",
+        "loaded"
+      );
+      return;
+    }
+    const frame = image.closest(".rsl-owned-thumbnail-frame");
+    setOwnedThumbnailState(frame, "loading");
+    let request = serverHistoryThumbnailRequestByUniverseId.get(universeId);
+    if (!request) {
+      request = new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(
+            { type: "rsl:get-thumbnail", kind: "gameUniverse", id: universeId },
+            (response) => {
+              if (chrome.runtime.lastError || !isSafeThumbnailImageUrl(response?.url)) {
+                resolve(null);
+              } else {
+                serverHistoryThumbnailByUniverseId.set(universeId, response.url);
+                resolve(response.url);
+              }
+            }
+          );
+        } catch {
+          resolve(null);
+        }
+      }).finally(() => {
+        serverHistoryThumbnailRequestByUniverseId.delete(universeId);
+      });
+      serverHistoryThumbnailRequestByUniverseId.set(universeId, request);
+    }
+    void request.then((url) => {
+      if (
+        epoch !== serverHistoryLifecycleEpoch ||
+        !image.isConnected ||
+        !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open
+      ) return;
+      if (url) image.src = url;
+      setOwnedThumbnailState(frame, url ? "loaded" : "fallback");
+    });
+  }
+
+  function createServerHistoryActionButton(label, variant = "secondary") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `rsl-button rsl-button--${variant} rsl-server-history__action`;
+    button.textContent = label;
+    return button;
+  }
+
+  function renderServerHistorySession(session, index) {
+    const item = document.createElement("li");
+    item.className = "rsl-server-history__item";
+    item.setAttribute("data-rsl-server-history-session-id", session.sessionId);
+
+    const thumbnailFrame = document.createElement("span");
+    thumbnailFrame.className = "rsl-server-history__thumbnail rsl-owned-thumbnail-frame";
+    thumbnailFrame.setAttribute("aria-hidden", "true");
+    thumbnailFrame.dataset.rslThumbnailState = "fallback";
+    const image = document.createElement("img");
+    image.alt = "";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.src = DEFAULT_GAME_ICON_URL;
+    thumbnailFrame.append(image);
+
+    const main = document.createElement("div");
+    main.className = "rsl-server-history__main";
+    const titleRow = document.createElement("div");
+    titleRow.className = "rsl-server-history__title-row";
+    const gameLink = document.createElement("a");
+    gameLink.className = "rsl-server-history__game-link";
+    gameLink.href = `/games/${session.placeId}`;
+    gameLink.textContent = session.name;
+    gameLink.title = `Open ${session.name}`;
+    const sessionState = document.createElement("span");
+    const wasObservedRecently = Boolean(
+      index === 0 &&
+      session.isOpen &&
+      serverHistoryTracking?.state === "in-game"
+    );
+    sessionState.className = wasObservedRecently
+      ? "rsl-server-history__session-state rsl-server-history__session-state--current"
+      : "rsl-server-history__session-state";
+    sessionState.textContent = wasObservedRecently
+      ? "Observed recently"
+      : "Past observation";
+    titleRow.append(gameLink, sessionState);
+
+    const timing = document.createElement("div");
+    timing.className = "rsl-server-history__timing";
+    for (const [label, timestamp] of [
+      ["First seen", session.firstSeenAt],
+      ["Last seen", session.lastSeenAt]
+    ]) {
+      const entry = document.createElement("span");
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}: `;
+      const time = document.createElement("time");
+      time.dateTime = new Date(timestamp).toISOString();
+      time.textContent = formatServerHistoryTimestamp(timestamp);
+      entry.append(strong, time);
+      timing.append(entry);
+    }
+    const duration = document.createElement("span");
+    duration.textContent =
+      `Observed for ${formatServerHistoryDuration(session.firstSeenAt, session.lastSeenAt)}`;
+    timing.append(duration);
+
+    const status = serverHistoryStatusBySessionId.get(session.sessionId);
+    const statusLine = document.createElement("div");
+    statusLine.className = "rsl-server-history__status";
+    const pending = serverHistoryPendingStatusIds.has(session.sessionId);
+    if (pending) {
+      statusLine.textContent = "Checking server status…";
+      statusLine.setAttribute("aria-busy", "true");
+    } else if (status?.status === "active") {
+      statusLine.classList.add("rsl-server-history__status--active");
+      statusLine.textContent = status.playing !== null && status.maxPlayers !== null
+        ? `Active · ${status.playing.toLocaleString()}/${status.maxPlayers.toLocaleString()} players`
+        : "Active · Player count unavailable";
+    } else if (status?.status === "unknown") {
+      statusLine.classList.add("rsl-server-history__status--unknown");
+      const heading = document.createElement("strong");
+      heading.textContent = "Server status unknown";
+      const explanation = document.createElement("span");
+      explanation.textContent = getServerHistoryUnknownExplanation(status.reason);
+      statusLine.append(heading, explanation);
+    } else {
+      statusLine.classList.add("rsl-server-history__status--unknown");
+      const heading = document.createElement("strong");
+      heading.textContent = "Server status unknown";
+      const explanation = document.createElement("span");
+      explanation.textContent =
+        "Player count unavailable. Check status or try rejoining; Roblox decides whether the saved server can still be joined.";
+      statusLine.append(heading, explanation);
+    }
+    if (!pending && status?.checkedAt) {
+      const checked = document.createElement("time");
+      checked.className = "rsl-server-history__status-checked";
+      checked.dateTime = new Date(status.checkedAt).toISOString();
+      checked.textContent = `Checked ${formatServerHistoryTimestamp(status.checkedAt)}`;
+      statusLine.append(checked);
+    }
+    main.append(titleRow, timing, statusLine);
+
+    const actions = document.createElement("div");
+    actions.className = "rsl-server-history__actions";
+    const open = document.createElement("a");
+    open.className = "rsl-button rsl-button--secondary rsl-server-history__action";
+    open.dataset.rslServerHistoryAction = "open";
+    open.href = `/games/${session.placeId}`;
+    open.textContent = "Open Experience";
+    const check = createServerHistoryActionButton(
+      pending ? "Checking…" : "Check status"
+    );
+    check.dataset.rslServerHistoryAction = "check";
+    check.setAttribute("aria-disabled", String(pending));
+    check.setAttribute("aria-label", `Check server status for ${session.name}`);
+    check.addEventListener("click", (event) => {
+      if (event.isTrusted !== true || pending) return;
+      void checkServerHistoryStatus(session.sessionId, true);
+    });
+    const serverWasFull = Boolean(
+      status?.status === "active" &&
+      status.playing !== null &&
+      status.maxPlayers !== null &&
+      status.playing >= status.maxPlayers
+    );
+    const rejoinLabel = serverHistoryPendingRejoinId === session.sessionId
+      ? "Opening…"
+      : serverWasFull
+        ? "Full · try anyway"
+      : status?.status === "active"
+        ? "Rejoin"
+        : "Try rejoining anyway";
+    const rejoin = createServerHistoryActionButton(rejoinLabel, "primary");
+    rejoin.dataset.rslServerHistoryAction = "rejoin";
+    const canRejoin = canRejoinServerHistoryStatus(status);
+    const rejoinPending = serverHistoryPendingRejoinId !== null;
+    rejoin.setAttribute("aria-disabled", String(rejoinPending));
+    rejoin.title = serverWasFull
+      ? "The server was full when last checked, but you can still try. Roblox makes the final decision."
+      : status?.status === "active"
+        ? `Rejoin ${session.name}`
+        : "Try rejoining this saved server. Roblox will decide whether it is still available.";
+    rejoin.addEventListener("click", (event) => {
+      if (event.isTrusted !== true || !canRejoin || rejoinPending) return;
+      void rejoinServerHistorySession(session.sessionId);
+    });
+    actions.append(open, check, rejoin);
+    item.append(thumbnailFrame, main, actions);
+    requestServerHistoryThumbnail(image, session.universeId, serverHistoryLifecycleEpoch);
+    return item;
+  }
+
+  function renderServerHistoryDialog() {
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (!dialog) return;
+    const tracking = dialog.querySelector("[data-rsl-server-history-tracking]");
+    const status = dialog.querySelector("[data-rsl-server-history-live-status]");
+    const list = dialog.querySelector("[data-rsl-server-history-list]");
+    if (!tracking || !status || !list) return;
+    const focusedControl = list.contains(document.activeElement)
+      ? document.activeElement
+      : null;
+    const focusedSessionId = normalizeServerHistoryOpaqueId(
+      focusedControl
+        ?.closest?.("[data-rsl-server-history-session-id]")
+        ?.getAttribute("data-rsl-server-history-session-id")
+    );
+    const focusedAction = focusedControl?.getAttribute?.(
+      "data-rsl-server-history-action"
+    );
+    tracking.textContent = getServerHistoryTrackingText();
+    status.textContent = serverHistoryNotice;
+    status.classList.toggle(
+      "rsl-server-history__live-status--error",
+      serverHistoryLoadState === "error"
+    );
+    list.replaceChildren();
+    if (serverHistoryLoadState === "loading") {
+      const loading = document.createElement("li");
+      loading.className = "rsl-server-history__empty";
+      loading.textContent = "Loading your recent servers…";
+      list.append(loading);
+    } else if (serverHistoryLoadState === "error") {
+      const error = document.createElement("li");
+      error.className = "rsl-server-history__empty rsl-server-history__empty--error";
+      error.textContent = getServerHistoryLoadErrorText(serverHistoryErrorCode);
+      list.append(error);
+    } else if (serverHistorySessions.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "rsl-server-history__empty";
+      empty.innerHTML =
+        "<strong>No servers saved yet</strong><span>After you opt in, a server appears here when RoTool observes you playing it.</span>";
+      list.append(empty);
+    } else {
+      serverHistorySessions.forEach((session, index) => {
+        list.append(renderServerHistorySession(session, index));
+      });
+    }
+    list.setAttribute("aria-busy", String(serverHistoryLoadState === "loading"));
+    const clearButton = dialog.querySelector("[data-rsl-server-history-clear]");
+    if (clearButton) {
+      clearButton.disabled = serverHistoryClearPending || serverHistorySessions.length === 0;
+    }
+    const confirm = dialog.querySelector("[data-rsl-server-history-clear-confirmation]");
+    if (confirm) confirm.hidden = !serverHistoryConfirmClear;
+    dialog.querySelectorAll("[data-rsl-server-history-refresh]").forEach((button) => {
+      button.disabled = serverHistoryLoadState === "loading";
+    });
+    if (
+      focusedSessionId &&
+      ["open", "check", "rejoin"].includes(focusedAction) &&
+      dialog.open
+    ) {
+      const restoredControl = list.querySelector(
+        `[data-rsl-server-history-session-id="${CSS.escape(focusedSessionId)}"] ` +
+          `[data-rsl-server-history-action="${focusedAction}"]`
+      );
+      restoredControl?.focus?.({ preventScroll: true });
+    }
+  }
+
+  async function loadServerHistory() {
+    if (!isFeatureEnabled("serverHistory")) return false;
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (!dialog?.open) return false;
+    const epoch = serverHistoryLifecycleEpoch;
+    const requestId = ++serverHistoryRequestSequence;
+    serverHistoryLoadState = "loading";
+    serverHistoryErrorCode = "";
+    serverHistoryNotice = "";
+    renderServerHistoryDialog();
+    try {
+      const response = await sendServerHistoryRuntimeMessage({
+        type: SERVER_HISTORY_GET_MESSAGE_TYPE,
+        requestId
+      });
+      if (
+        epoch !== serverHistoryLifecycleEpoch ||
+        !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open ||
+        response?.requestId !== requestId
+      ) return false;
+      const normalized = normalizeServerHistoryResponse(response);
+      if (!normalized || !normalized.enabled) {
+        const error = new Error("Invalid Server History response");
+        error.code = response?.errorCode ||
+          response?.code ||
+          (normalized ? "DISABLED" : "INVALID");
+        throw error;
+      }
+      serverHistorySessions = normalized.sessions;
+      serverHistoryTracking = normalized.tracking;
+      const validIds = new Set(serverHistorySessions.map(({ sessionId }) => sessionId));
+      serverHistoryStatusBySessionId = new Map(
+        Array.from(serverHistoryStatusBySessionId).filter(([sessionId]) =>
+          validIds.has(sessionId)
+        )
+      );
+      serverHistoryLoadState = "ready";
+      renderServerHistoryDialog();
+      const newest = serverHistorySessions[0];
+      if (newest && !serverHistoryStatusBySessionId.has(newest.sessionId)) {
+        void checkServerHistoryStatus(newest.sessionId, false);
+      }
+      return true;
+    } catch (error) {
+      if (epoch !== serverHistoryLifecycleEpoch) return false;
+      serverHistoryLoadState = "error";
+      serverHistoryErrorCode = error?.code || "NETWORK";
+      serverHistoryNotice = "";
+      renderServerHistoryDialog();
+      return false;
+    }
+  }
+
+  async function checkServerHistoryStatus(sessionId, userInitiated = false) {
+    const normalizedId = normalizeServerHistoryOpaqueId(sessionId);
+    if (
+      !normalizedId ||
+      !isFeatureEnabled("serverHistory") ||
+      !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open ||
+      !serverHistorySessions.some((session) => session.sessionId === normalizedId)
+    ) return false;
+    if (serverHistoryPendingStatusIds.has(normalizedId)) return false;
+    const epoch = serverHistoryLifecycleEpoch;
+    const requestId = ++serverHistoryRequestSequence;
+    serverHistoryPendingStatusIds.add(normalizedId);
+    serverHistoryStatusRequestBySessionId.set(normalizedId, requestId);
+    if (userInitiated) serverHistoryNotice = "";
+    renderServerHistoryDialog();
+    try {
+      const response = await sendServerHistoryRuntimeMessage({
+        type: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
+        requestId,
+        sessionId: normalizedId,
+        forceRefresh: userInitiated === true
+      });
+      if (
+        epoch !== serverHistoryLifecycleEpoch ||
+        serverHistoryStatusRequestBySessionId.get(normalizedId) !== requestId ||
+        response?.requestId !== requestId
+      ) return false;
+      const normalized = normalizeServerHistoryStatus(response, normalizedId);
+      if (!normalized) {
+        const error = new Error("Invalid server status response");
+        error.code = response?.errorCode || response?.code || "unavailable";
+        throw error;
+      }
+      serverHistoryStatusBySessionId.set(normalizedId, normalized);
+      if (userInitiated) {
+        if (normalized.status === "active") {
+          serverHistoryNotice = normalized.playing !== null &&
+            normalized.maxPlayers !== null
+            ? `Status updated: Active · ${normalized.playing.toLocaleString()}/${normalized.maxPlayers.toLocaleString()} players.`
+            : "Status updated: Active · Player count unavailable.";
+        } else {
+          serverHistoryNotice =
+            "Status updated: Server status unknown · Player count unavailable.";
+        }
+      }
+      return true;
+    } catch (error) {
+      if (epoch === serverHistoryLifecycleEpoch) {
+        serverHistoryStatusBySessionId.set(normalizedId, Object.freeze({
+          sessionId: normalizedId,
+          status: "unknown",
+          playing: null,
+          maxPlayers: null,
+          checkedAt: Date.now(),
+          source: null,
+          reason: error?.code || "unavailable"
+        }));
+        if (userInitiated) {
+          serverHistoryNotice =
+            "Status updated: Server status unknown · Player count unavailable.";
+        }
+      }
+      return false;
+    } finally {
+      if (
+        epoch === serverHistoryLifecycleEpoch &&
+        serverHistoryStatusRequestBySessionId.get(normalizedId) === requestId
+      ) {
+        serverHistoryStatusRequestBySessionId.delete(normalizedId);
+        serverHistoryPendingStatusIds.delete(normalizedId);
+        renderServerHistoryDialog();
+      }
+    }
+  }
+
+  async function rejoinServerHistorySession(sessionId) {
+    const normalizedId = normalizeServerHistoryOpaqueId(sessionId);
+    if (
+      !normalizedId ||
+      !serverHistorySessions.some((session) => session.sessionId === normalizedId) ||
+      serverHistoryPendingRejoinId !== null ||
+      !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open
+    ) return false;
+    const epoch = serverHistoryLifecycleEpoch;
+    const requestId = ++serverHistoryRequestSequence;
+    serverHistoryPendingRejoinId = normalizedId;
+    serverHistoryNotice = "";
+    renderServerHistoryDialog();
+    try {
+      const response = await sendServerHistoryRuntimeMessage({
+        type: SERVER_HISTORY_REJOIN_MESSAGE_TYPE,
+        requestId,
+        sessionId: normalizedId
+      });
+      if (
+        epoch !== serverHistoryLifecycleEpoch ||
+        response?.requestId !== requestId ||
+        normalizeServerHistoryOpaqueId(response?.sessionId) !== normalizedId
+      ) return false;
+      if (response?.ok === true) {
+        serverHistoryNotice = "Opening Roblox…";
+        return true;
+      }
+      const responseCode = response?.errorCode || response?.code;
+      if (["inactive", "unknown", "not-found"].includes(responseCode)) {
+        serverHistoryStatusBySessionId.delete(normalizedId);
+        serverHistoryNotice = "That server could no longer be confirmed. Check its status again.";
+      } else {
+        serverHistoryNotice = "Roblox could not open that server.";
+      }
+      return false;
+    } catch {
+      if (epoch === serverHistoryLifecycleEpoch) {
+        serverHistoryNotice = "Roblox could not open that server.";
+      }
+      return false;
+    } finally {
+      if (epoch === serverHistoryLifecycleEpoch) {
+        serverHistoryPendingRejoinId = null;
+        renderServerHistoryDialog();
+      }
+    }
+  }
+
+  async function clearServerHistory() {
+    if (
+      serverHistoryClearPending ||
+      !isFeatureEnabled("serverHistory") ||
+      !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open
+    ) return false;
+    const epoch = serverHistoryLifecycleEpoch;
+    const requestId = ++serverHistoryRequestSequence;
+    const expectedSessionId = serverHistorySessions[0]?.sessionId || null;
+    if (!expectedSessionId) return false;
+    serverHistoryClearPending = true;
+    serverHistoryNotice = "Clearing local history…";
+    renderServerHistoryDialog();
+    try {
+      const response = await sendServerHistoryRuntimeMessage({
+        type: SERVER_HISTORY_CLEAR_MESSAGE_TYPE,
+        requestId,
+        expectedSessionId
+      });
+      if (
+        epoch !== serverHistoryLifecycleEpoch ||
+        response?.requestId !== requestId ||
+        response?.ok !== true
+      ) throw new Error("History was not cleared");
+      serverHistorySessions = [];
+      serverHistoryStatusBySessionId.clear();
+      serverHistoryConfirmClear = false;
+      serverHistoryNotice = "Server History cleared from this device.";
+      return true;
+    } catch {
+      if (epoch === serverHistoryLifecycleEpoch) {
+        serverHistoryNotice = "Server History could not be cleared. Try again.";
+      }
+      return false;
+    } finally {
+      if (epoch === serverHistoryLifecycleEpoch) {
+        serverHistoryClearPending = false;
+        renderServerHistoryDialog();
+      }
+    }
+  }
+
+  function resetServerHistoryDialogState() {
+    serverHistoryLifecycleEpoch += 1;
+    serverHistoryLoadState = "idle";
+    serverHistoryErrorCode = "";
+    serverHistoryTracking = null;
+    serverHistorySessions = [];
+    serverHistoryStatusBySessionId.clear();
+    serverHistoryPendingStatusIds.clear();
+    serverHistoryStatusRequestBySessionId.clear();
+    serverHistoryPendingRejoinId = null;
+    serverHistoryConfirmClear = false;
+    serverHistoryClearPending = false;
+    serverHistoryNotice = "";
+  }
+
+  function closeServerHistoryDialog(restoreFocus = true) {
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (dialog?.open) {
+      dialog.dataset.rslRestoreServerHistoryFocus = restoreFocus ? "true" : "false";
+      dialog.close();
+      return;
+    }
+    const opener = serverHistoryDialogOpener;
+    serverHistoryDialogOpener = null;
+    resetServerHistoryDialogState();
+    if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
+  }
+
+  function createServerHistoryDialog() {
+    const dialog = document.createElement("dialog");
+    dialog.id = SERVER_HISTORY_DIALOG_ID;
+    dialog.className =
+      "rsl-dialog rsl-server-history-dialog foundation-web-dialog-overlay " +
+      "padding-medium foundation-web-portal-zindex bg-common-backdrop";
+    dialog.setAttribute("aria-labelledby", "rsl-server-history-title");
+    dialog.setAttribute("aria-describedby", "rsl-server-history-description");
+    dialog.innerHTML = `
+      <div class="rsl-dialog__surface rsl-server-history__surface relative radius-large bg-surface-100 stroke-muted stroke-standard foundation-web-dialog-content shadow-transient-high" data-size="Large">
+        <div class="rsl-dialog__close-container absolute foundation-web-dialog-close-container">
+          <button type="button" class="rsl-icon-button foundation-web-close-affordance" aria-label="Close Server History" data-rsl-server-history-close><span aria-hidden="true" class="rsl-dialog__close-icon"></span></button>
+        </div>
+        <div class="rsl-dialog__body rsl-server-history__body">
+          <header class="rsl-dialog__header rsl-server-history__header">
+            <h2 id="rsl-server-history-title" class="content-emphasis text-title-large">Server History</h2>
+            <p id="rsl-server-history-description" class="content-default text-body-medium">RoTool keeps only your latest 30 server sessions for this Roblox account, locally on this device. Nothing is uploaded.</p>
+            <p class="rsl-server-history__accuracy content-default text-body-medium">First seen and Last seen are based on roughly one-minute presence observations, so they are estimates—not exact join or leave times.</p>
+            <p class="rsl-server-history__tracking content-default text-body-medium" data-rsl-server-history-tracking></p>
+          </header>
+          <div class="rsl-server-history__live-status content-default text-body-medium" role="status" aria-live="polite" aria-atomic="true" data-rsl-server-history-live-status></div>
+          <ul class="rsl-server-history__list" aria-label="Latest server sessions" data-rsl-server-history-list></ul>
+        </div>
+        <div class="rsl-server-history__clear-confirmation" role="alertdialog" aria-modal="false" aria-live="assertive" aria-atomic="true" aria-labelledby="rsl-server-history-clear-confirmation-label" data-rsl-server-history-clear-confirmation hidden>
+          <span id="rsl-server-history-clear-confirmation-label">Clear all locally saved Server History for this Roblox account?</span>
+          <button type="button" class="rsl-button rsl-button--secondary" data-rsl-server-history-clear-cancel>Cancel</button>
+          <button type="button" class="rsl-button rsl-button--danger" data-rsl-server-history-clear-confirm>Clear history</button>
+        </div>
+        <footer class="rsl-dialog__actions rsl-server-history__footer">
+          <button type="button" class="rsl-button rsl-button--danger" data-rsl-server-history-clear>Clear history</button>
+          <button type="button" class="rsl-button rsl-button--secondary" data-rsl-server-history-refresh>Refresh</button>
+          <button type="button" class="rsl-button rsl-button--primary" data-rsl-server-history-close>Done</button>
+        </footer>
+      </div>`;
+    dialog.querySelectorAll("[data-rsl-server-history-close]").forEach((button) => {
+      button.addEventListener("click", () => closeServerHistoryDialog(true));
+    });
+    dialog.querySelector("[data-rsl-server-history-refresh]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true) return;
+        void loadServerHistory();
+      }
+    );
+    dialog.querySelector("[data-rsl-server-history-clear]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true || serverHistorySessions.length === 0) return;
+        serverHistoryConfirmClear = true;
+        renderServerHistoryDialog();
+        dialog.querySelector("[data-rsl-server-history-clear-cancel]")?.focus();
+      }
+    );
+    dialog.querySelector("[data-rsl-server-history-clear-cancel]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true) return;
+        serverHistoryConfirmClear = false;
+        renderServerHistoryDialog();
+        dialog.querySelector("[data-rsl-server-history-clear]")?.focus();
+      }
+    );
+    dialog.querySelector("[data-rsl-server-history-clear-confirm]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true) return;
+        void clearServerHistory();
+      }
+    );
+    dialog.addEventListener("click", (event) => {
+      if (event.target !== dialog) return;
+      if (serverHistoryConfirmClear) {
+        serverHistoryConfirmClear = false;
+        renderServerHistoryDialog();
+        dialog.querySelector("[data-rsl-server-history-clear]")?.focus();
+      } else {
+        closeServerHistoryDialog(true);
+      }
+    });
+    dialog.addEventListener("cancel", (event) => {
+      if (!serverHistoryConfirmClear) return;
+      event.preventDefault();
+      serverHistoryConfirmClear = false;
+      renderServerHistoryDialog();
+      dialog.querySelector("[data-rsl-server-history-clear]")?.focus();
+    });
+    dialog.addEventListener("close", () => {
+      const restoreFocus = dialog.dataset.rslRestoreServerHistoryFocus !== "false";
+      delete dialog.dataset.rslRestoreServerHistoryFocus;
+      const opener = serverHistoryDialogOpener;
+      serverHistoryDialogOpener = null;
+      resetServerHistoryDialogState();
+      if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
+      queueMount();
+    });
+    document.body.append(dialog);
+    renderServerHistoryDialog();
+    return dialog;
+  }
+
+  function openServerHistoryDialog(opener = null) {
+    if (!isFeatureEnabled("serverHistory")) return null;
+    let dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (!dialog) dialog = createServerHistoryDialog();
+    if (dialog.open) {
+      dialog.querySelector("[data-rsl-server-history-close]")?.focus();
+      return dialog;
+    }
+    resetServerHistoryDialogState();
+    serverHistoryDialogOpener = opener || document.activeElement;
+    serverHistoryLoadState = "loading";
+    renderServerHistoryDialog();
+    dialog.showModal();
+    dialog.querySelector("[data-rsl-server-history-close]")?.focus();
+    void loadServerHistory();
+    return dialog;
+  }
+
+  function cleanupServerHistoryFeature() {
+    document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
+    closeServerHistoryDialog(false);
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (dialog && !dialog.open) dialog.remove();
+  }
+
   function mountExtensionFeatures() {
     mountFeatureSettingsButton();
     if (!featureSettingsLoaded) {
@@ -14911,6 +15895,7 @@
     }
     if (isFeatureEnabled("sidebarShortcuts")) {
       syncNativeSidebarVisibility();
+      mountServerHistorySidebarRow();
       if (isFeatureEnabled("sidebarCustomShortcuts")) {
         mountSidebar();
       } else {
@@ -14918,7 +15903,11 @@
       }
     } else {
       cleanupSidebarFeature();
+      document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
       cleanupNativeSidebarVisibility();
+    }
+    if (!isFeatureEnabled("serverHistory")) {
+      cleanupServerHistoryFeature();
     }
     mountOnlineFriendsFilter();
     mountBestFriendsCarousel();
@@ -15067,6 +16056,12 @@
     ) {
       cleanupSidebarFeature();
     }
+    if (
+      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
+      previousSettings.sidebarServerHistory !== nextSettings.sidebarServerHistory
+    ) {
+      document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
+    }
     const sidebarVisibilityKeys = [
       "sidebarShortcuts",
       "sidebarHome",
@@ -15162,18 +16157,31 @@
     ) {
       cleanupGameTileCcuGraphDisplay();
     }
+    if (
+      previousSettings.serverHistory !== nextSettings.serverHistory &&
+      nextSettings.serverHistory === false
+    ) {
+      cleanupServerHistoryFeature();
+    }
 
     const onlySidebarChanged = sidebarVisibilityChanged ||
       previousSettings.sidebarCustomShortcuts !==
-        nextSettings.sidebarCustomShortcuts;
+        nextSettings.sidebarCustomShortcuts ||
+      previousSettings.sidebarServerHistory !==
+        nextSettings.sidebarServerHistory;
     const anyNonSidebarChange = FEATURE_SETTING_DEFINITIONS.some(
       ({ key }) =>
-        ![...sidebarVisibilityKeys, "sidebarCustomShortcuts"].includes(key) &&
+        ![
+          ...sidebarVisibilityKeys,
+          "sidebarCustomShortcuts",
+          "sidebarServerHistory"
+        ].includes(key) &&
         previousSettings[key] !== nextSettings[key]
     );
     if (onlySidebarChanged && !anyNonSidebarChange) {
       if (isFeatureEnabled("sidebarShortcuts")) {
         syncNativeSidebarVisibility();
+        mountServerHistorySidebarRow();
         if (isFeatureEnabled("sidebarCustomShortcuts")) {
           mountSidebar();
         }
@@ -15940,6 +16948,65 @@
     contentTestHooks.featureDefinitions = FEATURE_DEFINITIONS;
     contentTestHooks.featureSettingDefinitions = FEATURE_SETTING_DEFINITIONS;
     contentTestHooks.defaultFeatureSettings = DEFAULT_FEATURE_SETTINGS;
+    contentTestHooks.serverHistoryConstants = Object.freeze({
+      dialogId: SERVER_HISTORY_DIALOG_ID,
+      rowId: SERVER_HISTORY_ROW_ID,
+      limit: SERVER_HISTORY_LIMIT,
+      messageTypes: Object.freeze({
+        get: SERVER_HISTORY_GET_MESSAGE_TYPE,
+        status: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
+        clear: SERVER_HISTORY_CLEAR_MESSAGE_TYPE,
+        rejoin: SERVER_HISTORY_REJOIN_MESSAGE_TYPE
+      })
+    });
+    contentTestHooks.normalizeServerHistoryOpaqueId =
+      normalizeServerHistoryOpaqueId;
+    contentTestHooks.normalizeServerHistoryTimestamp =
+      normalizeServerHistoryTimestamp;
+    contentTestHooks.normalizeServerHistorySession = normalizeServerHistorySession;
+    contentTestHooks.normalizeServerHistoryResponse = normalizeServerHistoryResponse;
+    contentTestHooks.normalizeServerHistoryStatus = normalizeServerHistoryStatus;
+    contentTestHooks.formatServerHistoryTimestamp = formatServerHistoryTimestamp;
+    contentTestHooks.formatServerHistoryDuration = formatServerHistoryDuration;
+    contentTestHooks.getServerHistoryUnknownExplanation =
+      getServerHistoryUnknownExplanation;
+    contentTestHooks.canRejoinServerHistoryStatus = canRejoinServerHistoryStatus;
+    contentTestHooks.makeServerHistorySidebarRow = makeServerHistorySidebarRow;
+    contentTestHooks.placeServerHistorySidebarRow = placeServerHistorySidebarRow;
+    contentTestHooks.mountServerHistorySidebarRow = mountServerHistorySidebarRow;
+    contentTestHooks.createServerHistoryDialog = createServerHistoryDialog;
+    contentTestHooks.openServerHistoryDialog = openServerHistoryDialog;
+    contentTestHooks.closeServerHistoryDialog = closeServerHistoryDialog;
+    contentTestHooks.renderServerHistoryDialog = renderServerHistoryDialog;
+    contentTestHooks.loadServerHistory = loadServerHistory;
+    contentTestHooks.checkServerHistoryStatus = checkServerHistoryStatus;
+    contentTestHooks.rejoinServerHistorySession = rejoinServerHistorySession;
+    contentTestHooks.clearServerHistory = clearServerHistory;
+    contentTestHooks.cleanupServerHistoryFeature = cleanupServerHistoryFeature;
+    contentTestHooks.setServerHistoryMessageSenderForTests = (sender) => {
+      serverHistoryMessageSenderForTests = typeof sender === "function" ? sender : null;
+    };
+    contentTestHooks.getServerHistoryStateForTests = () => ({
+      lifecycleEpoch: serverHistoryLifecycleEpoch,
+      requestSequence: serverHistoryRequestSequence,
+      loadState: serverHistoryLoadState,
+      errorCode: serverHistoryErrorCode,
+      sessions: serverHistorySessions.slice(),
+      tracking: serverHistoryTracking,
+      statuses: Array.from(serverHistoryStatusBySessionId.entries()),
+      pendingStatusIds: Array.from(serverHistoryPendingStatusIds),
+      pendingRejoinId: serverHistoryPendingRejoinId,
+      clearPending: serverHistoryClearPending,
+      confirmClear: serverHistoryConfirmClear,
+      notice: serverHistoryNotice
+    });
+    contentTestHooks.resetServerHistoryStateForTests = () => {
+      cleanupServerHistoryFeature();
+      serverHistoryRequestSequence = 0;
+      serverHistoryMessageSenderForTests = null;
+      serverHistoryThumbnailByUniverseId.clear();
+      serverHistoryThumbnailRequestByUniverseId.clear();
+    };
     contentTestHooks.syncNativeSidebarVisibility = syncNativeSidebarVisibility;
     contentTestHooks.cleanupNativeSidebarVisibility =
       cleanupNativeSidebarVisibility;

@@ -11,14 +11,15 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.41");
-assert.match(manifest.description, /configurable/);
+assert.equal(manifest.version, "0.17.0");
+assert.match(manifest.description, /configurable/i);
 assert.ok(manifest.permissions.includes("storage"));
 
 assert.match(content, /const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1"/);
 assert.match(content, /const FEATURE_SETTINGS_VERSION = 1/);
 for (const key of [
   "sidebarShortcuts",
+  "sidebarServerHistory",
   "quickSettings",
   "quickSettingsOnlineStatus",
   "quickSettingsCurrentExperience",
@@ -27,14 +28,25 @@ for (const key of [
   "friendFilters",
   "quickPlay",
   "gameCcu",
+  "serverHistory",
   "copyRobloxIds"
 ]) {
   assert.match(content, new RegExp(`key: "${key}"`), `missing ${key} feature`);
 }
 assert.match(
   content,
-  /Object\.fromEntries\(\s*FEATURE_SETTING_DEFINITIONS\.map\(\(\{ key \}\) => \[key, true\]\)\s*\)/,
-  "every newly introduced feature must default to enabled"
+  /FEATURE_SETTING_DEFINITIONS\.map\(\(\{ key, defaultEnabled \}\) =>\s*\[\s*key,\s*defaultEnabled !== false\s*\]\s*\)/,
+  "feature defaults must be explicit so opt-in features do not silently become enabled"
+);
+assert.match(
+  content,
+  /key: "serverHistory"[\s\S]*?defaultEnabled: false/,
+  "Server History records activity and therefore must default off"
+);
+assert.match(
+  content,
+  /key: "sidebarServerHistory"[\s\S]*?label: "Server History"/,
+  "the independently remembered Server History sidebar choice must default on"
 );
 
 assert.match(content, /header\.querySelector\("#navbar-settings"\)/);
