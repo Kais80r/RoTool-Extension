@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.33");
+assert.equal(manifest.version, "0.16.34");
 assert.match(manifest.description, /configurable/);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -30,7 +30,7 @@ for (const key of [
 }
 assert.match(
   content,
-  /Object\.fromEntries\(\s*FEATURE_DEFINITIONS\.map\(\(\{ key \}\) => \[key, true\]\)\s*\)/,
+  /Object\.fromEntries\(\s*FEATURE_SETTING_DEFINITIONS\.map\(\(\{ key \}\) => \[key, true\]\)\s*\)/,
   "every newly introduced feature must default to enabled"
 );
 

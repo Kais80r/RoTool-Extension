@@ -159,6 +159,7 @@ function makeSurface(placeId) {
   const surface = {
     isConnected: true,
     dataset: {
+      rslQuickPlayPlaceId: placeId,
       rslQuickPlayLayout: "wide",
       rslQuickPlayActionSize: "wide",
       rslPrivateServerSupported: "unknown",
@@ -178,6 +179,11 @@ function makeSurface(placeId) {
         return privateButton;
       }
       return null;
+    },
+    querySelectorAll(selector) {
+      return selector === "[data-rsl-quick-play-action]"
+        ? [privateButton, playButton, {}]
+        : [];
     }
   };
   return { placeId, surface, privateButton, host };

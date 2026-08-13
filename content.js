@@ -14,6 +14,7 @@
   const PRIVATE_SERVERS_DIALOG_ID = "rsl-private-servers-dialog";
   const FEATURE_SETTINGS_DIALOG_ID = "rsl-feature-settings-dialog";
   const FEATURE_SETTINGS_NAV_ID = "rsl-navbar-settings";
+  const NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE = "data-rsl-native-sidebar-hidden";
   const BEST_FRIENDS_CAROUSEL_ATTRIBUTE = "data-rsl-best-friends-carousel";
   const BEST_FRIENDS_HEADER_ATTRIBUTE = "data-rsl-best-friends-header";
   const BEST_FRIENDS_BODY_ATTRIBUTE = "data-rsl-best-friends-body";
@@ -40,6 +41,8 @@
   const QUICK_PLAY_TRAY_ATTRIBUTE = "data-rsl-quick-play-tray";
   const QUICK_PLAY_ACTION_ATTRIBUTE = "data-rsl-quick-play-action";
   const QUICK_PLAY_PLACE_ID_ATTRIBUTE = "data-rsl-quick-play-place-id";
+  const PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE =
+    "data-rsl-private-support-owned-tabindex";
   const GAME_TILE_CCU_ATTRIBUTE = "data-rsl-game-tile-ccu";
   const GAME_TILE_CCU_VALUE_ATTRIBUTE = "data-rsl-game-tile-ccu-value";
   const GAME_TILE_CCU_ICON_ATTRIBUTE = "data-rsl-game-tile-ccu-icon";
@@ -511,8 +514,25 @@
     Object.freeze({
       key: "sidebarShortcuts",
       group: "Interface",
-      label: "Sidebar Shortcuts",
-      description: "Show saved sidebar links and the Add shortcut button."
+      label: "Sidebar Customization",
+      description: "Customize shortcuts and native links in Roblox's sidebar.",
+      children: [
+        Object.freeze({
+          key: "sidebarCustomShortcuts",
+          label: "Custom Shortcuts",
+          description: "Show saved sidebar links and the Add shortcut button."
+        }),
+        Object.freeze({
+          key: "sidebarGiftCards",
+          label: "Buy Gift Cards",
+          description: "Show Roblox's Buy Gift Cards sidebar link."
+        }),
+        Object.freeze({
+          key: "sidebarOfficialStore",
+          label: "Official Store",
+          description: "Show Roblox's Official Store sidebar button."
+        })
+      ]
     }),
     Object.freeze({
       key: "quickSettings",
@@ -536,7 +556,24 @@
       key: "quickPlay",
       group: "Experiences",
       label: "Quick Play & Servers",
-      description: "Show Play, Random Server, and Private Servers on game cards."
+      description: "Show launch controls on experience cards.",
+      children: [
+        Object.freeze({
+          key: "quickPlayActionPlay",
+          label: "Quick Play",
+          description: "Show the direct Quick Play button."
+        }),
+        Object.freeze({
+          key: "quickPlayActionPrivate",
+          label: "Private Servers",
+          description: "Show the Private Servers browser."
+        }),
+        Object.freeze({
+          key: "quickPlayActionRandom",
+          label: "Random Server",
+          description: "Show the Random Server button."
+        })
+      ]
     }),
     Object.freeze({
       key: "gameCcu",
@@ -551,8 +588,16 @@
       description: "Add Roblox ID commands to the browser right-click menu."
     })
   ]);
+  const FEATURE_SETTING_DEFINITIONS = Object.freeze(
+    FEATURE_DEFINITIONS.flatMap((definition) => [
+      definition,
+      ...(definition.children || []).map((child) =>
+        Object.freeze({ ...child, parentKey: definition.key })
+      )
+    ])
+  );
   const DEFAULT_FEATURE_SETTINGS = Object.freeze(
-    Object.fromEntries(FEATURE_DEFINITIONS.map(({ key }) => [key, true]))
+    Object.fromEntries(FEATURE_SETTING_DEFINITIONS.map(({ key }) => [key, true]))
   );
 
   const NATIVE_ANCHOR_SELECTORS = [
@@ -804,7 +849,7 @@
         ? rawValue.flags
         : {};
     const normalized = { ...DEFAULT_FEATURE_SETTINGS };
-    for (const { key } of FEATURE_DEFINITIONS) {
+    for (const { key } of FEATURE_SETTING_DEFINITIONS) {
       if (typeof rawFlags[key] === "boolean") {
         normalized[key] = rawFlags[key];
       }
@@ -813,14 +858,14 @@
   }
 
   function featureSettingsEqual(left, right) {
-    return FEATURE_DEFINITIONS.every(({ key }) => left?.[key] === right?.[key]);
+    return FEATURE_SETTING_DEFINITIONS.every(({ key }) => left?.[key] === right?.[key]);
   }
 
   function serializeFeatureSettings(flags = featureSettings) {
     return {
       version: FEATURE_SETTINGS_VERSION,
       flags: Object.fromEntries(
-        FEATURE_DEFINITIONS.map(({ key }) => [key, flags[key] !== false])
+        FEATURE_SETTING_DEFINITIONS.map(({ key }) => [key, flags[key] !== false])
       )
     };
   }
@@ -955,6 +1000,127 @@
 
   function isFeatureEnabled(key) {
     return featureSettings[key] !== false;
+  }
+
+  function isQuickPlayActionEnabled(action) {
+    const settingByAction = {
+      play: "quickPlayActionPlay",
+      private: "quickPlayActionPrivate",
+      random: "quickPlayActionRandom"
+    };
+    const key = settingByAction[action];
+    return Boolean(key && isFeatureEnabled("quickPlay") && isFeatureEnabled(key));
+  }
+
+  function getNativeSidebarSemanticKey(row) {
+    if (
+      !row?.matches?.("li") ||
+      isExtensionRow(row) ||
+      !row.closest("#left-navigation-container, .left-col-list")
+    ) {
+      return "";
+    }
+    const list = row.parentElement;
+    const isLegacyNavigationRow = Boolean(list?.matches?.(".left-col-list"));
+    const isRedesignedNavigationRow = Boolean(
+      list?.parentElement?.matches?.("nav") &&
+      list.closest?.("#left-navigation-container")
+    );
+    if (
+      list &&
+      !isLegacyNavigationRow &&
+      !isRedesignedNavigationRow
+    ) {
+      return "";
+    }
+    const hasDomChildren = row.children != null;
+    const directControls = hasDomChildren
+      ? Array.from(row.children).filter((child) =>
+          child.matches?.("a[href], button")
+        )
+      : [];
+    // The fallback keeps the semantic helper usable in small DOM test doubles;
+    // real Roblox rows always take the direct-child path above.
+    const controls = hasDomChildren
+      ? directControls
+      : Array.from(row.querySelectorAll("a[href]"));
+    const links = controls.filter((control) => control.matches?.("a[href]"));
+    const isGiftCards = links.some((link) => {
+      if (link.matches?.("#nav-giftcards")) {
+        return true;
+      }
+      try {
+        const url = new URL(link.href, location.origin);
+        const hostname = url.hostname.toLowerCase();
+        return (
+          (hostname === "roblox.com" || hostname.endsWith(".roblox.com")) &&
+          /^\/giftcards(?:[-\/]|$)/.test(url.pathname.toLowerCase())
+        );
+      } catch {
+        return false;
+      }
+    }) || controls.some((control) =>
+      Boolean(control.querySelector?.(".icon-regular-gift-card"))
+    ) || (!hasDomChildren && Boolean(row.querySelector(".icon-regular-gift-card")));
+    if (isGiftCards) {
+      return "giftCards";
+    }
+    if (
+      controls.some(
+        (control) =>
+          control.matches?.("#nav-shop") ||
+          Boolean(control.querySelector?.("#nav-shop")) ||
+          Boolean(control.querySelector?.(".icon-regular-building-store"))
+      ) ||
+      (!hasDomChildren &&
+        (Boolean(row.querySelector("#nav-shop")) ||
+          Boolean(row.querySelector(".icon-regular-building-store"))))
+    ) {
+      return "officialStore";
+    }
+    return "";
+  }
+
+  function cleanupNativeSidebarVisibility() {
+    document
+      .querySelectorAll(
+        `#left-navigation-container [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}], ` +
+          `.left-col-list [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}]`
+      )
+      .forEach((row) => row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE));
+  }
+
+  function syncNativeSidebarVisibility() {
+    if (!isFeatureEnabled("sidebarShortcuts")) {
+      cleanupNativeSidebarVisibility();
+      return;
+    }
+    const roots = Array.from(
+      document.querySelectorAll("#left-navigation-container, .left-col-list")
+    );
+    if (roots.length === 0) {
+      return;
+    }
+    const hiddenByKey = {
+      giftCards: !isFeatureEnabled("sidebarGiftCards"),
+      officialStore: !isFeatureEnabled("sidebarOfficialStore")
+    };
+    roots.forEach((root) => {
+      root.querySelectorAll("li").forEach((row) => {
+        if (isExtensionRow(row)) {
+          row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
+          return;
+        }
+        const key = getNativeSidebarSemanticKey(row);
+        if (key && hiddenByKey[key]) {
+          row.setAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE, key);
+        } else {
+          // Roblox can reuse list rows while navigating. Never leave an owned
+          // marker behind once that row no longer has the matched semantics.
+          row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
+        }
+      });
+    });
   }
 
   function normalizeBestFriendIds(rawIds) {
@@ -1109,6 +1275,7 @@
       element.removeAttribute("id");
       element.removeAttribute("aria-current");
       element.removeAttribute("aria-selected");
+      element.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
       element.classList?.remove("active", "selected", "bg-surface-300");
     }
 
@@ -12074,6 +12241,7 @@
     }
     const action = button.getAttribute(QUICK_PLAY_ACTION_ATTRIBUTE);
     if (
+      !isQuickPlayActionEnabled(action) ||
       result?.v !== 1 ||
       result?.action !== action ||
       !["play", "random"].includes(action) ||
@@ -12120,7 +12288,7 @@
   }
 
   function handleRandomServerRequest(event) {
-    if (!isFeatureEnabled("quickPlay")) {
+    if (!isQuickPlayActionEnabled("random")) {
       return;
     }
     const button = event.target?.closest?.(`[${QUICK_PLAY_ACTION_ATTRIBUTE}="random"]`);
@@ -12264,25 +12432,65 @@
     const button = surface?.querySelector(
       `[${QUICK_PLAY_ACTION_ATTRIBUTE}="private"]`
     );
-    if (!button) {
-      return;
-    }
+    const actionCount = surface?.querySelectorAll?.(
+      `[${QUICK_PLAY_ACTION_ATTRIBUTE}]`
+    )?.length || 0;
     const measuredWidth = Number.parseFloat(surface.style.width) ||
       getQuickPlayBox(surface).width;
+    const useWideActionSize =
+      surface.dataset.rslQuickPlayLayout === "wide" &&
+      measuredWidth >= QUICK_PLAY_PRIVATE_WIDE_MIN_THUMBNAIL_WIDTH;
+    surface.dataset.rslQuickPlayActionSize = useWideActionSize ? "wide" : "compact";
+    if (!button) {
+      surface.dataset.rslPrivateServerLayout = "two";
+      if (surface.hasAttribute?.(PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE)) {
+        surface.removeAttribute?.("tabindex");
+        surface.removeAttribute?.(PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE);
+      }
+      surface.setAttribute?.("aria-label", "Experience launch controls");
+      return;
+    }
     const supported = surface.dataset.rslPrivateServerSupported === "true";
+    const hasAllThreeActions = actionCount === 3;
     const wasThreeButtonLayout = surface.dataset.rslPrivateServerLayout === "three";
     const privateLayoutMinimumWidth = wasThreeButtonLayout
       ? QUICK_PLAY_PRIVATE_MIN_THUMBNAIL_WIDTH -
         QUICK_PLAY_PRIVATE_LAYOUT_HYSTERESIS_PX
       : QUICK_PLAY_PRIVATE_MIN_THUMBNAIL_WIDTH;
-    const useWideActionSize =
-      surface.dataset.rslQuickPlayLayout === "wide" &&
-      measuredWidth >= QUICK_PLAY_PRIVATE_WIDE_MIN_THUMBNAIL_WIDTH;
     const useThreeButtonLayout =
       supported && measuredWidth >= privateLayoutMinimumWidth;
-    surface.dataset.rslQuickPlayActionSize = useWideActionSize ? "wide" : "compact";
-    button.hidden = !useThreeButtonLayout;
-    surface.dataset.rslPrivateServerLayout = useThreeButtonLayout ? "three" : "two";
+    const showThreeButtonLayout = hasAllThreeActions && useThreeButtonLayout;
+    button.hidden = !(supported && (!hasAllThreeActions || showThreeButtonLayout));
+    surface.dataset.rslPrivateServerLayout = showThreeButtonLayout ? "three" : "two";
+    const needsKeyboardTrigger = actionCount === 1 && button.hidden;
+    if (needsKeyboardTrigger) {
+      if (!surface.hasAttribute?.("tabindex")) {
+        surface.setAttribute?.("tabindex", "0");
+        surface.setAttribute?.(PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE, "");
+      }
+      surface.setAttribute?.(
+        "aria-label",
+        supported === false
+          ? "Private Servers unavailable; focus to check again"
+          : "Check Private Servers availability"
+      );
+    } else {
+      const ownedTabindex = surface.hasAttribute?.(
+        PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE
+      );
+      if (ownedTabindex) {
+        surface.removeAttribute?.("tabindex");
+        surface.removeAttribute?.(PRIVATE_SUPPORT_TABINDEX_ATTRIBUTE);
+      }
+      surface.setAttribute?.("aria-label", "Experience launch controls");
+      if (
+        !button.hidden &&
+        typeof document !== "undefined" &&
+        document.activeElement === surface
+      ) {
+        button.focus?.({ preventScroll: true });
+      }
+    }
   }
 
   function normalizePrivateServerPrice(value) {
@@ -12346,10 +12554,20 @@
     });
   }
 
+  function cancelQueuedPrivateServerSupportRequests() {
+    const queued = privateServerSupportRequestQueue.splice(0);
+    for (const task of queued) {
+      const error = new Error("Private server support request cancelled");
+      error.code = "CANCELLED";
+      task.reject(error);
+    }
+  }
+
   function getPrivateServerSupportSurfacePlaceId(surface) {
     return normalizeQuickPlayPlaceId(
-      surface?.querySelector(`[${QUICK_PLAY_ACTION_ATTRIBUTE}="play"]`)
-        ?.getAttribute(QUICK_PLAY_PLACE_ID_ATTRIBUTE)
+      surface?.dataset.rslQuickPlayPlaceId ||
+        surface?.querySelector(`[${QUICK_PLAY_ACTION_ATTRIBUTE}]`)
+          ?.getAttribute(QUICK_PLAY_PLACE_ID_ATTRIBUTE)
     );
   }
 
@@ -12489,7 +12707,11 @@
   }
 
   function loadPrivateServerSupportForSurface(surface) {
-    if (!surface?.isConnected) {
+    if (
+      !isQuickPlayActionEnabled("private") ||
+      !surface?.querySelector?.(`[${QUICK_PLAY_ACTION_ATTRIBUTE}="private"]`) ||
+      !surface.isConnected
+    ) {
       return;
     }
     const placeId = getPrivateServerSupportSurfacePlaceId(surface);
@@ -12520,7 +12742,7 @@
   }
 
   function activatePrivateServerSupport(surface) {
-    if (!isFeatureEnabled("quickPlay")) {
+    if (!isQuickPlayActionEnabled("private")) {
       return;
     }
     if (!surface?.isConnected) {
@@ -12544,7 +12766,11 @@
   }
 
   function observePrivateServerSupport(surface) {
-    if (!surface || surface.dataset.rslPrivateSupportObserved === "true") {
+    if (
+      !isQuickPlayActionEnabled("private") ||
+      !surface ||
+      surface.dataset.rslPrivateSupportObserved === "true"
+    ) {
       return;
     }
     surface.dataset.rslPrivateSupportObserved = "true";
@@ -13595,8 +13821,15 @@
   }
 
   function makeQuickPlaySurface(root, thumbnail, placeId) {
+    const showPlay = isQuickPlayActionEnabled("play");
+    const showPrivate = isQuickPlayActionEnabled("private");
+    const showRandom = isQuickPlayActionEnabled("random");
+    if (!showPlay && !showPrivate && !showRandom) {
+      return null;
+    }
     const surface = document.createElement("div");
     surface.setAttribute(QUICK_PLAY_SURFACE_ATTRIBUTE, "");
+    surface.dataset.rslQuickPlayPlaceId = placeId;
     surface.dataset.rslPrivateServerSupported = "unknown";
     surface.setAttribute("role", "group");
     surface.setAttribute("aria-label", "Experience launch controls");
@@ -13696,7 +13929,19 @@
     randomButton.addEventListener("click", stopCardPointerAction);
     randomButton.addEventListener("auxclick", stopCardPointerAction);
 
-    actions.append(privateButton, button, randomButton);
+    if (showPrivate && showPlay && showRandom) {
+      actions.append(privateButton, button, randomButton);
+    } else {
+      if (showPrivate) {
+        actions.append(privateButton);
+      }
+      if (showPlay) {
+        actions.append(button);
+      }
+      if (showRandom) {
+        actions.append(randomButton);
+      }
+    }
     tray.append(actions);
     surface.append(tray);
     return surface;
@@ -13762,6 +14007,11 @@
     );
     if (!surface) {
       surface = makeQuickPlaySurface(root, thumbnail, placeId);
+      if (!surface) {
+        removeQuickPlaySurface(root);
+        mountedRoots.delete(root);
+        return;
+      }
       root.append(surface);
     }
     const cardName = getQuickPlayCardName(root, thumbnail);
@@ -13781,7 +14031,12 @@
     });
     syncQuickPlaySurfaceGeometry(surface, root, thumbnail);
     getQuickPlayGeometryObserver()?.observe(thumbnail);
-    observePrivateServerSupport(surface);
+    const showPrivate = isQuickPlayActionEnabled("private");
+    if (showPrivate) {
+      observePrivateServerSupport(surface);
+    } else {
+      removePrivateServerSupportInteraction(surface);
+    }
   }
 
   function mountQuickPlayControls() {
@@ -13803,7 +14058,7 @@
     });
     quickPlayGeometryObserver?.disconnect();
     quickPlayGeometryObserver = null;
-    privateServerSupportRequestQueue.length = 0;
+    cancelQueuedPrivateServerSupportRequests();
     for (const placeId of Array.from(privateServerSupportRetryByPlaceId.keys())) {
       clearPrivateServerSupportRetry(placeId);
     }
@@ -13933,8 +14188,22 @@
     }
     dialog.querySelectorAll("[data-rsl-feature-key]").forEach((input) => {
       const key = input.getAttribute("data-rsl-feature-key");
+      const parentKey = input.getAttribute("data-rsl-feature-parent-key");
       input.checked = isFeatureEnabled(key);
-      input.disabled = featureSettingsSaving || !featureSettingsLoaded;
+      input.disabled =
+        featureSettingsSaving ||
+        !featureSettingsLoaded ||
+        Boolean(parentKey && !isFeatureEnabled(parentKey));
+    });
+    dialog.querySelectorAll("[data-rsl-feature-children]").forEach((children) => {
+      const parentKey = children.getAttribute("data-rsl-feature-parent-key");
+      children.toggleAttribute(
+        "data-rsl-feature-parent-disabled",
+        Boolean(parentKey && !isFeatureEnabled(parentKey))
+      );
+    });
+    dialog.querySelectorAll("[data-rsl-feature-disclosure]").forEach((button) => {
+      button.disabled = featureSettingsSaving || !featureSettingsLoaded;
     });
     const reset = dialog.querySelector("[data-rsl-feature-reset]");
     if (reset) {
@@ -14030,23 +14299,12 @@
 
     const groups = dialog.querySelector(".rsl-feature-settings__groups");
     const groupsByName = new Map();
-    for (const definition of FEATURE_DEFINITIONS) {
-      let section = groupsByName.get(definition.group);
-      if (!section) {
-        section = document.createElement("section");
-        section.className = "rsl-feature-settings__group";
-        const heading = document.createElement("h3");
-        heading.className = "rsl-feature-settings__group-title content-default text-label-medium";
-        heading.textContent = definition.group;
-        const list = document.createElement("div");
-        list.className = "rsl-feature-settings__list";
-        section.append(heading, list);
-        groups.append(section);
-        groupsByName.set(definition.group, section);
-      }
-
+    const createSettingRow = (definition) => {
+      const parentKey = definition.parentKey || "";
       const row = document.createElement("label");
-      row.className = "rsl-feature-settings__row";
+      row.className = parentKey
+        ? "rsl-feature-settings__row rsl-feature-settings__row--child"
+        : "rsl-feature-settings__row";
       const copy = document.createElement("span");
       copy.className = "rsl-feature-settings__copy";
       const label = document.createElement("strong");
@@ -14060,12 +14318,22 @@
       input.type = "checkbox";
       input.className = "rsl-feature-settings__input rsl-sr-only";
       input.setAttribute("data-rsl-feature-key", definition.key);
+      if (parentKey) {
+        input.setAttribute("data-rsl-feature-parent-key", parentKey);
+      }
       input.setAttribute("role", "switch");
+      input.disabled =
+        featureSettingsSaving ||
+        !featureSettingsLoaded ||
+        Boolean(
+          definition.parentKey && !isFeatureEnabled(definition.parentKey)
+        );
       input.addEventListener("change", (event) => {
         if (
           event.isTrusted !== true ||
           featureSettingsSaving ||
-          !featureSettingsLoaded
+          !featureSettingsLoaded ||
+          (parentKey && !isFeatureEnabled(parentKey))
         ) {
           renderFeatureSettingsDialog();
           return;
@@ -14081,7 +14349,64 @@
       thumb.className = "rsl-feature-settings__switch-thumb";
       visual.append(thumb);
       row.append(copy, input, visual);
-      section.querySelector(".rsl-feature-settings__list").append(row);
+      return row;
+    };
+    for (const definition of FEATURE_DEFINITIONS) {
+      let section = groupsByName.get(definition.group);
+      if (!section) {
+        section = document.createElement("section");
+        section.className = "rsl-feature-settings__group";
+        const heading = document.createElement("h3");
+        heading.className = "rsl-feature-settings__group-title content-default text-label-medium";
+        heading.textContent = definition.group;
+        const list = document.createElement("div");
+        list.className = "rsl-feature-settings__list";
+        section.append(heading, list);
+        groups.append(section);
+        groupsByName.set(definition.group, section);
+      }
+
+      const item = document.createElement("div");
+      item.className = "rsl-feature-settings__item";
+      item.append(createSettingRow(definition));
+      if (definition.children?.length) {
+        const childrenId = `rsl-feature-settings-${definition.key}-advanced`;
+        const disclosure = document.createElement("button");
+        disclosure.type = "button";
+        disclosure.className = "rsl-feature-settings__disclosure";
+        disclosure.setAttribute("data-rsl-feature-disclosure", definition.key);
+        disclosure.setAttribute("aria-expanded", "false");
+        disclosure.setAttribute("aria-controls", childrenId);
+        disclosure.setAttribute(
+          "aria-label",
+          `Advanced settings for ${definition.label}`
+        );
+        disclosure.innerHTML =
+          '<span>Advanced</span><span class="rsl-feature-settings__disclosure-icon" aria-hidden="true"></span>';
+        const children = document.createElement("div");
+        children.id = childrenId;
+        children.className = "rsl-feature-settings__children";
+        children.setAttribute("data-rsl-feature-children", definition.key);
+        children.setAttribute("data-rsl-feature-parent-key", definition.key);
+        children.setAttribute("role", "group");
+        children.setAttribute("aria-label", `${definition.label} advanced settings`);
+        children.hidden = true;
+        for (const child of definition.children) {
+          const childDefinition = FEATURE_SETTING_DEFINITIONS.find(
+            (candidate) => candidate.key === child.key
+          );
+          if (childDefinition) {
+            children.append(createSettingRow(childDefinition));
+          }
+        }
+        disclosure.addEventListener("click", () => {
+          const expanded = disclosure.getAttribute("aria-expanded") === "true";
+          disclosure.setAttribute("aria-expanded", String(!expanded));
+          children.hidden = expanded;
+        });
+        item.append(disclosure, children);
+      }
+      section.querySelector(".rsl-feature-settings__list").append(item);
     }
 
     dialog.querySelectorAll("[data-rsl-feature-settings-close]").forEach((button) => {
@@ -14139,9 +14464,15 @@
       return;
     }
     if (isFeatureEnabled("sidebarShortcuts")) {
-      mountSidebar();
+      syncNativeSidebarVisibility();
+      if (isFeatureEnabled("sidebarCustomShortcuts")) {
+        mountSidebar();
+      } else {
+        cleanupSidebarFeature();
+      }
     } else {
       cleanupSidebarFeature();
+      cleanupNativeSidebarVisibility();
     }
     mountOnlineFriendsFilter();
     mountBestFriendsCarousel();
@@ -14228,8 +14559,19 @@
     if (!featureSettingsLoaded) {
       return;
     }
-    if (previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts) {
+    if (
+      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
+      previousSettings.sidebarCustomShortcuts !==
+        nextSettings.sidebarCustomShortcuts
+    ) {
       cleanupSidebarFeature();
+    }
+    if (
+      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
+      previousSettings.sidebarGiftCards !== nextSettings.sidebarGiftCards ||
+      previousSettings.sidebarOfficialStore !== nextSettings.sidebarOfficialStore
+    ) {
+      cleanupNativeSidebarVisibility();
     }
     if (
       previousSettings.friendFilters !== nextSettings.friendFilters ||
@@ -14242,6 +14584,13 @@
     }
     if (previousSettings.quickSettings !== nextSettings.quickSettings) {
       cleanupQuickSettingsHome();
+    }
+    const quickPlayActionsChanged =
+      previousSettings.quickPlayActionPlay !== nextSettings.quickPlayActionPlay ||
+      previousSettings.quickPlayActionPrivate !== nextSettings.quickPlayActionPrivate ||
+      previousSettings.quickPlayActionRandom !== nextSettings.quickPlayActionRandom;
+    if (quickPlayActionsChanged) {
+      cleanupQuickPlayFeature();
     }
     if (previousSettings.quickPlay !== nextSettings.quickPlay) {
       cleanupQuickPlayFeature();
@@ -14980,7 +15329,15 @@
     contentTestHooks.normalizeFeatureSettings = normalizeFeatureSettings;
     contentTestHooks.serializeFeatureSettings = serializeFeatureSettings;
     contentTestHooks.featureDefinitions = FEATURE_DEFINITIONS;
+    contentTestHooks.featureSettingDefinitions = FEATURE_SETTING_DEFINITIONS;
     contentTestHooks.defaultFeatureSettings = DEFAULT_FEATURE_SETTINGS;
+    contentTestHooks.syncNativeSidebarVisibility = syncNativeSidebarVisibility;
+    contentTestHooks.cleanupNativeSidebarVisibility =
+      cleanupNativeSidebarVisibility;
+    contentTestHooks.isQuickPlayActionEnabled = isQuickPlayActionEnabled;
+    contentTestHooks.makeQuickPlaySurface = makeQuickPlaySurface;
+    contentTestHooks.cancelQueuedPrivateServerSupportRequests =
+      cancelQueuedPrivateServerSupportRequests;
     contentTestHooks.mountFeatureSettingsButton = mountFeatureSettingsButton;
     contentTestHooks.openFeatureSettingsDialog = openFeatureSettingsDialog;
     contentTestHooks.setFeatureSettingsForTests = (rawValue) => {

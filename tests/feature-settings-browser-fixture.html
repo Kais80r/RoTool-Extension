@@ -106,10 +106,16 @@
             version: 1,
             flags: {
               sidebarShortcuts: true,
+              sidebarCustomShortcuts: true,
+              sidebarGiftCards: true,
+              sidebarOfficialStore: true,
               quickSettings: true,
               bestFriends: true,
               friendFilters: true,
               quickPlay: true,
+              quickPlayActionPlay: true,
+              quickPlayActionPrivate: true,
+              quickPlayActionRandom: true,
               gameCcu: true,
               copyRobloxIds: true
             }
@@ -132,8 +138,30 @@
           roToolButton.click();
           const dialog = document.getElementById("rsl-feature-settings-dialog");
           const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
-          if (!dialog?.open || switches.length !== 7 || switches.some((input) => !input.checked)) {
-            throw new Error("Feature settings dialog did not open with seven enabled switches");
+          if (!dialog?.open || switches.length !== 13 || switches.some((input) => !input.checked)) {
+            throw new Error("Feature settings dialog did not open with thirteen enabled switches");
+          }
+          const advancedButtons = Array.from(
+            dialog.querySelectorAll("[data-rsl-feature-disclosure]")
+          );
+          if (
+            advancedButtons.length !== 2 ||
+            advancedButtons.some((button) => {
+              const panel = document.getElementById(button.getAttribute("aria-controls"));
+              return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
+            })
+          ) {
+            throw new Error("Advanced settings disclosures were not collapsed and linked to panels");
+          }
+          const disclosureNames = advancedButtons.map((button) =>
+            button.getAttribute("aria-label")
+          );
+          if (
+            !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
+            !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
+            new Set(disclosureNames).size !== disclosureNames.length
+          ) {
+            throw new Error("Advanced disclosures do not have distinct contextual accessible names");
           }
           const headerLogo = roToolButton.querySelector(".rsl-navbar-settings-logo");
           const dialogLogo = dialog.querySelector(".rsl-feature-settings__logo");
@@ -170,13 +198,35 @@
             saved?.version !== 1 ||
             saved.flags?.quickPlay !== false ||
             quickPlaySwitch.checked ||
-            !gameCcuSwitch?.checked
+            !gameCcuSwitch?.checked ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionPlay']")?.disabled ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionPrivate']")?.disabled ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionRandom']")?.disabled
           ) {
-            throw new Error("Feature settings did not persist and render a disabled feature");
+            throw new Error("The disabled Quick Play master did not preserve and disable its child controls");
           }
           await hooks.saveFeatureSettingsForTests({ quickPlay: true });
-          if (!quickPlaySwitch.checked) {
+          if (
+            !quickPlaySwitch.checked ||
+            dialog.querySelector("[data-rsl-feature-key='quickPlayActionPlay']")?.disabled ||
+            dialog.querySelector("[data-rsl-feature-key='quickPlayActionPrivate']")?.disabled ||
+            dialog.querySelector("[data-rsl-feature-key='quickPlayActionRandom']")?.disabled
+          ) {
             throw new Error("Feature settings did not re-enable a feature");
+          }
+
+          await hooks.saveFeatureSettingsForTests({
+            quickPlayActionPlay: false,
+            quickPlayActionPrivate: true,
+            quickPlayActionRandom: false
+          });
+          const privateOnlySaved = globalThis.__rslFixtureStorage.rslFeatureSettingsV1;
+          if (
+            privateOnlySaved.flags?.quickPlayActionPlay !== false ||
+            privateOnlySaved.flags?.quickPlayActionPrivate !== true ||
+            privateOnlySaved.flags?.quickPlayActionRandom !== false
+          ) {
+            throw new Error("Per-button Quick Play choices were not saved independently");
           }
 
           const homeHost = document.createElement("section");

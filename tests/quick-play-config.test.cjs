@@ -20,7 +20,7 @@ const privateServerDialogVisualFixtureSource = fs.readFileSync(
 );
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.33");
+assert.equal(manifest.version, "0.16.34");
 assert.match(manifest.description, /Quick Play/);
 assert.match(manifest.description, /Private Servers/);
 assert.match(manifest.description, /Random Server/);
@@ -924,7 +924,8 @@ assert.match(readme, /\*\*Private Servers\*\* on the left/);
 assert.match(readme, /wider primary \*\*Quick Play\*\* in the center/);
 assert.match(readme, /\*\*Random Server\*\*/);
 assert.match(readme, /View Private Servers/);
-assert.match(readme, /existing two equal-width Quick Play and Random Server buttons exactly/);
+assert.match(readme, /retain the available enabled actions that fit safely/);
+assert.match(readme, /all three Show switches default on/);
 assert.match(readme, /private servers returned by Roblox for the signed-in account/);
 assert.match(readme, /does not claim that list inclusion proves access/);
 assert.match(readme, /at least 144 CSS pixels wide/);

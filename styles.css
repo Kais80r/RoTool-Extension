@@ -3,6 +3,14 @@
   cursor: pointer;
 }
 
+/* RoTool never removes Roblox's native sidebar entries. These selectors are
+   deliberately limited to direct navigation rows so a matching footer link,
+   modal, or control elsewhere on the page cannot be hidden. */
+#left-navigation-container nav > ul > li[data-rsl-native-sidebar-hidden],
+.left-col-list > li[data-rsl-native-sidebar-hidden] {
+  display: none !important;
+}
+
 [data-rsl-native-friends-hidden],
 [data-rsl-native-pagination-hidden],
 [data-rsl-online-search-hidden] {
@@ -3082,6 +3090,11 @@
   display: none !important;
 }
 
+[data-rsl-quick-play-surface][data-rsl-private-support-owned-tabindex]:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+
 [data-rsl-quick-play-host]:is(:hover, :focus-within)
   > [data-rsl-quick-play-surface] {
   visibility: visible;
@@ -3155,7 +3168,7 @@
   display: none !important;
 }
 
-[data-rsl-quick-play-surface][data-rsl-private-server-layout="three"]
+[data-rsl-quick-play-surface]
   .rsl-private-server-button:not([hidden]) {
   display: inline-flex !important;
 }
@@ -3538,6 +3551,15 @@
   border-radius: var(--radius-medium, 8px);
 }
 
+.rsl-feature-settings__item {
+  min-width: 0;
+}
+
+.rsl-feature-settings__item + .rsl-feature-settings__item {
+  border-top: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+}
+
 .rsl-feature-settings__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3557,6 +3579,120 @@
 
 .rsl-feature-settings__row:hover {
   background: var(--color-state-hover, rgb(255 255 255 / 6%));
+}
+
+.rsl-feature-settings__disclosure {
+  display: flex;
+  box-sizing: border-box;
+  width: calc(100% - 32px);
+  min-height: 34px;
+  margin: -6px 16px 10px;
+  padding: 5px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-small, 6px);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: left;
+}
+
+.rsl-feature-settings__disclosure:hover {
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  background: var(--color-state-hover, rgb(255 255 255 / 6%));
+}
+
+.rsl-feature-settings__disclosure:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, #6aa7ff);
+  outline-offset: 1px;
+}
+
+.rsl-feature-settings__disclosure:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.rsl-feature-settings__disclosure-icon {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 3px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 140ms ease;
+}
+
+.rsl-feature-settings__disclosure[aria-expanded="true"]
+  .rsl-feature-settings__disclosure-icon {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.rsl-feature-settings__children {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  margin: 0 16px 14px 36px;
+  overflow: hidden;
+  background: var(--color-surface-100, var(--rsl-fallback-surface));
+  border: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+  border-radius: var(--radius-medium, 8px);
+  box-shadow: inset 3px 0 0
+    var(--color-action-emphasis-background, #335fff);
+}
+
+.rsl-feature-settings__children[hidden] {
+  display: none !important;
+}
+
+.rsl-feature-settings__children .rsl-feature-settings__row--child {
+  min-height: 56px;
+  padding: 10px 12px 10px 14px;
+  gap: 14px;
+}
+
+.rsl-feature-settings__children
+  .rsl-feature-settings__row--child
+  + .rsl-feature-settings__row--child {
+  border-top: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+}
+
+.rsl-feature-settings__children .rsl-feature-settings__copy > span {
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.rsl-feature-settings__children[data-rsl-feature-parent-disabled],
+.rsl-feature-settings__children[data-rsl-feature-children-disabled] {
+  box-shadow: inset 3px 0 0
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+  opacity: 0.6;
+}
+
+.rsl-feature-settings__children[data-rsl-feature-parent-disabled]
+  .rsl-feature-settings__row,
+.rsl-feature-settings__children[data-rsl-feature-children-disabled]
+  .rsl-feature-settings__row {
+  cursor: not-allowed;
+}
+
+.rsl-feature-settings__children[data-rsl-feature-parent-disabled]
+  .rsl-feature-settings__input:disabled
+  ~ .rsl-feature-settings__switch,
+.rsl-feature-settings__children[data-rsl-feature-children-disabled]
+  .rsl-feature-settings__input:disabled
+  ~ .rsl-feature-settings__switch {
+  cursor: not-allowed;
+  filter: saturate(0.45);
 }
 
 .rsl-feature-settings__copy {
@@ -3623,6 +3759,20 @@
   opacity: 0.65;
 }
 
+.rsl-feature-settings__children[data-rsl-feature-parent-disabled]
+  .rsl-feature-settings__row:has(.rsl-feature-settings__input:disabled),
+.rsl-feature-settings__children[data-rsl-feature-children-disabled]
+  .rsl-feature-settings__row:has(.rsl-feature-settings__input:disabled),
+.rsl-feature-settings__children[data-rsl-feature-parent-disabled]
+  .rsl-feature-settings__input:disabled
+  ~ .rsl-feature-settings__switch,
+.rsl-feature-settings__children[data-rsl-feature-children-disabled]
+  .rsl-feature-settings__input:disabled
+  ~ .rsl-feature-settings__switch {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 .rsl-feature-settings__footer {
   align-items: center;
   justify-content: flex-start;
@@ -3677,6 +3827,22 @@
     padding: 12px;
   }
 
+  .rsl-feature-settings__disclosure {
+    width: calc(100% - 24px);
+    margin-right: 12px;
+    margin-left: 12px;
+  }
+
+  .rsl-feature-settings__children {
+    margin-right: 12px;
+    margin-bottom: 12px;
+    margin-left: 20px;
+  }
+
+  .rsl-feature-settings__children .rsl-feature-settings__row--child {
+    padding: 10px;
+  }
+
   .rsl-feature-settings__footer {
     display: grid;
     grid-template-areas:
@@ -3700,5 +3866,11 @@
   .rsl-feature-settings__footer [data-rsl-feature-settings-close] {
     grid-area: done;
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rsl-feature-settings__disclosure-icon {
+    transition: none;
   }
 }
