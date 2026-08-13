@@ -1,5 +1,7 @@
 "use strict";
 
+process.env.TZ = "Europe/Berlin";
+
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -156,7 +158,165 @@ assert.notEqual(compactTimestamp, "Unknown");
 assert.notEqual(compactTimeOnly, "Unknown");
 assert.ok(
   compactTimestamp.length > compactTimeOnly.length,
-  "the first compact timestamp keeps a date while same-day Last seen can use time only"
+  "the full compact format remains available for cross-day start timestamps"
+);
+
+function localTimestamp(year, monthIndex, day, hour = 12, minute = 0) {
+  return new Date(year, monthIndex, day, hour, minute, 0, 0).getTime();
+}
+
+const groupingNow = localTimestamp(2026, 7, 13, 15, 30);
+const todayTimestamp = localTimestamp(2026, 7, 13, 9, 15);
+const yesterdayTimestamp = localTimestamp(2026, 7, 12, 18, 45);
+const recentWeekdayTimestamp = localTimestamp(2026, 7, 10, 12);
+const olderTimestamp = localTimestamp(2026, 7, 6, 12);
+const futureTimestamp = localTimestamp(2026, 7, 14, 12);
+
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(todayTimestamp, groupingNow, "en-US"),
+  "Today"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(yesterdayTimestamp, groupingNow, "en-US"),
+  "Yesterday"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(
+    recentWeekdayTimestamp,
+    groupingNow,
+    "en-US"
+  ),
+  "Monday",
+  "dates two through six local calendar days ago use a localized weekday"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(olderTimestamp, groupingNow, "en-US"),
+  "August 6, 2026",
+  "dates at least seven local calendar days ago use an unambiguous localized date"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(futureTimestamp, groupingNow, "en-US"),
+  "August 14, 2026",
+  "future dates must not be mislabeled as a recent past day"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(todayTimestamp, groupingNow, "de-DE"),
+  "Heute"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(yesterdayTimestamp, groupingNow, "de-DE"),
+  "Gestern"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(
+    recentWeekdayTimestamp,
+    groupingNow,
+    "de-DE"
+  ),
+  "Montag"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(olderTimestamp, groupingNow, "de-DE"),
+  "6. August 2026",
+  "group labels follow the Roblox page locale instead of the operating-system locale"
+);
+assert.equal(
+  hooks.formatServerHistoryDateGroupLabel(Number.NaN, groupingNow, "en-US"),
+  "Unknown date"
+);
+
+const springDstStart = localTimestamp(2026, 2, 29, 0);
+const springDstEnd = localTimestamp(2026, 2, 30, 0);
+assert.equal(
+  (springDstEnd - springDstStart) / 3_600_000,
+  23,
+  "the spring fixture must cover Berlin's short DST day"
+);
+assert.equal(
+  hooks.getServerHistoryLocalDayOrdinal(springDstEnd) -
+    hooks.getServerHistoryLocalDayOrdinal(springDstStart),
+  1,
+  "local calendar ordinals must advance once across a 23-hour day"
+);
+const autumnDstStart = localTimestamp(2026, 9, 25, 0);
+const autumnDstEnd = localTimestamp(2026, 9, 26, 0);
+assert.equal(
+  (autumnDstEnd - autumnDstStart) / 3_600_000,
+  25,
+  "the autumn fixture must cover Berlin's long DST day"
+);
+assert.equal(
+  hooks.getServerHistoryLocalDayOrdinal(autumnDstEnd) -
+    hooks.getServerHistoryLocalDayOrdinal(autumnDstStart),
+  1,
+  "local calendar ordinals must advance once across a 25-hour day"
+);
+
+const groupedInput = [
+  validSession({
+    sessionId: "recent_weekday",
+    firstSeenAt: localTimestamp(2026, 7, 10, 10),
+    lastSeenAt: localTimestamp(2026, 7, 10, 10, 30)
+  }),
+  validSession({
+    sessionId: "today_older",
+    firstSeenAt: localTimestamp(2026, 7, 13, 8),
+    lastSeenAt: localTimestamp(2026, 7, 13, 9)
+  }),
+  validSession({
+    sessionId: "cross_midnight",
+    firstSeenAt: localTimestamp(2026, 7, 11, 23, 55),
+    lastSeenAt: localTimestamp(2026, 7, 12, 0, 5)
+  }),
+  validSession({
+    sessionId: "today_newest",
+    firstSeenAt: localTimestamp(2026, 7, 13, 10),
+    lastSeenAt: localTimestamp(2026, 7, 13, 11)
+  }),
+  validSession({
+    sessionId: "yesterday_newer",
+    firstSeenAt: localTimestamp(2026, 7, 12, 17),
+    lastSeenAt: yesterdayTimestamp
+  })
+];
+const originalGroupedInputOrder = groupedInput.map(({ sessionId }) => sessionId);
+const dateGroups = hooks.groupServerHistorySessionsByDate(
+  groupedInput,
+  groupingNow,
+  "en-US"
+);
+assert.deepEqual(
+  dateGroups.map(({ label }) => label),
+  ["Today", "Yesterday", "Monday"]
+);
+assert.deepEqual(
+  dateGroups.map(({ sessions }) => sessions.map(({ sessionId }) => sessionId)),
+  [
+    ["today_newest", "today_older"],
+    ["yesterday_newer", "cross_midnight"],
+    ["recent_weekday"]
+  ],
+  "groups and cards preserve newest-first last-seen ordering"
+);
+assert.deepEqual(
+  dateGroups.flatMap(({ sessions }) => sessions.map(({ sessionId }) => sessionId)),
+  [
+    "today_newest",
+    "today_older",
+    "yesterday_newer",
+    "cross_midnight",
+    "recent_weekday"
+  ]
+);
+assert.equal(
+  dateGroups[1].dayOrdinal,
+  hooks.getServerHistoryLocalDayOrdinal(yesterdayTimestamp),
+  "a cross-midnight stay belongs to its last-observed local day"
+);
+assert.deepEqual(
+  groupedInput.map(({ sessionId }) => sessionId),
+  originalGroupedInputOrder,
+  "grouping must not mutate the normalized response snapshot"
 );
 
 function sourceBetween(start, end) {
@@ -201,7 +361,7 @@ const dialogSource = sourceBetween(
 assert.match(dialogSource, /document\.createElement\("dialog"\)/);
 assert.match(dialogSource, /aria-labelledby/);
 assert.match(dialogSource, /role="status" aria-live="polite" aria-atomic="true"/);
-assert.match(dialogSource, /aria-label="Latest server sessions"/);
+assert.match(dialogSource, /aria-label="Server sessions grouped by date"/);
 assert.match(dialogSource, /role="alertdialog" aria-modal="false" aria-live="assertive"/);
 assert.match(dialogSource, /aria-labelledby="rsl-server-history-clear-confirmation-label"/);
 assert.doesNotMatch(
@@ -271,7 +431,22 @@ assert.doesNotMatch(
   /Joined at|Left at|Definitely ended|Server shut down|Current session|Session closed/i
 );
 assert.doesNotMatch(renderSource, /viewerUserId|gameInstanceId|jobId/i);
-assert.match(renderSource, /serverHistorySessions\.forEach/);
+assert.match(
+  renderSource,
+  /const renderedAt = Date\.now\(\)[\s\S]*?groupServerHistorySessionsByDate\([\s\S]*?serverHistorySessions,[\s\S]*?renderedAt,[\s\S]*?getRobloxPageLocale\(\)/,
+  "one render snapshot must drive every localized date heading"
+);
+assert.match(renderSource, /groups\.forEach\(\(group\) =>/);
+assert.match(
+  renderSource,
+  /groupItem\.className = "rsl-server-history__date-group"[\s\S]*?heading = document\.createElement\("h3"\)[\s\S]*?heading\.className = "rsl-server-history__date-heading"[\s\S]*?heading\.id = `rsl-server-history-date-/,
+  "each group needs a visible semantic heading with a stable local-day id"
+);
+assert.match(
+  renderSource,
+  /sessions\.className = "rsl-server-history__date-list"[\s\S]*?sessions\.setAttribute\("aria-labelledby", heading\.id\)[\s\S]*?group\.sessions\.forEach[\s\S]*?groupItem\.append\(heading, sessions\)/,
+  "each nested session list must be named by its visible date heading"
+);
 assert.match(
   renderSource,
   /const gameName = document\.createElement\("span"\)[\s\S]*?gameName\.className = "rsl-server-history__game-name"[\s\S]*?gameName\.textContent = session\.name[\s\S]*?titleRow\.append\(gameName\)/,
@@ -292,8 +467,21 @@ assert.equal(
   2,
   "compact timing must keep semantic First seen and Last seen time elements"
 );
-assert.match(timingSource, /formatServerHistoryCompactTimestamp\(session\.firstSeenAt\)/);
-assert.match(timingSource, /formatServerHistoryCompactTimestamp\([\s\S]*?session\.lastSeenAt,[\s\S]*?sameLocalDay/);
+assert.match(
+  timingSource,
+  /formatServerHistoryCompactTimestamp\([\s\S]*?session\.firstSeenAt,[\s\S]*?sameLocalDay[\s\S]*?\)/,
+  "same-day cards must omit the date from their first compact timestamp"
+);
+assert.match(
+  timingSource,
+  /formatServerHistoryCompactTimestamp\([\s\S]*?session\.lastSeenAt,[\s\S]*?true[\s\S]*?\)/,
+  "the last compact timestamp must rely on its date-group heading instead of repeating the date"
+);
+assert.match(
+  timingSource,
+  /const sameLocalDay = firstDate\.getFullYear\(\) === lastDate\.getFullYear\(\)[\s\S]*?firstDate\.getMonth\(\) === lastDate\.getMonth\(\)[\s\S]*?firstDate\.getDate\(\) === lastDate\.getDate\(\)/,
+  "cross-midnight cards must retain the first timestamp's full date"
+);
 assert.match(timingSource, /formatServerHistoryCompactDuration/);
 assert.match(timingSource, /timing\.title = fullTimingText/);
 assert.match(timingSource, /timing\.setAttribute\("aria-hidden", "true"\)/);

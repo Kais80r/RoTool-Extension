@@ -771,6 +771,7 @@
   let serverHistoryClearPending = false;
   let serverHistoryNotice = "";
   let serverHistoryMessageSenderForTests = null;
+  let serverHistoryMidnightTimer = null;
   const serverHistoryThumbnailByUniverseId = new Map();
   const serverHistoryThumbnailRequestByUniverseId = new Map();
   let mountQueued = false;
@@ -15153,6 +15154,94 @@
     return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
   }
 
+  function getServerHistoryLocalDayOrdinal(timestamp) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return null;
+    const ordinal = Math.floor(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+    );
+    return Number.isFinite(ordinal) ? ordinal : null;
+  }
+
+  function formatServerHistoryDateGroupLabel(
+    timestamp,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    let displayLocale = "en-US";
+    try {
+      displayLocale = Intl.getCanonicalLocales(locale)[0] || "en-US";
+    } catch {
+      // Keep a deterministic fallback for malformed page locales.
+    }
+    const date = new Date(timestamp);
+    const dayOrdinal = getServerHistoryLocalDayOrdinal(timestamp);
+    const todayOrdinal = getServerHistoryLocalDayOrdinal(now);
+    if (!Number.isFinite(date.getTime()) || dayOrdinal === null) {
+      return "Unknown date";
+    }
+    const dayAge = todayOrdinal === null ? null : todayOrdinal - dayOrdinal;
+    if (dayAge === 0 || dayAge === 1) {
+      const relativeLabel = new Intl.RelativeTimeFormat(displayLocale, {
+        numeric: "auto"
+      }).format(
+        -dayAge,
+        "day"
+      );
+      return relativeLabel.charAt(0).toLocaleUpperCase(displayLocale) +
+        relativeLabel.slice(1);
+    }
+    if (dayAge >= 2 && dayAge <= 6) {
+      return new Intl.DateTimeFormat(displayLocale, { weekday: "long" }).format(date);
+    }
+    return new Intl.DateTimeFormat(displayLocale, {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }).format(date);
+  }
+
+  function groupServerHistorySessionsByDate(
+    sessions,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    const groups = [];
+    const groupsByDay = new Map();
+    const orderedSessions = Array.isArray(sessions)
+      ? [...sessions].sort((left, right) => {
+          const leftTimestamp = Number(left?.lastSeenAt);
+          const rightTimestamp = Number(right?.lastSeenAt);
+          if (!Number.isFinite(leftTimestamp) && !Number.isFinite(rightTimestamp)) {
+            return 0;
+          }
+          if (!Number.isFinite(leftTimestamp)) return 1;
+          if (!Number.isFinite(rightTimestamp)) return -1;
+          return rightTimestamp - leftTimestamp;
+        })
+      : [];
+    for (const session of orderedSessions) {
+      const dayOrdinal = getServerHistoryLocalDayOrdinal(session?.lastSeenAt);
+      const key = dayOrdinal === null ? "unknown" : String(dayOrdinal);
+      let group = groupsByDay.get(key);
+      if (!group) {
+        group = {
+          dayOrdinal,
+          label: formatServerHistoryDateGroupLabel(
+            session?.lastSeenAt,
+            now,
+            locale
+          ),
+          sessions: []
+        };
+        groupsByDay.set(key, group);
+        groups.push(group);
+      }
+      group.sessions.push(session);
+    }
+    return groups;
+  }
+
   function sendServerHistoryRuntimeMessage(message) {
     if (typeof serverHistoryMessageSenderForTests === "function") {
       return Promise.resolve().then(() => serverHistoryMessageSenderForTests(message));
@@ -15289,12 +15378,15 @@
       firstDate.getDate() === lastDate.getDate();
     const firstTime = document.createElement("time");
     firstTime.dateTime = firstDate.toISOString();
-    firstTime.textContent = formatServerHistoryCompactTimestamp(session.firstSeenAt);
+    firstTime.textContent = formatServerHistoryCompactTimestamp(
+      session.firstSeenAt,
+      sameLocalDay
+    );
     const lastTime = document.createElement("time");
     lastTime.dateTime = lastDate.toISOString();
     lastTime.textContent = formatServerHistoryCompactTimestamp(
       session.lastSeenAt,
-      sameLocalDay
+      true
     );
     timing.append(
       firstTime,
@@ -15387,8 +15479,29 @@
       empty.textContent = "No recent servers yet";
       list.append(empty);
     } else {
-      serverHistorySessions.forEach((session) => {
-        list.append(renderServerHistorySession(session));
+      const renderedAt = Date.now();
+      const groups = groupServerHistorySessionsByDate(
+        serverHistorySessions,
+        renderedAt,
+        getRobloxPageLocale()
+      );
+      groups.forEach((group) => {
+        const groupItem = document.createElement("li");
+        groupItem.className = "rsl-server-history__date-group";
+        const heading = document.createElement("h3");
+        heading.className = "rsl-server-history__date-heading";
+        heading.id = `rsl-server-history-date-${
+          group.dayOrdinal === null ? "unknown" : group.dayOrdinal
+        }`;
+        heading.textContent = group.label;
+        const sessions = document.createElement("ul");
+        sessions.className = "rsl-server-history__date-list";
+        sessions.setAttribute("aria-labelledby", heading.id);
+        group.sessions.forEach((session) => {
+          sessions.append(renderServerHistorySession(session));
+        });
+        groupItem.append(heading, sessions);
+        list.append(groupItem);
       });
     }
     list.setAttribute("aria-busy", String(serverHistoryLoadState === "loading"));
@@ -15412,6 +15525,28 @@
       );
       restoredControl?.focus?.({ preventScroll: true });
     }
+  }
+
+  function clearServerHistoryMidnightTimer() {
+    if (serverHistoryMidnightTimer !== null) {
+      window.clearTimeout(serverHistoryMidnightTimer);
+      serverHistoryMidnightTimer = null;
+    }
+  }
+
+  function scheduleServerHistoryMidnightRefresh() {
+    clearServerHistoryMidnightTimer();
+    const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
+    if (!dialog?.open) return;
+    const nextMidnight = new Date();
+    nextMidnight.setHours(24, 0, 0, 0);
+    const delay = Math.max(1_000, nextMidnight.getTime() - Date.now() + 250);
+    serverHistoryMidnightTimer = window.setTimeout(() => {
+      serverHistoryMidnightTimer = null;
+      if (!document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open) return;
+      renderServerHistoryDialog();
+      scheduleServerHistoryMidnightRefresh();
+    }, delay);
   }
 
   async function loadServerHistory() {
@@ -15547,6 +15682,7 @@
   }
 
   function resetServerHistoryDialogState() {
+    clearServerHistoryMidnightTimer();
     serverHistoryLifecycleEpoch += 1;
     serverHistoryLoadState = "idle";
     serverHistoryErrorCode = "";
@@ -15587,7 +15723,7 @@
             <h2 id="rsl-server-history-title" class="content-emphasis text-title-large">Server History</h2>
             <div class="rsl-server-history__live-status content-default text-body-medium" role="status" aria-live="polite" aria-atomic="true" data-rsl-server-history-live-status></div>
           </header>
-          <ul class="rsl-server-history__list" aria-label="Latest server sessions" data-rsl-server-history-list></ul>
+          <ul class="rsl-server-history__list" aria-label="Server sessions grouped by date" data-rsl-server-history-list></ul>
         </div>
         <div class="rsl-server-history__clear-confirmation" role="alertdialog" aria-modal="false" aria-live="assertive" aria-atomic="true" aria-labelledby="rsl-server-history-clear-confirmation-label" data-rsl-server-history-clear-confirmation hidden>
           <span id="rsl-server-history-clear-confirmation-label">Clear all locally saved Server History for this Roblox account?</span>
@@ -15679,6 +15815,7 @@
     serverHistoryLoadState = "loading";
     renderServerHistoryDialog();
     dialog.showModal();
+    scheduleServerHistoryMidnightRefresh();
     dialog.querySelector("[data-rsl-server-history-close]")?.focus();
     void loadServerHistory();
     return dialog;
@@ -16774,6 +16911,12 @@
       formatServerHistoryCompactTimestamp;
     contentTestHooks.formatServerHistoryCompactDuration =
       formatServerHistoryCompactDuration;
+    contentTestHooks.getServerHistoryLocalDayOrdinal =
+      getServerHistoryLocalDayOrdinal;
+    contentTestHooks.formatServerHistoryDateGroupLabel =
+      formatServerHistoryDateGroupLabel;
+    contentTestHooks.groupServerHistorySessionsByDate =
+      groupServerHistorySessionsByDate;
     contentTestHooks.makeServerHistorySidebarRow = makeServerHistorySidebarRow;
     contentTestHooks.placeServerHistorySidebarRow = placeServerHistorySidebarRow;
     contentTestHooks.mountServerHistorySidebarRow = mountServerHistorySidebarRow;
