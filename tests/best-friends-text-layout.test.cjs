@@ -118,6 +118,24 @@ assert.match(tileBoxRule, /width:\s*100%\s*!important/);
 assert.match(tileBoxRule, /min-width:\s*0\s*!important/);
 assert.match(tileBoxRule, /max-width:\s*100%\s*!important/);
 
+// Roblox's cloned experience label can otherwise wrap onto a second visual
+// line. Clamp the text itself, but keep its inherited native inner-lane width.
+const clonedExperienceRule = extractRule(
+  ".rsl-best-friends-carousel\n" +
+    "  [data-rsl-best-friend-id]\n" +
+    "  .friends-carousel-tile-experience {"
+);
+assert.match(clonedExperienceRule, /display:\s*block\s*!important/);
+assert.match(clonedExperienceRule, /min-inline-size:\s*0/);
+assert.match(clonedExperienceRule, /overflow:\s*hidden\s*!important/);
+assert.match(clonedExperienceRule, /text-overflow:\s*ellipsis\s*!important/);
+assert.match(clonedExperienceRule, /white-space:\s*nowrap\s*!important/);
+assert.doesNotMatch(
+  clonedExperienceRule,
+  /(?:^|;)\s*(?:width|max-width|inline-size|max-inline-size)\s*:/,
+  "the one-line game label must retain Roblox's inherited native width"
+);
+
 assert.match(
   source,
   /wrapper\.setAttribute\("data-rsl-best-friend-fallback", ""\);/,

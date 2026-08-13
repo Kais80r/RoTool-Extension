@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RoTool",
   "short_name": "RoTool",
-  "version": "0.16.37",
+  "version": "0.16.38",
   "description": "Adds configurable Quick Settings, Player Counts, Quick Play, Random Servers, Private Servers, Best Friends, filters, and ID copying.",
   "permissions": [
     "storage",

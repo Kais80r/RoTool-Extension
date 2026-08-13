@@ -1654,6 +1654,19 @@
   object-fit: cover;
 }
 
+/* Roblox can render the reused sublabel as a two-line clamp after its text is
+   replaced. Keep the native label lane, but make a Best Friend's experience
+   title use the same single-line ellipsis as the regular Friends row. */
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-id]
+  .friends-carousel-tile-experience {
+  display: block !important;
+  min-inline-size: 0;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
 .rsl-best-friends-carousel
   [data-rsl-best-friend-fallback]
   .friends-carousel-tile-name {
