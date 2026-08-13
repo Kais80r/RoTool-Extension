@@ -1612,6 +1612,22 @@
   min-width: 0;
 }
 
+/* A long title can give a cloned Roblox label an intrinsic width wider than
+   the native Friends text lane. Cap (but never widen) that label chain, then
+   let the experience text fill only Roblox's inherited lane. */
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-id]
+  :is(
+    .friend-tile-content,
+    .friends-carousel-tile-labels,
+    .friends-carousel-tile-label,
+    .friends-carousel-tile-sublabel
+  ) {
+  box-sizing: border-box;
+  min-inline-size: 0 !important;
+  max-inline-size: 100% !important;
+}
+
 /* A normal Best Friend is cloned from a live native Friends tile. Keep its
    label geometry native so Roblox's responsive/zoom text clamp stays exactly
    the same in both rows. Only the markup fallback needs local dimensions. */
@@ -1662,6 +1678,8 @@
   [data-rsl-best-friend-id]
   .friends-carousel-tile-experience {
   display: block !important;
+  inline-size: 100% !important;
+  max-inline-size: 100% !important;
   min-inline-size: 0;
   overflow: hidden !important;
   text-align: center !important;

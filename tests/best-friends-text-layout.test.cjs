@@ -240,14 +240,58 @@ assert.match(tileBoxRule, /width:\s*100%\s*!important/);
 assert.match(tileBoxRule, /min-width:\s*0\s*!important/);
 assert.match(tileBoxRule, /max-width:\s*100%\s*!important/);
 
-// Roblox's cloned experience label can otherwise wrap onto a second visual
-// line. Clamp the text itself, but keep its inherited native inner-lane width.
+// A cloned native label can retain an intrinsic width wider than its tile. Cap
+// every ancestor in the sublabel chain without forcing Roblox's narrower lane
+// wider; the percentage cap follows desktop, mobile, and zoomed tile geometry.
+const clonedLabelLaneSelector =
+  ".rsl-best-friends-carousel\n" +
+  "  [data-rsl-best-friend-id]\n" +
+  "  :is(";
+const clonedLabelLaneRule = extractRule(clonedLabelLaneSelector);
+for (const laneClass of [
+  ".friend-tile-content",
+  ".friends-carousel-tile-labels",
+  ".friends-carousel-tile-label",
+  ".friends-carousel-tile-sublabel"
+]) {
+  assert.match(
+    styles.slice(styles.indexOf(clonedLabelLaneSelector), styles.indexOf("}", styles.indexOf(clonedLabelLaneSelector))),
+    new RegExp(laneClass.replaceAll(".", "\\.")),
+    `${laneClass} must be bounded to its cloned Best Friend tile`
+  );
+}
+assert.match(clonedLabelLaneRule, /box-sizing:\s*border-box/);
+assert.match(clonedLabelLaneRule, /min-inline-size:\s*0\s*!important/);
+assert.match(clonedLabelLaneRule, /max-inline-size:\s*100%\s*!important/);
+assert.doesNotMatch(
+  clonedLabelLaneRule,
+  /(?:^|;)\s*(?:width|inline-size)\s*:/,
+  "the ancestor chain may shrink but must not widen Roblox's native text lane"
+);
+assert.doesNotMatch(
+  clonedLabelLaneRule,
+  /\b\d+(?:\.\d+)?(?:px|rem|em|vw|vh)\b/i,
+  "the lane cap must remain relative at mobile widths and browser zoom"
+);
+assert.doesNotMatch(
+  styles.slice(
+    styles.indexOf(clonedLabelLaneSelector),
+    styles.indexOf("}", styles.indexOf(clonedLabelLaneSelector))
+  ),
+  /friends-carousel-(?:display-name|tile-name)|data-rsl-friend-name-badges/,
+  "the game/status lane cap must not alter the username or badge row"
+);
+
+// The experience text fills that inherited lane and stays on one ellipsized
+// line, so even an unbroken title cannot paint beneath the neighbouring tile.
 const clonedExperienceRule = extractRule(
   ".rsl-best-friends-carousel\n" +
     "  [data-rsl-best-friend-id]\n" +
     "  .friends-carousel-tile-experience {"
 );
 assert.match(clonedExperienceRule, /display:\s*block\s*!important/);
+assert.match(clonedExperienceRule, /inline-size:\s*100%\s*!important/);
+assert.match(clonedExperienceRule, /max-inline-size:\s*100%\s*!important/);
 assert.match(clonedExperienceRule, /min-inline-size:\s*0/);
 assert.match(clonedExperienceRule, /overflow:\s*hidden\s*!important/);
 assert.match(clonedExperienceRule, /text-align:\s*center\s*!important/);
@@ -255,13 +299,8 @@ assert.match(clonedExperienceRule, /text-overflow:\s*ellipsis\s*!important/);
 assert.match(clonedExperienceRule, /white-space:\s*nowrap\s*!important/);
 assert.doesNotMatch(
   clonedExperienceRule,
-  /(?:^|;)\s*(?:width|max-width|inline-size|max-inline-size)\s*:/,
-  "the one-line game label must retain Roblox's inherited native width"
-);
-assert.doesNotMatch(
-  clonedExperienceRule,
-  /\b\d+(?:\.\d+)?(?:px|rem|em|vw|vh|%)\b/i,
-  "status centering must not depend on a card width, viewport, or font-size measurement"
+  /\b\d+(?:\.\d+)?(?:px|rem|em|vw|vh)\b/i,
+  "status containment must not depend on a desktop, mobile, zoom, or font-size measurement"
 );
 
 assert.match(
@@ -332,18 +371,17 @@ const bestFriendStyleSection = styles.slice(
 for (const nativeLabelClass of [
   ".friends-carousel-tile-labels",
   ".friends-carousel-tile-label",
-  ".friends-carousel-tile-name",
   ".friends-carousel-tile-sublabel"
 ]) {
   const blanketRule = new RegExp(
     `\\[data-rsl-best-friend-id\\][^,{]*${nativeLabelClass.replaceAll(".", "\\.")}[^,{]*\\{[^}]*` +
-      "(?:width|max-width):\\s*100%",
+      "(?:^|;)\\s*(?:width|inline-size):\\s*100%",
     "s"
   );
   assert.doesNotMatch(
     bestFriendStyleSection,
     blanketRule,
-    `${nativeLabelClass} on cloned tiles must retain Roblox's native clamp width`
+    `${nativeLabelClass} may be capped but must not be forced wider than Roblox's native lane`
   );
 }
 
