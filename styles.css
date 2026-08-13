@@ -1612,23 +1612,34 @@
   min-width: 0;
 }
 
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .options-dropdown,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friend-tile-content,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-labels,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-label,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-name,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-sublabel {
+/* A normal Best Friend is cloned from a live native Friends tile. Keep its
+   label geometry native so Roblox's responsive/zoom text clamp stays exactly
+   the same in both rows. Only the markup fallback needs local dimensions. */
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-fallback]
+  :is(
+    .friends-carousel-tile,
+    .options-dropdown,
+    .friend-tile-content,
+    .friends-carousel-tile-labels,
+    .friends-carousel-tile-label,
+    .friends-carousel-tile-name,
+    .friends-carousel-tile-sublabel
+  ) {
   box-sizing: border-box;
   width: 100%;
   min-width: 0 !important;
   max-width: 100%;
 }
 
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-labels,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-label,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-name,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-sublabel {
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-fallback]
+  :is(
+    .friends-carousel-tile-labels,
+    .friends-carousel-tile-label,
+    .friends-carousel-tile-name,
+    .friends-carousel-tile-sublabel
+  ) {
   overflow: hidden;
 }
 
@@ -1643,24 +1654,9 @@
   object-fit: cover;
 }
 
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-display-name,
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-experience {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-  text-align: center !important;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-labels {
-  width: var(--rsl-best-friends-label-width, 88px) !important;
-  max-width: var(--rsl-best-friends-label-width, 88px) !important;
-  margin-inline: auto !important;
-}
-
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-tile-name {
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-fallback]
+  .friends-carousel-tile-name {
   display: flex !important;
   min-width: 0;
   align-items: center;
@@ -1668,13 +1664,27 @@
   gap: 2px;
 }
 
-.rsl-best-friends-carousel [data-rsl-best-friend-id] .friends-carousel-display-name {
-  width: auto !important;
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-fallback]
+  :is(.friends-carousel-display-name, .friends-carousel-tile-experience) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
+  text-align: center !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-fallback]
+  .friends-carousel-display-name {
+  width: auto !important;
   flex: 0 1 auto;
 }
 
-[data-rsl-friend-name-badges] {
+[data-rsl-friend-name-badges]:not([data-rsl-friend-name-badge-count="0"]) {
   display: flex !important;
   box-sizing: border-box;
   max-width: 100%;
@@ -1684,7 +1694,8 @@
   gap: 2px;
 }
 
-[data-rsl-friend-name-badges] > :is(a, strong, .friends-carousel-display-name) {
+[data-rsl-friend-name-badges]:not([data-rsl-friend-name-badge-count="0"])
+  > :is(a, strong, .friends-carousel-display-name) {
   width: auto !important;
   min-inline-size: 0;
   min-width: 0;

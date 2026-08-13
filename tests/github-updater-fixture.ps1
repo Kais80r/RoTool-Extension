@@ -312,28 +312,99 @@ try {
     Assert-Equal (Test-RoToolBrowserRegistration -InstallRoot $browserInstall -UserDataRoot $incompleteUserData) $false "missing $($case.Label) property is a safe browser-registration non-match"
   }
 
-  # Opening is observable without launching a real browser: it uses a new tab
-  # and always asks the browser-window helper to restore and foreground it.
+  # Chromium drops chrome:// and edge:// startup URLs. Opening is observable
+  # without launching a browser: exactly one URL-free new-tab launch must be
+  # followed by successful foreground verification and then navigation.
   $script:BrowserOpenExecutable = $null
   $script:BrowserOpenArguments = @()
   $script:BrowserWindowName = $null
+  $script:BrowserNavigationName = $null
+  $script:BrowserNavigationPage = $null
+  $script:BrowserOpenCount = 0
+  $script:BrowserActionOrder = @()
   $startBrowserHook = {
     param([string]$Executable, [object[]]$Arguments)
+    $script:BrowserOpenCount += 1
     $script:BrowserOpenExecutable = $Executable
     $script:BrowserOpenArguments = @($Arguments)
+    $script:BrowserActionOrder += "start"
   }
   $focusBrowserHook = {
     param([string]$ProcessName)
     $script:BrowserWindowName = $ProcessName
+    $script:BrowserActionOrder += "focus"
+    return $true
   }
-  Open-RoToolExtensionsPage -Browser "chrome" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook
+  $navigateBrowserHook = {
+    param([string]$ProcessName, [string]$Page)
+    $script:BrowserNavigationName = $ProcessName
+    $script:BrowserNavigationPage = $Page
+    $script:BrowserActionOrder += "navigate"
+    return $true
+  }
+  Open-RoToolExtensionsPage -Browser "chrome" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook -NavigateAction $navigateBrowserHook
   Assert-Equal ([IO.Path]::GetFileName($script:BrowserOpenExecutable)) "chrome.exe" "Chrome executable is selected"
-  Assert-SequenceEqual $script:BrowserOpenArguments @("--new-tab", "chrome://extensions/") "Chrome extensions page opens in a new tab"
+  Assert-Equal $script:BrowserOpenCount 1 "Chrome uses exactly one browser launch"
+  Assert-SequenceEqual $script:BrowserOpenArguments @("--new-tab") "Chrome internal URL is not lost as a startup argument"
   Assert-Equal $script:BrowserWindowName "chrome" "Chrome window is restored and foregrounded"
-  Open-RoToolExtensionsPage -Browser "edge" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook
+  Assert-Equal $script:BrowserNavigationName "chrome" "navigation is bound to the verified Chrome process"
+  Assert-Equal $script:BrowserNavigationPage "chrome://extensions/" "Chrome extensions page is entered after focus"
+  Assert-SequenceEqual $script:BrowserActionOrder @("start", "focus", "navigate") "Chrome focus is verified before address entry"
+
+  $script:BrowserOpenCount = 0
+  $script:BrowserActionOrder = @()
+  Open-RoToolExtensionsPage -Browser "edge" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook -NavigateAction $navigateBrowserHook
   Assert-Equal ([IO.Path]::GetFileName($script:BrowserOpenExecutable)) "msedge.exe" "Edge executable is selected"
-  Assert-SequenceEqual $script:BrowserOpenArguments @("--new-tab", "edge://extensions/") "Edge extensions page opens in a new tab"
+  Assert-Equal $script:BrowserOpenCount 1 "Edge uses exactly one browser launch"
+  Assert-SequenceEqual $script:BrowserOpenArguments @("--new-tab") "Edge internal URL is not lost as a startup argument"
   Assert-Equal $script:BrowserWindowName "msedge" "Edge window is restored and foregrounded"
+  Assert-Equal $script:BrowserNavigationName "msedge" "navigation is bound to the verified Edge process"
+  Assert-Equal $script:BrowserNavigationPage "edge://extensions/" "Edge extensions page is entered after focus"
+  Assert-SequenceEqual $script:BrowserActionOrder @("start", "focus", "navigate") "Edge focus is verified before address entry"
+
+  # Omitting NavigateAction must route through the production navigation
+  # function, still after the focus result has been accepted.
+  $realNavigationFunction = (Get-Item -LiteralPath Function:\Set-RoToolBrowserInternalPage).ScriptBlock
+  $script:BrowserOpenCount = 0
+  $script:BrowserActionOrder = @()
+  $script:DefaultNavigationName = $null
+  $script:DefaultNavigationPage = $null
+  try {
+    Set-Item -LiteralPath Function:\Set-RoToolBrowserInternalPage -Value {
+      param([string]$ProcessName, [string]$Page)
+      $script:DefaultNavigationName = $ProcessName
+      $script:DefaultNavigationPage = $Page
+      $script:BrowserActionOrder += "default-navigate"
+      return $true
+    }
+    Open-RoToolExtensionsPage -Browser "chrome" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook
+  } finally {
+    Set-Item -LiteralPath Function:\Set-RoToolBrowserInternalPage -Value $realNavigationFunction
+  }
+  Assert-Equal $script:BrowserOpenCount 1 "default navigation path uses one browser launch"
+  Assert-Equal $script:DefaultNavigationName "chrome" "default navigation receives the verified browser process"
+  Assert-Equal $script:DefaultNavigationPage "chrome://extensions/" "default navigation receives the exact Chrome extensions page"
+  Assert-SequenceEqual $script:BrowserActionOrder @("start", "focus", "default-navigate") "default navigation runs only after verified focus"
+
+  # A focus failure must fail closed: no key/address action and no fallback
+  # browser launch that could leave another blank window behind.
+  $script:BrowserOpenCount = 0
+  $script:BrowserNavigationCount = 0
+  $failedFocusHook = { param([string]$ProcessName) return $false }
+  $unexpectedNavigateHook = {
+    param([string]$ProcessName, [string]$Page)
+    $script:BrowserNavigationCount += 1
+    return $true
+  }
+  Open-RoToolExtensionsPage -Browser "edge" -StartProcessAction $startBrowserHook -WindowAction $failedFocusHook -NavigateAction $unexpectedNavigateHook
+  Assert-Equal $script:BrowserOpenCount 1 "failed focus does not trigger a second browser launch"
+  Assert-Equal $script:BrowserNavigationCount 0 "failed foreground verification sends no browser address"
+
+  $script:BrowserOpenCount = 0
+  $failedNavigationHook = { param([string]$ProcessName, [string]$Page) return $false }
+  Open-RoToolExtensionsPage -Browser "chrome" -StartProcessAction $startBrowserHook -WindowAction $focusBrowserHook -NavigateAction $failedNavigationHook
+  Assert-Equal $script:BrowserOpenCount 1 "failed navigation does not trigger a fallback browser launch"
+  Assert-Throws { Set-RoToolBrowserInternalPage -ProcessName "chrome" -Page "edge://extensions/" } "unexpected browser address" "address entry rejects a page that does not match the verified browser"
 
   # Browser-extension versions compare numerically and fail closed on invalid values.
   Assert-Equal (Compare-RoToolVersion "0.16.10" "0.16.9") 1 "multi-digit version component compares numerically"

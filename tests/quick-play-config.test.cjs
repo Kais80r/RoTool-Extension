@@ -20,7 +20,7 @@ const privateServerDialogVisualFixtureSource = fs.readFileSync(
 );
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.36");
+assert.equal(manifest.version, "0.16.37");
 assert.match(manifest.description, /Quick Play/);
 assert.match(manifest.description, /Private Servers/);
 assert.match(manifest.description, /Random Server/);

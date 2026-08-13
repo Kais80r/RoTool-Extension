@@ -12,7 +12,7 @@ const pageBridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.36");
+assert.equal(manifest.version, "0.16.37");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 const mainWorldEntry = manifest.content_scripts.find((entry) => entry.world === "MAIN");
@@ -38,7 +38,11 @@ assert.match(contentSource, /activateFriendsPresenceFilter\(context, BEST_FRIEND
 assert.match(contentSource, /function getHomeFriendTileVisualRect\(item\)/);
 assert.match(contentSource, /--rsl-best-friends-tile-width/);
 assert.match(contentSource, /--rsl-best-friends-start-offset/);
-assert.match(contentSource, /--rsl-best-friends-label-width/);
+assert.doesNotMatch(contentSource, /--rsl-best-friends-label-width/);
+assert.match(
+  contentSource,
+  /wrapper\.setAttribute\("data-rsl-best-friend-fallback", ""\);/
+);
 const carouselRenderSource = contentSource.slice(
   contentSource.indexOf("function renderBestFriendsCarousel("),
   contentSource.indexOf("function makeBestFriendsCarousel(")
@@ -401,13 +405,14 @@ assert.match(
   stylesSource,
   /\.friends-carousel-list-container > :first-child\s*\{[^}]*margin-inline-start: var\(--rsl-best-friends-start-offset, 0px\) !important;/s
 );
+assert.doesNotMatch(stylesSource, /--rsl-best-friends-label-width/);
 assert.match(
   stylesSource,
-  /\.friends-carousel-tile-labels\s*\{[^}]*width: var\(--rsl-best-friends-label-width, 88px\) !important;/s
+  /\[data-rsl-best-friend-fallback\][\s\S]*?:is\(\.friends-carousel-display-name, \.friends-carousel-tile-experience\)\s*\{[^}]*max-width: 100%;[^}]*text-align: center !important;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/s
 );
 assert.match(
-  stylesSource,
-  /\.friends-carousel-tile-experience\s*\{[^}]*max-width: 100%;[^}]*text-align: center !important;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/s
+  contentSource,
+  /sublabel\.classList\.add\("friends-carousel-tile-experience"\);\s*sublabel\.textContent = presence\.label;\s*sublabel\.title = presence\.label;/
 );
 assert.match(
   stylesSource,

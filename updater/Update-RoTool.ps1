@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
-$script:UpdaterVersion = "1.1.0"
+$script:UpdaterVersion = "1.2.0"
 $script:PackageAssetName = "RoTool-extension.zip"
 $script:ChecksumAssetName = "RoTool-extension.zip.sha256"
 $script:UpdaterPackageAssetName = "RoTool-updater.zip"
@@ -968,21 +968,45 @@ function Resolve-RoToolBrowser {
   return "edge"
 }
 
-function Focus-RoToolBrowserWindow {
-  param([Parameter(Mandatory = $true)][ValidateSet("chrome", "msedge")][string]$ProcessName)
+function Initialize-RoToolNativeWindow {
+  if ("RoTool.NativeWindow" -as [type]) { return }
 
-  if (-not ("RoTool.NativeWindow" -as [type])) {
-    Add-Type -TypeDefinition @"
+  [void](Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 namespace RoTool {
   public static class NativeWindow {
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   }
 }
-"@
+"@)
+}
+
+function Test-RoToolForegroundBrowser {
+  param([Parameter(Mandatory = $true)][ValidateSet("chrome", "msedge")][string]$ProcessName)
+
+  Initialize-RoToolNativeWindow
+  $foregroundWindow = [RoTool.NativeWindow]::GetForegroundWindow()
+  if ($foregroundWindow -eq [IntPtr]::Zero) { return $false }
+
+  [uint32]$foregroundProcessId = 0
+  [void][RoTool.NativeWindow]::GetWindowThreadProcessId($foregroundWindow, [ref]$foregroundProcessId)
+  if ($foregroundProcessId -eq 0) { return $false }
+  try {
+    $foregroundProcess = Get-Process -Id ([int]$foregroundProcessId) -ErrorAction Stop
+    return [string]::Equals($foregroundProcess.ProcessName, $ProcessName, [StringComparison]::OrdinalIgnoreCase)
+  } catch {
+    return $false
   }
+}
+
+function Focus-RoToolBrowserWindow {
+  param([Parameter(Mandatory = $true)][ValidateSet("chrome", "msedge")][string]$ProcessName)
+
+  Initialize-RoToolNativeWindow
   for ($attempt = 0; $attempt -lt 15; $attempt += 1) {
     $window = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue |
       Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
@@ -992,9 +1016,34 @@ namespace RoTool {
       [void][RoTool.NativeWindow]::ShowWindowAsync($window.MainWindowHandle, 9)
       [void][RoTool.NativeWindow]::SetForegroundWindow($window.MainWindowHandle)
       try { [void](New-Object -ComObject WScript.Shell).AppActivate($window.Id) } catch {}
-      return
+      Start-Sleep -Milliseconds 50
+      if (Test-RoToolForegroundBrowser -ProcessName $ProcessName) { return $true }
     }
     Start-Sleep -Milliseconds 200
+  }
+  return $false
+}
+
+function Set-RoToolBrowserInternalPage {
+  param(
+    [Parameter(Mandatory = $true)][ValidateSet("chrome", "msedge")][string]$ProcessName,
+    [Parameter(Mandatory = $true)][string]$Page
+  )
+
+  $expectedPage = if ($ProcessName -eq "chrome") { "chrome://extensions/" } else { "edge://extensions/" }
+  if (-not [string]::Equals($Page, $expectedPage, [StringComparison]::Ordinal)) {
+    throw "Refusing to enter an unexpected browser address."
+  }
+  if (-not (Test-RoToolForegroundBrowser -ProcessName $ProcessName)) { return $false }
+
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    # Chromium deliberately drops internal pages supplied as startup URLs. Enter
+    # this fixed, non-secret address only after verifying the foreground process.
+    [Windows.Forms.SendKeys]::SendWait("^l$Page{ENTER}")
+    return $true
+  } catch {
+    return $false
   }
 }
 
@@ -1002,7 +1051,8 @@ function Open-RoToolExtensionsPage {
   param(
     [Parameter(Mandatory = $true)][ValidateSet("edge", "chrome")][string]$Browser,
     [scriptblock]$StartProcessAction,
-    [scriptblock]$WindowAction
+    [scriptblock]$WindowAction,
+    [scriptblock]$NavigateAction
   )
 
   $processName = if ($Browser -eq "chrome") { "chrome" } else { "msedge" }
@@ -1013,13 +1063,23 @@ function Open-RoToolExtensionsPage {
     $StartProcessAction = { param($file, $arguments) Start-Process -FilePath $file -ArgumentList $arguments }
   }
   if ($null -eq $WindowAction) {
-    $WindowAction = { param($name) Focus-RoToolBrowserWindow -ProcessName $name }
+    $WindowAction = { param($name) return (Focus-RoToolBrowserWindow -ProcessName $name) }
+  }
+  if ($null -eq $NavigateAction) {
+    $NavigateAction = { param($name, $address) return (Set-RoToolBrowserInternalPage -ProcessName $name -Page $address) }
   }
   try {
-    & $StartProcessAction $executable @("--new-tab", $page)
-    & $WindowAction $processName
+    # Pass no internal URL on the command line: current Chrome and Edge replace
+    # it with New Tab. One launch creates the destination tab; there is no second
+    # fallback launch that could leave another blank browser window behind.
+    [void](& $StartProcessAction $executable @("--new-tab"))
+    $focused = [bool](& $WindowAction $processName)
+    if (-not $focused) { throw "The selected browser could not be verified in the foreground." }
+    $navigated = [bool](& $NavigateAction $processName $page)
+    if (-not $navigated) { throw "The extensions page could not be entered safely." }
   } catch {
-    Write-Host "Open $page manually." -ForegroundColor Yellow
+    Write-Host "The update is installed, but the browser page could not be opened safely." -ForegroundColor Yellow
+    Write-Host "Open $page manually and press Reload on RoTool." -ForegroundColor Yellow
   }
 }
 

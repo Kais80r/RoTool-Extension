@@ -5074,6 +5074,7 @@
 
   function makeFallbackBestFriendTile() {
     const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-rsl-best-friend-fallback", "");
     wrapper.innerHTML =
       '<div class="friends-carousel-tile"><div class="friend-tile-content">' +
       '<div class="avatar avatar-card-fullbody" data-testid="avatar-card-container">' +
@@ -5759,12 +5760,11 @@
       sublabel.className = "friends-carousel-tile-sublabel";
       wrapper.querySelector(".friends-carousel-tile-labels")?.append(sublabel);
     }
-    sublabel.replaceChildren();
-    const experience = document.createElement("div");
-    experience.className = "friends-carousel-tile-experience";
-    experience.textContent = presence.label;
-    experience.title = presence.label;
-    sublabel.append(experience);
+    // Keep the text directly in Roblox's native sublabel clamp. Wrapping it in
+    // another block changes the available line box and truncates sooner.
+    sublabel.classList.add("friends-carousel-tile-experience");
+    sublabel.textContent = presence.label;
+    sublabel.title = presence.label;
 
     let avatarStatus = wrapper.querySelector(".avatar-status");
     if (!avatarStatus) {
@@ -6960,14 +6960,6 @@
       Math.round(Math.max(0, nativeCenterStep - roundedWidth) * 10) / 10;
     const nextWidth = `${roundedWidth}px`;
     const nextGap = `${roundedGap}px`;
-    const measuredLabelWidth = getMedianMeasurement(
-      nativeItems.map((item) =>
-        item.querySelector(".friends-carousel-tile-labels")?.getBoundingClientRect().width
-      )
-    ) || getMedianMeasurement(nativeVisualRects.map((rect) => rect.width));
-    const roundedLabelWidth =
-      Math.round(Math.max(48, Math.min(nativeCenterStep, measuredLabelWidth)) * 10) / 10;
-    const nextLabelWidth = `${roundedLabelWidth}px`;
     if (
       carousel.style.getPropertyValue("--rsl-best-friends-tile-width") !== nextWidth
     ) {
@@ -6978,13 +6970,6 @@
     ) {
       carousel.style.setProperty("--rsl-best-friends-tile-gap", nextGap);
     }
-    if (
-      carousel.style.getPropertyValue("--rsl-best-friends-label-width") !==
-      nextLabelWidth
-    ) {
-      carousel.style.setProperty("--rsl-best-friends-label-width", nextLabelWidth);
-    }
-
     const bestFirstItem = bestFriendsList?.firstElementChild;
     const bestFirstVisual = getHomeFriendTileVisualRect(bestFirstItem);
     const nativeListRect = nativeList.getBoundingClientRect();
