@@ -406,6 +406,7 @@ const renderSource = sourceBetween(
 for (const copy of [
   "First seen",
   "Last seen",
+  "View Game",
   "Rejoin Server",
   "Loading your recent servers…",
   "No recent servers yet"
@@ -508,19 +509,23 @@ const cardActionsSource = renderSource.match(
   /const actions = document\.createElement\("div"\);([\s\S]*?)actions\.append\(open, rejoin\);/
 )?.[1];
 assert.ok(cardActionsSource, "missing compact Server History actions");
-assert.match(cardActionsSource, /open\.textContent = "Open"/);
+assert.match(cardActionsSource, /open\.textContent = "View Game"/);
 assert.match(cardActionsSource, /rejoinLabel =[\s\S]*?\? "Opening…"[\s\S]*?: "Rejoin Server"/);
-assert.match(cardActionsSource, /open\.setAttribute\("aria-label", `Open \$\{session\.name\}`\)/);
+assert.match(
+  cardActionsSource,
+  /const viewGameDescription = `View \$\{session\.name\} game page on Roblox`[\s\S]*?open\.setAttribute\("aria-label", viewGameDescription\)[\s\S]*?open\.title = viewGameDescription/,
+  "View Game must explain its Roblox game-page destination to assistive technology and on hover"
+);
 assert.match(cardActionsSource, /rejoin\.setAttribute\([\s\S]*?"aria-label"/);
 assert.doesNotMatch(
   cardActionsSource,
-  /\bcheck\b|Check status|Checking…|open\.textContent = "Open Experience"|"Full · try anyway"|"Try rejoining anyway"/i,
-  "compact cards must expose only Open and Rejoin Server actions"
+  /\bcheck\b|Check status|Checking…|open\.textContent = "Open(?: Experience)?"|"Full · try anyway"|"Try rejoining anyway"/i,
+  "compact cards must expose only the clearly named View Game and Rejoin Server actions"
 );
 assert.equal(
   (renderSource.match(/document\.createElement\("a"\)/g) || []).length,
   1,
-  "Open must be the card's only anchor; Rejoin Server is its only button"
+  "View Game must be the card's only anchor; Rejoin Server is its only button"
 );
 assert.match(renderSource, /rejoin\.setAttribute\("aria-disabled", String\(rejoinPending\)\)/);
 assert.match(renderSource, /focusedSessionId/);
@@ -726,7 +731,7 @@ assert.doesNotMatch(
   /\*\*Check status\*\*|shows? (?:the )?player count|Server status unknown|\*\*Active\*\*|automatically checks|public-server list|\*\*Recent\*\*|\*\*Past\*\*|Observed recently|Past observation/i,
   "documentation must not promise removed badge, status, or player-count UI"
 );
-assert.match(serverHistoryReadmeParagraph, /\*\*Open\*\*[^]*\*\*Rejoin Server\*\*/);
+assert.match(serverHistoryReadmeParagraph, /\*\*View Game\*\*[^]*\*\*Rejoin Server\*\*/);
 assert.doesNotMatch(
   readme,
   /Server History checks a saved Job ID|choose \*\*Check status\*\*/,

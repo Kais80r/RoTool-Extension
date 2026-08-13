@@ -18,7 +18,7 @@ function functionSource(source, name, nextName) {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-assert.equal(manifest.version, "0.17.2");
+assert.equal(manifest.version, "0.17.3");
 assert.match(manifest.description, /Quick Settings/);
 assert.ok(manifest.host_permissions.includes("https://apis.roblox.com/*"));
 

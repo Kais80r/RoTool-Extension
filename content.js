@@ -15419,8 +15419,10 @@
     open.className = "rsl-button rsl-button--secondary rsl-server-history__action";
     open.dataset.rslServerHistoryAction = "open";
     open.href = `/games/${session.placeId}`;
-    open.textContent = "Open";
-    open.setAttribute("aria-label", `Open ${session.name}`);
+    open.textContent = "View Game";
+    const viewGameDescription = `View ${session.name} game page on Roblox`;
+    open.setAttribute("aria-label", viewGameDescription);
+    open.title = viewGameDescription;
     const rejoinLabel = serverHistoryPendingRejoinId === session.sessionId
       ? "Opening…"
       : "Rejoin Server";
