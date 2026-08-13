@@ -1,4 +1,5 @@
 {
+  "configVersion": 2,
   "repository": "Kais80r/RoTool-Extension",
-  "browser": "edge"
+  "browser": "auto"
 }

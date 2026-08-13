@@ -49,6 +49,9 @@ for (const relative of packageFiles) {
 
 assert.match(updaterSource, /RoTool-extension\.zip/);
 assert.match(updaterSource, /RoTool-extension\.zip\.sha256/);
+assert.match(updaterSource, /RoTool-updater\.zip/);
+assert.match(updaterSource, /RoTool-updater\.zip\.sha256/);
+assert.match(updaterSource, /UpdaterCoreFiles/);
 assert.match(updaterSource, /MaximumArchiveBytes/);
 assert.match(updaterSource, /MaximumEntryBytes/);
 assert.match(updaterSource, /MaximumExtractedBytes/);
@@ -57,12 +60,29 @@ assert.doesNotMatch(updaterSource, /Get-FileHash/);
 assert.match(updaterSource, /Restore-RoToolBackup/);
 assert.match(updaterSource, /Repair-RoToolInterruptedUpdate/);
 assert.match(updaterSource, /\.rotool-new-/);
+assert.match(updaterSource, /function Resolve-RoToolBrowser/);
+assert.match(updaterSource, /ChromeUserDataRoot/);
+assert.match(updaterSource, /EdgeUserDataRoot/);
+assert.match(updaterSource, /Local State/);
+assert.match(updaterSource, /Secure Preferences/);
+assert.match(updaterSource, /PSObject\.Properties\["extensions"\]/);
+assert.match(updaterSource, /PSObject\.Properties\["settings"\]/);
+assert.match(updaterSource, /PSObject\.Properties\["path"\]/);
+assert.match(updaterSource, /--new-tab/);
+assert.match(updaterSource, /chrome:\/\/extensions\//);
+assert.match(updaterSource, /edge:\/\/extensions\//);
+assert.match(updaterSource, /ShowWindowAsync/);
+assert.match(updaterSource, /SetForegroundWindow/);
+assert.doesNotMatch(updaterSource, /["'](?:Cookies|Login Data|Web Data)["']/i);
+assert.doesNotMatch(updaterSource, /\.ROBLOSECURITY|access[_ -]?token|refresh[_ -]?token/i);
 assert.doesNotMatch(updaterSource, /github(?:usercontent)?\.com[^"'\r\n]*\.(?:js|wasm)/i);
 assert.doesNotMatch(updaterSource, /Remove-Item\s+-LiteralPath\s+\$installRoot\b/i);
 
 assert.match(commandSource, /-NoProfile/);
 assert.match(commandSource, /-File "%~dp0Update-RoTool\.ps1"/);
 assert.match(commandSource, /%ERRORLEVEL%/);
+assert.match(commandSource, /if\s+"?%ROTOOL_UPDATE_EXIT%"?\s*==\s*"?0"?\s+exit\s+\/b\s+0[\s\S]*pause/i);
+assert.doesNotMatch(commandSource, /pause[\s\S]*exit\s+\/b\s+0/i);
 assert.match(updaterReadme, /permanent folder/i);
 assert.match(updaterReadme, /Do not rename, move, remove, or load that extension again/i);
 assert.match(updaterReadme, /verifies its checksum/i);
@@ -75,15 +95,23 @@ assert.match(mainReadme, /RoTool-setup\.zip/);
 assert.match(mainReadme, /keep that exact folder path/i);
 assert.match(mainReadme, /do not remove the existing extension/i);
 assert.match(mainReadme, /double-click `updater\/Update RoTool\.cmd`/i);
-assert.match(mainReadme, /does not access the browser profile or delete unrecognized local files/i);
+assert.match(mainReadme, /Preferences.*Secure Preferences|Secure Preferences.*Preferences/i);
+assert.match(mainReadme, /extension registration metadata/i);
+assert.match(mainReadme, /never reads? cookies.*history.*passwords|never reads? cookies, history, or passwords/i);
 assert.match(mainReadme, /press \*\*Reload\*\* on the same RoTool card/i);
 assert.match(mainReadme, /GitHub workflow runs every test/i);
 assert.match(mainReadme, /Never put a GitHub token/i);
 assert.deepEqual(exampleConfiguration, {
   repository: "Kais80r/RoTool-Extension",
-  browser: "edge"
+  browser: "auto",
+  configVersion: 2
 });
 assert.match(releaseBuilder, /\[string\]\$Repository = "Kais80r\/RoTool-Extension"/);
+assert.match(releaseBuilder, /browser\s*=\s*"auto"/);
+assert.match(releaseBuilder, /configVersion\s*=\s*2/);
+assert.match(updaterSource, /configVersion/);
+assert.match(updaterSource, /Browser\s*=\s*"auto"|browser\s*=\s*"auto"/);
+assert.match(updaterSource, /if\s*\(\$comparison\s+-eq\s+0[\s\S]*Open-RoToolExtensionsPage/);
 assert.match(gitignore, /^updater\/updater\.config\.json$/m);
 assert.match(gitignore, /^dist\/$/m);
 
@@ -111,6 +139,8 @@ assert.match(releaseWorkflow, /gh release create \$env:GITHUB_REF_NAME/);
 for (const asset of [
   "dist/RoTool-extension.zip",
   "dist/RoTool-extension.zip.sha256",
+  "dist/RoTool-updater.zip",
+  "dist/RoTool-updater.zip.sha256",
   "dist/RoTool-setup.zip",
   "dist/RoTool-setup.zip.sha256"
 ]) {

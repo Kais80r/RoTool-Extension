@@ -56,6 +56,8 @@ jobs:
           gh release create $env:GITHUB_REF_NAME `
             dist/RoTool-extension.zip `
             dist/RoTool-extension.zip.sha256 `
+            dist/RoTool-updater.zip `
+            dist/RoTool-updater.zip.sha256 `
             dist/RoTool-setup.zip `
             dist/RoTool-setup.zip.sha256 `
             --verify-tag `

@@ -61,10 +61,12 @@ if (-not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $extensionArchive = Join-Path $OutputDirectory "RoTool-extension.zip"
+$updaterArchive = Join-Path $OutputDirectory "RoTool-updater.zip"
 $setupArchive = Join-Path $OutputDirectory "RoTool-setup.zip"
 $extensionChecksum = "$extensionArchive.sha256"
+$updaterChecksum = "$updaterArchive.sha256"
 $setupChecksum = "$setupArchive.sha256"
-foreach ($output in @($extensionArchive, $setupArchive, $extensionChecksum, $setupChecksum)) {
+foreach ($output in @($extensionArchive, $updaterArchive, $setupArchive, $extensionChecksum, $updaterChecksum, $setupChecksum)) {
   if (Test-Path -LiteralPath $output) {
     Remove-Item -LiteralPath $output -Force
   }
@@ -132,11 +134,21 @@ $runtimeEntries = @($packageFiles | ForEach-Object {
 })
 New-RoToolArchive -Destination $extensionArchive -Entries $runtimeEntries
 
+# Keep the command launcher and local configuration outside the replaceable updater
+# core. This lets a running updater atomically replace its implementation without
+# invalidating the command file that launched it or overwriting a user's choices.
+$updaterCoreEntries = @(
+  [PSCustomObject]@{ Source = (Join-Path $root "updater\Update-RoTool.ps1"); Entry = "Update-RoTool.ps1" },
+  [PSCustomObject]@{ Source = (Join-Path $root "updater\README.md"); Entry = "README.md" },
+  [PSCustomObject]@{ Source = $packageDefinition; Entry = "package-files.json" }
+)
+New-RoToolArchive -Destination $updaterArchive -Entries $updaterCoreEntries
+
 $setupScratch = Join-Path $OutputDirectory ".rotool-setup-$([Guid]::NewGuid().ToString('N'))"
 [void](New-Item -ItemType Directory -Path $setupScratch)
 try {
   $generatedConfig = Join-Path $setupScratch "updater.config.json"
-  $configJson = [ordered]@{ repository = $Repository; browser = "edge" } | ConvertTo-Json
+  $configJson = [ordered]@{ configVersion = 2; repository = $Repository; browser = "auto" } | ConvertTo-Json
   [IO.File]::WriteAllText($generatedConfig, $configJson + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
 
   $updaterEntries = @(
@@ -161,6 +173,7 @@ function Write-ChecksumFile {
 }
 
 Write-ChecksumFile -File $extensionArchive -Destination $extensionChecksum
+Write-ChecksumFile -File $updaterArchive -Destination $updaterChecksum
 Write-ChecksumFile -File $setupArchive -Destination $setupChecksum
 
 $archive = [IO.Compression.ZipFile]::OpenRead($extensionArchive)
@@ -178,11 +191,29 @@ try {
   $archive.Dispose()
 }
 
+$updaterArchiveHandle = [IO.Compression.ZipFile]::OpenRead($updaterArchive)
+try {
+  $expectedUpdaterEntries = @($updaterCoreEntries | ForEach-Object { $_.Entry } | Sort-Object)
+  $actualUpdaterEntries = @($updaterArchiveHandle.Entries | ForEach-Object { $_.FullName } | Sort-Object)
+  if ($actualUpdaterEntries.Count -ne $expectedUpdaterEntries.Count) {
+    throw "Built updater archive has an unexpected entry count."
+  }
+  for ($index = 0; $index -lt $expectedUpdaterEntries.Count; $index += 1) {
+    if ($actualUpdaterEntries[$index] -cne $expectedUpdaterEntries[$index]) {
+      throw "Built updater archive has an unexpected entry: $($actualUpdaterEntries[$index])."
+    }
+  }
+} finally {
+  $updaterArchiveHandle.Dispose()
+}
+
 [PSCustomObject]@{
   Version = $version
   Repository = $Repository
   ExtensionArchive = $extensionArchive
+  UpdaterArchive = $updaterArchive
   SetupArchive = $setupArchive
   ExtensionSha256 = Get-RoToolBuildFileSha256 $extensionArchive
+  UpdaterSha256 = Get-RoToolBuildFileSha256 $updaterArchive
   SetupSha256 = Get-RoToolBuildFileSha256 $setupArchive
 }
