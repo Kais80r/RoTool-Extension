@@ -56,6 +56,11 @@ function extractRule(selectorFragment, fromIndex = 0) {
 const tileSource = extractFunction("makeBestFriendTile");
 assert.match(tileSource, /name\.textContent = friend\.displayName;/);
 assert.match(tileSource, /name\.title = friend\.displayName;/);
+assert.match(
+  tileSource,
+  /appendFriendNameBadges\(name\.parentElement, friend, true\);/,
+  "0-, 1-, and 2-badge layouts must reserve space in the name row only"
+);
 assert.match(tileSource, /sublabel\.classList\.add\("friends-carousel-tile-experience"\);/);
 assert.match(tileSource, /sublabel\.textContent = presence\.label;/);
 assert.match(tileSource, /sublabel\.title = presence\.label;/);
@@ -64,6 +69,123 @@ assert.doesNotMatch(
   /(?:const experience|experience\.className|sublabel\.append\(experience\))/,
   "experience text must stay directly in Roblox's native sublabel clamp"
 );
+
+// Exercise the content combinations that exposed the alignment bug: a long
+// experience title with two badges, a short Online status with one badge, and
+// a short Offline status with no badges. All three flow through the same
+// sublabel; badges remain isolated to the independent name row.
+const getPresencePresentation = new Function(
+  `"use strict";\n${extractFunction("getPresencePresentation")}\n` +
+    "return getPresencePresentation;"
+)();
+const badgeFactoryCalls = [];
+const appendFriendNameBadges = new Function(
+  "makeVerifiedFriendNameBadge",
+  "makeRobloxPlusFriendNameBadge",
+  `"use strict";\n${extractFunction("appendFriendNameBadges")}\n` +
+    "return appendFriendNameBadges;"
+)(
+  (carouselLayout) => {
+    badgeFactoryCalls.push({ kind: "verified", carouselLayout });
+    return { kind: "verified" };
+  },
+  (carouselLayout) => {
+    badgeFactoryCalls.push({ kind: "plus", carouselLayout });
+    return { kind: "plus" };
+  }
+);
+
+function makeBadgeContainer() {
+  const attributes = new Map();
+  const classStates = new Map();
+  const children = [];
+  return {
+    attributes,
+    children,
+    classList: {
+      toggle(name, enabled) {
+        classStates.set(name, enabled);
+      }
+    },
+    querySelectorAll() {
+      return [];
+    },
+    append(child) {
+      children.push(child);
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    },
+    isClassEnabled(name) {
+      return classStates.get(name) === true;
+    }
+  };
+}
+
+const presenceAlignmentFixtures = [
+  {
+    description: "in-game tile with a long title and two badges",
+    friend: {
+      presenceType: "InGame",
+      displayName: "Korn",
+      username: "KornWithAnotherAccountName",
+      lastLocation: "A deliberately long experience title that must ellipsize",
+      rootPlaceId: "101",
+      isVerified: true,
+      isRobloxPlus: true
+    },
+    expectedLabel: "A deliberately long experience title that must ellipsize",
+    expectedBadgeKinds: ["verified", "plus"]
+  },
+  {
+    description: "online tile with a long name and one badge",
+    friend: {
+      presenceType: "Online",
+      displayName: "A deliberately long Best Friend display name",
+      username: "ShortUsername",
+      isVerified: true,
+      isRobloxPlus: false
+    },
+    expectedLabel: "Online",
+    expectedBadgeKinds: ["verified"]
+  },
+  {
+    description: "offline tile with no badges",
+    friend: {
+      presenceType: "Offline",
+      displayName: "WaitingWait3r",
+      username: "DifferentOfflineUsername",
+      isVerified: false,
+      isRobloxPlus: false
+    },
+    expectedLabel: "Offline",
+    expectedBadgeKinds: []
+  }
+];
+
+for (const fixture of presenceAlignmentFixtures) {
+  const presentation = getPresencePresentation(fixture.friend);
+  assert.equal(presentation.label, fixture.expectedLabel, fixture.description);
+
+  badgeFactoryCalls.length = 0;
+  const nameContainer = makeBadgeContainer();
+  appendFriendNameBadges(nameContainer, fixture.friend, true);
+  assert.equal(
+    nameContainer.attributes.get("data-rsl-friend-name-badge-count"),
+    String(fixture.expectedBadgeKinds.length),
+    fixture.description
+  );
+  assert.deepEqual(
+    nameContainer.children.map((badge) => badge.kind),
+    fixture.expectedBadgeKinds,
+    fixture.description
+  );
+  assert.deepEqual(
+    badgeFactoryCalls.map((call) => call.carouselLayout),
+    fixture.expectedBadgeKinds.map(() => true),
+    `${fixture.description} must use carousel badge markup`
+  );
+}
 
 // Best Friends derives its lane from the live native Friends row. Re-running the
 // mount after a viewport resize also covers browser zoom, which changes CSS-pixel
@@ -128,12 +250,18 @@ const clonedExperienceRule = extractRule(
 assert.match(clonedExperienceRule, /display:\s*block\s*!important/);
 assert.match(clonedExperienceRule, /min-inline-size:\s*0/);
 assert.match(clonedExperienceRule, /overflow:\s*hidden\s*!important/);
+assert.match(clonedExperienceRule, /text-align:\s*center\s*!important/);
 assert.match(clonedExperienceRule, /text-overflow:\s*ellipsis\s*!important/);
 assert.match(clonedExperienceRule, /white-space:\s*nowrap\s*!important/);
 assert.doesNotMatch(
   clonedExperienceRule,
   /(?:^|;)\s*(?:width|max-width|inline-size|max-inline-size)\s*:/,
   "the one-line game label must retain Roblox's inherited native width"
+);
+assert.doesNotMatch(
+  clonedExperienceRule,
+  /\b\d+(?:\.\d+)?(?:px|rem|em|vw|vh|%)\b/i,
+  "status centering must not depend on a card width, viewport, or font-size measurement"
 );
 
 assert.match(
@@ -227,4 +355,23 @@ assert.doesNotMatch(
   "RoTool must not globally alter Roblox's native Friends card text"
 );
 
-console.log("PASS Best Friends text matches native width and truncates without layout overflow");
+// Any centering rule for this native Roblox class must remain under RoTool's
+// cloned Best Friends scope. The normal Friends carousel is the measurement
+// authority and must not inherit the alignment override.
+const centeredExperienceSelectors = Array.from(
+  styles.matchAll(/([^{}]+)\{([^{}]*text-align:\s*center\s*!important[^{}]*)\}/g)
+)
+  .filter((match) => match[1].includes(".friends-carousel-tile-experience"))
+  .map((match) => match[1].trim());
+assert.ok(centeredExperienceSelectors.length > 0, "Best Friends status centering must exist");
+for (const selector of centeredExperienceSelectors) {
+  assert.match(
+    selector,
+    /\.rsl-best-friends-carousel[\s\S]*\[data-rsl-best-friend-(?:id|fallback)\]/,
+    `normal Friends must be unaffected by centered selector: ${selector}`
+  );
+}
+
+console.log(
+  "PASS Best Friends names and statuses share native lanes, center uniformly, and truncate without overflow"
+);

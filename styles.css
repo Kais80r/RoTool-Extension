@@ -1655,14 +1655,16 @@
 }
 
 /* Roblox can render the reused sublabel as a two-line clamp after its text is
-   replaced. Keep the native label lane, but make a Best Friend's experience
-   title use the same single-line ellipsis as the regular Friends row. */
+   replaced, and its inherited alignment can leave short presence labels such
+   as Online and Offline sitting at the lane's left edge. Keep the native label
+   lane, but center every Best Friend status and retain a one-line ellipsis. */
 .rsl-best-friends-carousel
   [data-rsl-best-friend-id]
   .friends-carousel-tile-experience {
   display: block !important;
   min-inline-size: 0;
   overflow: hidden !important;
+  text-align: center !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
