@@ -5,8 +5,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const source = fs.readFileSync(path.join(root, "content.js"), "utf8");
-const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const source = fs
+  .readFileSync(path.join(root, "content.js"), "utf8")
+  .replace(/\r\n/g, "\n");
+const styles = fs
+  .readFileSync(path.join(root, "styles.css"), "utf8")
+  .replace(/\r\n/g, "\n");
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
