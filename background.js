@@ -244,19 +244,13 @@ const SERVER_HISTORY_STORAGE_VERSION = 1;
 const SERVER_HISTORY_ALARM_NAME = "rsl-server-history-v1";
 const SERVER_HISTORY_ALARM_PERIOD_MINUTES = 1;
 const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
-const SERVER_HISTORY_STATUS_MESSAGE_TYPE = "rsl:check-server-history-status";
 const SERVER_HISTORY_CLEAR_MESSAGE_TYPE = "rsl:clear-server-history";
 const SERVER_HISTORY_REJOIN_MESSAGE_TYPE = "rsl:rejoin-server-history";
 const SERVER_HISTORY_MAX_SESSIONS = 30;
 const SERVER_HISTORY_MAX_ACCOUNTS = 8;
 const SERVER_HISTORY_CONTINUITY_GAP_MS = 3 * 60_000;
-const SERVER_HISTORY_STATUS_CACHE_TTL_MS = 60_000;
-// Roblox heavily limits its consumer server directory. Scan the high- and
-// low-occupancy edges instead of exhausting the shared browser/IP quota by
-// walking middle pages that Roblox may cap anyway.
-const SERVER_HISTORY_MAX_SERVER_REQUESTS = 2;
-const SERVER_HISTORY_SERVER_PAGE_SIZE = 100;
 const SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH = 100;
+const SERVER_HISTORY_FALLBACK_LOCALE = "en-US";
 const PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE = "rsl:get-private-server-support";
 const PRIVATE_SERVER_LIST_MESSAGE_TYPE = "rsl:get-private-servers";
 const PRIVATE_SERVER_JOIN_MESSAGE_TYPE = "rsl:join-private-server";
@@ -378,8 +372,6 @@ let serverHistoryPollPromise = null;
 let serverHistoryStorageWriteTail = Promise.resolve();
 let serverHistoryStorageOverride = null;
 let serverHistorySessionIdSequence = 0;
-const serverHistoryStatusCache = new Map();
-const serverHistoryStatusRequests = new Map();
 const privateServerSupportCache = new Map();
 const privateServerSupportByPlaceId = new Map();
 const privateServerSupportRequestsByPlaceId = new Map();
@@ -6197,6 +6189,20 @@ function normalizeServerHistoryRequestId(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+function normalizeServerHistoryLocale(value) {
+  const locale = typeof value === "string"
+    ? value.trim().replace(/_/g, "-")
+    : "";
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(locale)) {
+    return SERVER_HISTORY_FALLBACK_LOCALE;
+  }
+  try {
+    return Intl.getCanonicalLocales(locale)[0] || SERVER_HISTORY_FALLBACK_LOCALE;
+  } catch {
+    return SERVER_HISTORY_FALLBACK_LOCALE;
+  }
+}
+
 function normalizeServerHistorySessionId(value) {
   if (
     typeof value !== "string" ||
@@ -6603,6 +6609,7 @@ async function fetchServerHistoryPresence(viewerUserId) {
     credentials: "include",
     headers: {
       Accept: "application/json",
+      "Accept-Language": SERVER_HISTORY_FALLBACK_LOCALE,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ userIds: [Number(viewerUserId)] })
@@ -6755,8 +6762,6 @@ function applyServerHistoryFeatureValue(rawValue, runWhenEnabled = false) {
   serverHistoryFeatureReady = true;
   if (wasEnabled !== nextEnabled) {
     serverHistoryLifecycleGeneration += 1;
-    serverHistoryStatusCache.clear();
-    serverHistoryStatusRequests.clear();
   }
   serverHistoryFeatureEnabled = nextEnabled;
   if (!nextEnabled) {
@@ -6796,7 +6801,10 @@ function syncServerHistoryFeatureFromStorage(runWhenEnabled = false) {
   return trackedSync;
 }
 
-async function fetchServerHistoryExperienceDetails(universeIds) {
+async function fetchServerHistoryExperienceDetails(
+  universeIds,
+  locale = SERVER_HISTORY_FALLBACK_LOCALE
+) {
   const ids = [...new Set(universeIds.map(normalizeId).filter(Boolean))].slice(
     0,
     SERVER_HISTORY_MAX_SESSIONS
@@ -6810,7 +6818,10 @@ async function fetchServerHistoryExperienceDetails(universeIds) {
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
     credentials: "omit",
-    headers: { Accept: "application/json" }
+    headers: {
+      Accept: "application/json",
+      "Accept-Language": normalizeServerHistoryLocale(locale)
+    }
   });
   if (!Array.isArray(payload?.data)) {
     throw new RobloxApiError(502);
@@ -6824,33 +6835,28 @@ async function fetchServerHistoryExperienceDetails(universeIds) {
       experienceName: normalizeServerHistoryText(
         entry?.name,
         SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
-      ),
-      rootPlaceId: normalizeOptionalId(entry?.rootPlaceId)
+      )
     });
   }
   return details;
 }
 
 function sanitizeServerHistorySessionForResponse(session, details = null) {
-  const experienceName = details?.experienceName ||
-    session.lastLocation ||
-    "Unknown Experience";
+  const experienceName = details?.experienceName || "Unknown Experience";
   return Object.freeze({
     sessionId: session.sessionId,
     placeId: session.placeId,
     universeId: session.universeId,
-    rootPlaceId: details?.rootPlaceId || session.rootPlaceId || session.placeId,
     experienceName,
     firstSeenAt: session.firstSeenAt,
-    lastSeenAt: session.lastSeenAt,
-    endedAt: session.endedAt,
-    observationCount: session.observationCount,
-    isCurrent: session.isOpen === true,
-    endReason: session.endReason
+    lastSeenAt: session.lastSeenAt
   });
 }
 
-async function getServerHistoryResponse(requestId) {
+async function getServerHistoryResponse(
+  requestId,
+  locale = SERVER_HISTORY_FALLBACK_LOCALE
+) {
   if (!serverHistoryFeatureReady) {
     await (serverHistoryFeatureSyncPromise ||
       syncServerHistoryFeatureFromStorage(false));
@@ -6860,8 +6866,7 @@ async function getServerHistoryResponse(requestId) {
       ok: true,
       requestId,
       enabled: false,
-      sessions: [],
-      tracking: { state: "disabled", lastCheckedAt: 0, approximate: true }
+      sessions: []
     };
   }
   let viewerUserId;
@@ -6875,7 +6880,7 @@ async function getServerHistoryResponse(requestId) {
       errorCode: error?.status === 401 ? "signed-out" : "unavailable"
     };
   }
-  const pollResult = await runServerHistoryPoll({ viewerUserId });
+  await runServerHistoryPoll({ viewerUserId });
   let storage;
   try {
     await serverHistoryStorageWriteTail.catch(() => undefined);
@@ -6887,10 +6892,11 @@ async function getServerHistoryResponse(requestId) {
   let details = new Map();
   try {
     details = await fetchServerHistoryExperienceDetails(
-      account.sessions.map((session) => session.universeId).filter(Boolean)
+      account.sessions.map((session) => session.universeId).filter(Boolean),
+      locale
     );
   } catch {
-    // Stored place/location data still makes the local history useful offline.
+    // Stored place/timestamp data still makes the local history useful offline.
   }
   return {
     ok: true,
@@ -6901,13 +6907,7 @@ async function getServerHistoryResponse(requestId) {
         session,
         session.universeId ? details.get(session.universeId) : null
       )
-    ),
-    tracking: {
-      state: pollResult.ok ? account.trackingState : "error",
-      lastCheckedAt: account.lastCheckedAt,
-      approximate: true,
-      ...(pollResult.ok ? {} : { errorCode: pollResult.errorCode })
-    }
+    )
   };
 }
 
@@ -6918,7 +6918,7 @@ function handleGetServerHistoryMessage(message, sender, sendResponse) {
     sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
     return false;
   }
-  getServerHistoryResponse(requestId)
+  getServerHistoryResponse(requestId, normalizeServerHistoryLocale(message.locale))
     .then(sendResponse)
     .catch(() => sendResponse({ ok: false, requestId, errorCode: "unavailable" }));
   return true;
@@ -6932,191 +6932,6 @@ async function getOwnedServerHistorySession(viewerUserId, sessionId) {
   return session || null;
 }
 
-async function scanServerHistoryPublicServers(session) {
-  const sortOrders = ["Desc", "Asc"];
-  let listWasLimited = false;
-  for (
-    let requestIndex = 0;
-    requestIndex < SERVER_HISTORY_MAX_SERVER_REQUESTS;
-    requestIndex += 1
-  ) {
-    const endpoint = new URL(
-      `/v1/games/${session.placeId}/servers/Public`,
-      "https://games.roblox.com"
-    );
-    endpoint.searchParams.set("sortOrder", sortOrders[requestIndex]);
-    endpoint.searchParams.set("excludeFullGames", "false");
-    endpoint.searchParams.set("limit", String(SERVER_HISTORY_SERVER_PAGE_SIZE));
-    let payload;
-    try {
-      payload = await fetchJson(endpoint, {
-        cache: "no-store",
-        credentials: "include",
-        headers: { Accept: "application/json" }
-      }, { maxAttempts: 1 });
-    } catch (error) {
-      return {
-        status: "unknown",
-        playing: null,
-        maxPlayers: null,
-        source: null,
-        reason: error?.status === 429 ? "rate-limited" : "unavailable"
-      };
-    }
-    if (!Array.isArray(payload?.data)) {
-      return {
-        status: "unknown",
-        playing: null,
-        maxPlayers: null,
-        source: null,
-        reason: "unavailable"
-      };
-    }
-    for (const entry of payload.data) {
-      const gameInstanceId = normalizeGameInstanceId(entry?.id);
-      if (gameInstanceId?.toLowerCase() === session.gameInstanceId) {
-        const playing = Number(entry?.playing);
-        const maxPlayers = Number(entry?.maxPlayers);
-        const hasValidCount = Number.isSafeInteger(playing) &&
-          playing >= 0 &&
-          Number.isSafeInteger(maxPlayers) &&
-          maxPlayers > 0 &&
-          playing <= maxPlayers;
-        return {
-          status: "active",
-          playing: hasValidCount ? playing : null,
-          maxPlayers: hasValidCount ? maxPlayers : null,
-          source: "public-server-list",
-          reason: null
-        };
-      }
-    }
-    const hasMore = typeof payload.nextPageCursor === "string" &&
-      payload.nextPageCursor.length <= 2_048 &&
-      payload.nextPageCursor.trim() === payload.nextPageCursor &&
-      payload.nextPageCursor.length > 0;
-    if (!hasMore) {
-      // One direction returned the complete public directory.
-      break;
-    }
-    listWasLimited = true;
-  }
-  return {
-    status: "unknown",
-    playing: null,
-    maxPlayers: null,
-    source: null,
-    reason: listWasLimited ? "list-limited" : "not-visible"
-  };
-}
-
-async function checkServerHistoryStatus(viewerUserId, session, options = {}) {
-  const now = Number.isSafeInteger(options.now) && options.now > 0
-    ? options.now
-    : Date.now();
-  const cacheKey = `${viewerUserId}:${session.sessionId}`;
-  const generation = serverHistoryLifecycleGeneration;
-  const cached = serverHistoryStatusCache.get(cacheKey);
-  if (!options.forceRefresh && cached && now - cached.checkedAt <= SERVER_HISTORY_STATUS_CACHE_TTL_MS) {
-    return cached;
-  }
-  // A manual refresh bypasses only a completed cache entry. Reuse an identical
-  // in-flight scan so overlapping tabs cannot multiply Roblox server-list
-  // requests against the same small shared quota.
-  if (serverHistoryStatusRequests.has(cacheKey)) {
-    return serverHistoryStatusRequests.get(cacheKey);
-  }
-  const request = (async () => {
-    const [publicResult, presenceResult] = await Promise.all([
-      typeof options.scanPublicServers === "function"
-        ? options.scanPublicServers(session)
-        : scanServerHistoryPublicServers(session),
-      (typeof options.fetchPresence === "function"
-        ? options.fetchPresence(viewerUserId)
-        : fetchServerHistoryPresence(viewerUserId)
-      ).catch(() => null)
-    ]);
-    let result = publicResult;
-    if (
-      result.status !== "active" &&
-      presenceResult?.kind === "in-game" &&
-      presenceResult.placeId === session.placeId &&
-      presenceResult.gameInstanceId === session.gameInstanceId
-    ) {
-      result = {
-        status: "active",
-        playing: null,
-        maxPlayers: null,
-        source: "current-presence",
-        reason: null
-      };
-    }
-    const normalizedResult = Object.freeze({
-      status: result.status === "active" ? "active" : "unknown",
-      playing: Number.isSafeInteger(result.playing) ? result.playing : null,
-      maxPlayers: Number.isSafeInteger(result.maxPlayers) ? result.maxPlayers : null,
-      checkedAt: now,
-      source: result.source === "public-server-list" || result.source === "current-presence"
-        ? result.source
-        : null,
-      reason: typeof result.reason === "string" ? result.reason : null
-    });
-    if (
-      options.allowCacheWhenDisabled === true ||
-      isServerHistoryLifecycleCurrent(generation)
-    ) {
-      serverHistoryStatusCache.set(cacheKey, normalizedResult);
-    }
-    return normalizedResult;
-  })().finally(() => {
-    // Disabling and re-enabling the feature clears the request map. An older
-    // lifecycle's eventual completion must not evict a newer replacement scan
-    // registered under the same account/session key.
-    if (serverHistoryStatusRequests.get(cacheKey) === request) {
-      serverHistoryStatusRequests.delete(cacheKey);
-    }
-  });
-  serverHistoryStatusRequests.set(cacheKey, request);
-  return request;
-}
-
-function handleCheckServerHistoryStatusMessage(message, sender, sendResponse) {
-  if (message?.type !== SERVER_HISTORY_STATUS_MESSAGE_TYPE) return false;
-  const requestId = normalizeServerHistoryRequestId(message.requestId);
-  const sessionId = normalizeServerHistorySessionId(message.sessionId);
-  if (
-    requestId === null ||
-    !sessionId ||
-    (message.forceRefresh !== undefined && typeof message.forceRefresh !== "boolean") ||
-    getTrustedRobloxTopFrameTabId(sender) === null
-  ) {
-    sendResponse({ ok: false, requestId: requestId ?? 0, errorCode: "invalid" });
-    return false;
-  }
-  (async () => {
-    if (!serverHistoryFeatureEnabled) {
-      return { ok: false, requestId, sessionId, errorCode: "disabled" };
-    }
-    const viewerUserId = await getAuthenticatedViewerUserId();
-    const session = await getOwnedServerHistorySession(viewerUserId, sessionId);
-    if (!session) {
-      return { ok: false, requestId, sessionId, errorCode: "not-found" };
-    }
-    const status = await checkServerHistoryStatus(viewerUserId, session, {
-      forceRefresh: message.forceRefresh === true
-    });
-    return { ok: true, requestId, sessionId, ...status };
-  })().then(sendResponse).catch((error) => {
-    if (error?.status === 401) authenticatedUserRequest = null;
-    sendResponse({
-      ok: false,
-      requestId,
-      errorCode: error?.status === 401 ? "signed-out" : "unavailable"
-    });
-  });
-  return true;
-}
-
 async function clearServerHistoryForViewer(viewerUserId) {
   const operation = serverHistoryStorageWriteTail
     .catch(() => undefined)
@@ -7125,9 +6940,6 @@ async function clearServerHistoryForViewer(viewerUserId) {
       const cleared = storage.accounts[viewerUserId]?.sessions.length || 0;
       delete storage.accounts[viewerUserId];
       await writeServerHistoryStorage(storage);
-      for (const key of serverHistoryStatusCache.keys()) {
-        if (key.startsWith(`${viewerUserId}:`)) serverHistoryStatusCache.delete(key);
-      }
       return cleared;
     });
   serverHistoryStorageWriteTail = operation.catch(() => undefined);
@@ -7219,11 +7031,13 @@ function handleRejoinServerHistoryMessage(message, sender, sendResponse) {
   }
   (async () => {
     if (!serverHistoryFeatureEnabled) {
-      return { ok: false, requestId, errorCode: "disabled" };
+      return { ok: false, requestId, sessionId, errorCode: "disabled" };
     }
     const viewerUserId = await getAuthenticatedViewerUserId();
     const session = await getOwnedServerHistorySession(viewerUserId, sessionId);
-    if (!session) return { ok: false, requestId, errorCode: "not-found" };
+    if (!session) {
+      return { ok: false, requestId, sessionId, errorCode: "not-found" };
+    }
     const code = await executeServerHistoryRejoin(
       tabId,
       session.placeId,
@@ -7253,8 +7067,6 @@ function resetServerHistoryStateForTests() {
   serverHistoryStorageWriteTail = Promise.resolve();
   serverHistoryStorageOverride = null;
   serverHistorySessionIdSequence = 0;
-  serverHistoryStatusCache.clear();
-  serverHistoryStatusRequests.clear();
 }
 
 function normalizePrivateServerPlaceId(value) {
@@ -8804,6 +8616,7 @@ if (globalThis.__rslBackgroundTestHooks) {
     }),
     getServerHistoryFeatureValue,
     normalizeServerHistoryRequestId,
+    normalizeServerHistoryLocale,
     normalizeServerHistorySessionId,
     normalizeServerHistoryTimestamp,
     normalizeStoredServerHistorySession,
@@ -8826,12 +8639,9 @@ if (globalThis.__rslBackgroundTestHooks) {
     fetchServerHistoryExperienceDetails,
     sanitizeServerHistorySessionForResponse,
     getServerHistoryResponse,
-    scanServerHistoryPublicServers,
-    checkServerHistoryStatus,
     clearServerHistoryForViewer,
     executeServerHistoryRejoin,
     handleGetServerHistoryMessage,
-    handleCheckServerHistoryStatusMessage,
     handleClearServerHistoryMessage,
     handleRejoinServerHistoryMessage,
     resetServerHistoryStateForTests,
@@ -8850,17 +8660,12 @@ if (globalThis.__rslBackgroundTestHooks) {
     waitForServerHistoryWritesForTests() {
       return serverHistoryStorageWriteTail.catch(() => undefined);
     },
-    getServerHistoryStatusCacheForTests() {
-      return new Map(serverHistoryStatusCache);
-    },
     getServerHistoryStateForTests() {
       return {
         featureEnabled: serverHistoryFeatureEnabled,
         featureReady: serverHistoryFeatureReady,
         generation: serverHistoryLifecycleGeneration,
-        pollInFlight: Boolean(serverHistoryPollPromise),
-        statusCacheSize: serverHistoryStatusCache.size,
-        statusRequestsInFlight: serverHistoryStatusRequests.size
+        pollInFlight: Boolean(serverHistoryPollPromise)
       };
     },
     serverHistoryConstants: Object.freeze({
@@ -8870,15 +8675,12 @@ if (globalThis.__rslBackgroundTestHooks) {
       alarmName: SERVER_HISTORY_ALARM_NAME,
       alarmPeriodMinutes: SERVER_HISTORY_ALARM_PERIOD_MINUTES,
       getMessageType: SERVER_HISTORY_GET_MESSAGE_TYPE,
-      statusMessageType: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
       clearMessageType: SERVER_HISTORY_CLEAR_MESSAGE_TYPE,
       rejoinMessageType: SERVER_HISTORY_REJOIN_MESSAGE_TYPE,
       maxSessions: SERVER_HISTORY_MAX_SESSIONS,
       maxAccounts: SERVER_HISTORY_MAX_ACCOUNTS,
       continuityGapMs: SERVER_HISTORY_CONTINUITY_GAP_MS,
-      statusCacheTtlMs: SERVER_HISTORY_STATUS_CACHE_TTL_MS,
-      maxServerRequests: SERVER_HISTORY_MAX_SERVER_REQUESTS,
-      serverPageSize: SERVER_HISTORY_SERVER_PAGE_SIZE
+      fallbackLocale: SERVER_HISTORY_FALLBACK_LOCALE
     }),
     parsePrivateServerCursor,
     getPrivateServerSupport,
@@ -9016,10 +8818,6 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === SERVER_HISTORY_GET_MESSAGE_TYPE) {
     return handleGetServerHistoryMessage(message, sender, sendResponse);
-  }
-
-  if (message?.type === SERVER_HISTORY_STATUS_MESSAGE_TYPE) {
-    return handleCheckServerHistoryStatusMessage(message, sender, sendResponse);
   }
 
   if (message?.type === SERVER_HISTORY_CLEAR_MESSAGE_TYPE) {

@@ -16,7 +16,6 @@
   const SERVER_HISTORY_DIALOG_ID = "rsl-server-history-dialog";
   const SERVER_HISTORY_ROW_ID = "rsl-server-history-row";
   const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
-  const SERVER_HISTORY_STATUS_MESSAGE_TYPE = "rsl:check-server-history-status";
   const SERVER_HISTORY_CLEAR_MESSAGE_TYPE = "rsl:clear-server-history";
   const SERVER_HISTORY_REJOIN_MESSAGE_TYPE = "rsl:rejoin-server-history";
   const FEATURE_SETTINGS_NAV_ID = "rsl-navbar-settings";
@@ -766,11 +765,7 @@
   let serverHistoryRequestSequence = 0;
   let serverHistoryLoadState = "idle";
   let serverHistoryErrorCode = "";
-  let serverHistoryTracking = null;
   let serverHistorySessions = [];
-  let serverHistoryStatusBySessionId = new Map();
-  let serverHistoryPendingStatusIds = new Set();
-  let serverHistoryStatusRequestBySessionId = new Map();
   let serverHistoryPendingRejoinId = null;
   let serverHistoryConfirmClear = false;
   let serverHistoryClearPending = false;
@@ -15053,6 +15048,21 @@
       : null;
   }
 
+  function getRobloxPageLocale() {
+    const rawLocale = typeof document !== "undefined" &&
+      typeof document.documentElement?.lang === "string"
+      ? document.documentElement.lang.trim().replace(/_/g, "-")
+      : "";
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(rawLocale)) {
+      return "en-US";
+    }
+    try {
+      return Intl.getCanonicalLocales(rawLocale)[0] || "en-US";
+    } catch {
+      return "en-US";
+    }
+  }
+
   function normalizeServerHistorySession(rawValue) {
     if (!rawValue || typeof rawValue !== "object") return null;
     const sessionId = normalizeServerHistoryOpaqueId(rawValue.sessionId);
@@ -15073,12 +15083,7 @@
       universeId,
       name: (rawName || "Roblox experience").slice(0, 150),
       firstSeenAt: Math.min(firstSeenAt, lastSeenAt),
-      lastSeenAt: Math.max(firstSeenAt, lastSeenAt),
-      observationCount: Math.max(
-        1,
-        Math.min(100_000, Number.parseInt(rawValue.observationCount, 10) || 1)
-      ),
-      isOpen: rawValue.isCurrent === true || rawValue.isOpen === true
+      lastSeenAt: Math.max(firstSeenAt, lastSeenAt)
     });
   }
 
@@ -15096,61 +15101,17 @@
       if (sessions.length >= SERVER_HISTORY_LIMIT) break;
     }
     sessions.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
-    const trackingState = ["in-game", "not-in-game", "waiting", "error"]
-      .includes(rawValue.tracking?.state)
-      ? rawValue.tracking.state
-      : "waiting";
     return Object.freeze({
       enabled: rawValue.enabled !== false,
-      sessions,
-      tracking: Object.freeze({
-        state: trackingState,
-        lastCheckedAt: normalizeServerHistoryTimestamp(
-          rawValue.tracking?.lastCheckedAt
-        )
-      })
-    });
-  }
-
-  function normalizeServerHistoryStatus(rawValue, expectedSessionId = null) {
-    if (!rawValue || typeof rawValue !== "object" || rawValue.ok !== true) {
-      return null;
-    }
-    const sessionId = normalizeServerHistoryOpaqueId(rawValue.sessionId);
-    if (!sessionId || (expectedSessionId && sessionId !== expectedSessionId)) {
-      return null;
-    }
-    const status = rawValue.status === "active" ? "active" :
-      rawValue.status === "unknown" ? "unknown" : null;
-    const checkedAt = normalizeServerHistoryTimestamp(rawValue.checkedAt);
-    if (!status || !checkedAt) return null;
-    const playing = Number.isSafeInteger(Number(rawValue.playing)) &&
-      Number(rawValue.playing) >= 0
-      ? Number(rawValue.playing)
-      : null;
-    const maxPlayers = Number.isSafeInteger(Number(rawValue.maxPlayers)) &&
-      Number(rawValue.maxPlayers) > 0
-      ? Number(rawValue.maxPlayers)
-      : null;
-    return Object.freeze({
-      sessionId,
-      status,
-      playing,
-      maxPlayers,
-      checkedAt,
-      source: rawValue.source === "public-server-list" ||
-        rawValue.source === "current-presence"
-        ? rawValue.source
-        : null,
-      reason: typeof rawValue.reason === "string"
-        ? rawValue.reason.slice(0, 80).toLowerCase()
-        : ""
+      sessions
     });
   }
 
   function formatServerHistoryTimestamp(timestamp) {
     const date = new Date(timestamp);
-    return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Unknown";
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleString(getRobloxPageLocale())
+      : "Unknown";
   }
 
   function formatServerHistoryDuration(firstSeenAt, lastSeenAt) {
@@ -15165,27 +15126,31 @@
       : `${hours} hour${hours === 1 ? "" : "s"}`;
   }
 
-  function getServerHistoryUnknownExplanation(reason = "") {
-    if (reason.includes("rate")) {
-      return "Player count unavailable because Roblox temporarily limited the check. Try rejoining anyway, or check again later.";
-    }
-    if (reason.includes("sign") || reason.includes("auth")) {
-      return "Player count unavailable. Sign in to Roblox, then check again or try rejoining.";
-    }
-    if (
-      reason.includes("visible") ||
-      reason.includes("not-found") ||
-      reason.includes("list-limited")
-    ) {
-      return "Player count unavailable. RoTool cannot tell whether it is still running: it may have ended, or it may be private, hidden, or outside the public servers Roblox made available to this check. Try rejoining if you want; Roblox decides.";
-    }
-    return "Player count unavailable. Roblox could not confirm it. Try rejoining if you want; Roblox decides.";
+  function formatServerHistoryCompactTimestamp(timestamp, timeOnly = false) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return "Unknown";
+    return timeOnly
+      ? date.toLocaleTimeString(getRobloxPageLocale(), {
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      : date.toLocaleString(getRobloxPageLocale(), {
+          year: "2-digit",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
   }
 
-  function canRejoinServerHistoryStatus() {
-    // A list result is informational. Only Roblox can make the final decision
-    // when the user explicitly tries the saved Job ID.
-    return true;
+  function formatServerHistoryCompactDuration(firstSeenAt, lastSeenAt) {
+    const elapsed = Math.max(0, lastSeenAt - firstSeenAt);
+    if (elapsed < 60_000) return "<1m";
+    const minutes = Math.round(elapsed / 60_000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
   }
 
   function sendServerHistoryRuntimeMessage(message) {
@@ -15220,19 +15185,6 @@
         finish(reject, error);
       }
     });
-  }
-
-  function getServerHistoryTrackingText() {
-    switch (serverHistoryTracking?.state) {
-      case "in-game":
-        return "Your current server was observed recently.";
-      case "not-in-game":
-        return "RoTool is waiting for the next server you join.";
-      case "error":
-        return "Roblox presence could not be checked right now.";
-      default:
-        return "Waiting for the next roughly one-minute presence observation.";
-    }
   }
 
   function getServerHistoryLoadErrorText(code) {
@@ -15301,7 +15253,7 @@
     return button;
   }
 
-  function renderServerHistorySession(session, index) {
+  function renderServerHistorySession(session) {
     const item = document.createElement("li");
     item.className = "rsl-server-history__item";
     item.setAttribute("data-rsl-server-history-session-id", session.sessionId);
@@ -15321,81 +15273,53 @@
     main.className = "rsl-server-history__main";
     const titleRow = document.createElement("div");
     titleRow.className = "rsl-server-history__title-row";
-    const gameLink = document.createElement("a");
-    gameLink.className = "rsl-server-history__game-link";
-    gameLink.href = `/games/${session.placeId}`;
-    gameLink.textContent = session.name;
-    gameLink.title = `Open ${session.name}`;
-    const sessionState = document.createElement("span");
-    const wasObservedRecently = Boolean(
-      index === 0 &&
-      session.isOpen &&
-      serverHistoryTracking?.state === "in-game"
-    );
-    sessionState.className = wasObservedRecently
-      ? "rsl-server-history__session-state rsl-server-history__session-state--current"
-      : "rsl-server-history__session-state";
-    sessionState.textContent = wasObservedRecently
-      ? "Observed recently"
-      : "Past observation";
-    titleRow.append(gameLink, sessionState);
+    const gameName = document.createElement("span");
+    gameName.className = "rsl-server-history__game-name";
+    gameName.textContent = session.name;
+    gameName.title = session.name;
+    titleRow.append(gameName);
 
     const timing = document.createElement("div");
     timing.className = "rsl-server-history__timing";
-    for (const [label, timestamp] of [
-      ["First seen", session.firstSeenAt],
-      ["Last seen", session.lastSeenAt]
-    ]) {
-      const entry = document.createElement("span");
-      const strong = document.createElement("strong");
-      strong.textContent = `${label}: `;
-      const time = document.createElement("time");
-      time.dateTime = new Date(timestamp).toISOString();
-      time.textContent = formatServerHistoryTimestamp(timestamp);
-      entry.append(strong, time);
-      timing.append(entry);
-    }
-    const duration = document.createElement("span");
-    duration.textContent =
-      `Observed for ${formatServerHistoryDuration(session.firstSeenAt, session.lastSeenAt)}`;
-    timing.append(duration);
+    timing.setAttribute("aria-hidden", "true");
+    const firstDate = new Date(session.firstSeenAt);
+    const lastDate = new Date(session.lastSeenAt);
+    const sameLocalDay = firstDate.getFullYear() === lastDate.getFullYear() &&
+      firstDate.getMonth() === lastDate.getMonth() &&
+      firstDate.getDate() === lastDate.getDate();
+    const firstTime = document.createElement("time");
+    firstTime.dateTime = firstDate.toISOString();
+    firstTime.textContent = formatServerHistoryCompactTimestamp(session.firstSeenAt);
+    const lastTime = document.createElement("time");
+    lastTime.dateTime = lastDate.toISOString();
+    lastTime.textContent = formatServerHistoryCompactTimestamp(
+      session.lastSeenAt,
+      sameLocalDay
+    );
+    timing.append(
+      firstTime,
+      document.createTextNode(" – "),
+      lastTime,
+      document.createTextNode(
+        ` · ${formatServerHistoryCompactDuration(
+          session.firstSeenAt,
+          session.lastSeenAt
+        )}`
+      )
+    );
+    const fullTimingText =
+      `First seen: ${formatServerHistoryTimestamp(session.firstSeenAt)} · ` +
+      `Last seen: ${formatServerHistoryTimestamp(session.lastSeenAt)} · ` +
+      `Observed for ${formatServerHistoryDuration(
+        session.firstSeenAt,
+        session.lastSeenAt
+      )}`;
+    timing.title = fullTimingText;
+    const accessibleTiming = document.createElement("span");
+    accessibleTiming.className = "rsl-sr-only";
+    accessibleTiming.textContent = fullTimingText;
 
-    const status = serverHistoryStatusBySessionId.get(session.sessionId);
-    const statusLine = document.createElement("div");
-    statusLine.className = "rsl-server-history__status";
-    const pending = serverHistoryPendingStatusIds.has(session.sessionId);
-    if (pending) {
-      statusLine.textContent = "Checking server status…";
-      statusLine.setAttribute("aria-busy", "true");
-    } else if (status?.status === "active") {
-      statusLine.classList.add("rsl-server-history__status--active");
-      statusLine.textContent = status.playing !== null && status.maxPlayers !== null
-        ? `Active · ${status.playing.toLocaleString()}/${status.maxPlayers.toLocaleString()} players`
-        : "Active · Player count unavailable";
-    } else if (status?.status === "unknown") {
-      statusLine.classList.add("rsl-server-history__status--unknown");
-      const heading = document.createElement("strong");
-      heading.textContent = "Server status unknown";
-      const explanation = document.createElement("span");
-      explanation.textContent = getServerHistoryUnknownExplanation(status.reason);
-      statusLine.append(heading, explanation);
-    } else {
-      statusLine.classList.add("rsl-server-history__status--unknown");
-      const heading = document.createElement("strong");
-      heading.textContent = "Server status unknown";
-      const explanation = document.createElement("span");
-      explanation.textContent =
-        "Player count unavailable. Check status or try rejoining; Roblox decides whether the saved server can still be joined.";
-      statusLine.append(heading, explanation);
-    }
-    if (!pending && status?.checkedAt) {
-      const checked = document.createElement("time");
-      checked.className = "rsl-server-history__status-checked";
-      checked.dateTime = new Date(status.checkedAt).toISOString();
-      checked.textContent = `Checked ${formatServerHistoryTimestamp(status.checkedAt)}`;
-      statusLine.append(checked);
-    }
-    main.append(titleRow, timing, statusLine);
+    main.append(titleRow, timing, accessibleTiming);
 
     const actions = document.createElement("div");
     actions.className = "rsl-server-history__actions";
@@ -15403,45 +15327,22 @@
     open.className = "rsl-button rsl-button--secondary rsl-server-history__action";
     open.dataset.rslServerHistoryAction = "open";
     open.href = `/games/${session.placeId}`;
-    open.textContent = "Open Experience";
-    const check = createServerHistoryActionButton(
-      pending ? "Checking…" : "Check status"
-    );
-    check.dataset.rslServerHistoryAction = "check";
-    check.setAttribute("aria-disabled", String(pending));
-    check.setAttribute("aria-label", `Check server status for ${session.name}`);
-    check.addEventListener("click", (event) => {
-      if (event.isTrusted !== true || pending) return;
-      void checkServerHistoryStatus(session.sessionId, true);
-    });
-    const serverWasFull = Boolean(
-      status?.status === "active" &&
-      status.playing !== null &&
-      status.maxPlayers !== null &&
-      status.playing >= status.maxPlayers
-    );
+    open.textContent = "Open";
+    open.setAttribute("aria-label", `Open ${session.name}`);
     const rejoinLabel = serverHistoryPendingRejoinId === session.sessionId
       ? "Opening…"
-      : serverWasFull
-        ? "Full · try anyway"
-      : status?.status === "active"
-        ? "Rejoin"
-        : "Try rejoining anyway";
+      : "Rejoin Server";
     const rejoin = createServerHistoryActionButton(rejoinLabel, "primary");
     rejoin.dataset.rslServerHistoryAction = "rejoin";
-    const canRejoin = canRejoinServerHistoryStatus(status);
     const rejoinPending = serverHistoryPendingRejoinId !== null;
     rejoin.setAttribute("aria-disabled", String(rejoinPending));
-    rejoin.title = serverWasFull
-      ? "The server was full when last checked, but you can still try. Roblox makes the final decision."
-      : status?.status === "active"
-        ? `Rejoin ${session.name}`
-        : "Try rejoining this saved server. Roblox will decide whether it is still available.";
+    rejoin.setAttribute("aria-label", `Rejoin server for ${session.name}`);
+    rejoin.title = `Rejoin server for ${session.name}`;
     rejoin.addEventListener("click", (event) => {
-      if (event.isTrusted !== true || !canRejoin || rejoinPending) return;
+      if (event.isTrusted !== true || rejoinPending) return;
       void rejoinServerHistorySession(session.sessionId);
     });
-    actions.append(open, check, rejoin);
+    actions.append(open, rejoin);
     item.append(thumbnailFrame, main, actions);
     requestServerHistoryThumbnail(image, session.universeId, serverHistoryLifecycleEpoch);
     return item;
@@ -15450,10 +15351,9 @@
   function renderServerHistoryDialog() {
     const dialog = document.getElementById(SERVER_HISTORY_DIALOG_ID);
     if (!dialog) return;
-    const tracking = dialog.querySelector("[data-rsl-server-history-tracking]");
     const status = dialog.querySelector("[data-rsl-server-history-live-status]");
     const list = dialog.querySelector("[data-rsl-server-history-list]");
-    if (!tracking || !status || !list) return;
+    if (!status || !list) return;
     const focusedControl = list.contains(document.activeElement)
       ? document.activeElement
       : null;
@@ -15465,7 +15365,6 @@
     const focusedAction = focusedControl?.getAttribute?.(
       "data-rsl-server-history-action"
     );
-    tracking.textContent = getServerHistoryTrackingText();
     status.textContent = serverHistoryNotice;
     status.classList.toggle(
       "rsl-server-history__live-status--error",
@@ -15485,12 +15384,11 @@
     } else if (serverHistorySessions.length === 0) {
       const empty = document.createElement("li");
       empty.className = "rsl-server-history__empty";
-      empty.innerHTML =
-        "<strong>No servers saved yet</strong><span>After you opt in, a server appears here when RoTool observes you playing it.</span>";
+      empty.textContent = "No recent servers yet";
       list.append(empty);
     } else {
-      serverHistorySessions.forEach((session, index) => {
-        list.append(renderServerHistorySession(session, index));
+      serverHistorySessions.forEach((session) => {
+        list.append(renderServerHistorySession(session));
       });
     }
     list.setAttribute("aria-busy", String(serverHistoryLoadState === "loading"));
@@ -15505,7 +15403,7 @@
     });
     if (
       focusedSessionId &&
-      ["open", "check", "rejoin"].includes(focusedAction) &&
+      ["open", "rejoin"].includes(focusedAction) &&
       dialog.open
     ) {
       const restoredControl = list.querySelector(
@@ -15529,7 +15427,8 @@
     try {
       const response = await sendServerHistoryRuntimeMessage({
         type: SERVER_HISTORY_GET_MESSAGE_TYPE,
-        requestId
+        requestId,
+        locale: getRobloxPageLocale()
       });
       if (
         epoch !== serverHistoryLifecycleEpoch ||
@@ -15545,19 +15444,8 @@
         throw error;
       }
       serverHistorySessions = normalized.sessions;
-      serverHistoryTracking = normalized.tracking;
-      const validIds = new Set(serverHistorySessions.map(({ sessionId }) => sessionId));
-      serverHistoryStatusBySessionId = new Map(
-        Array.from(serverHistoryStatusBySessionId).filter(([sessionId]) =>
-          validIds.has(sessionId)
-        )
-      );
       serverHistoryLoadState = "ready";
       renderServerHistoryDialog();
-      const newest = serverHistorySessions[0];
-      if (newest && !serverHistoryStatusBySessionId.has(newest.sessionId)) {
-        void checkServerHistoryStatus(newest.sessionId, false);
-      }
       return true;
     } catch (error) {
       if (epoch !== serverHistoryLifecycleEpoch) return false;
@@ -15566,81 +15454,6 @@
       serverHistoryNotice = "";
       renderServerHistoryDialog();
       return false;
-    }
-  }
-
-  async function checkServerHistoryStatus(sessionId, userInitiated = false) {
-    const normalizedId = normalizeServerHistoryOpaqueId(sessionId);
-    if (
-      !normalizedId ||
-      !isFeatureEnabled("serverHistory") ||
-      !document.getElementById(SERVER_HISTORY_DIALOG_ID)?.open ||
-      !serverHistorySessions.some((session) => session.sessionId === normalizedId)
-    ) return false;
-    if (serverHistoryPendingStatusIds.has(normalizedId)) return false;
-    const epoch = serverHistoryLifecycleEpoch;
-    const requestId = ++serverHistoryRequestSequence;
-    serverHistoryPendingStatusIds.add(normalizedId);
-    serverHistoryStatusRequestBySessionId.set(normalizedId, requestId);
-    if (userInitiated) serverHistoryNotice = "";
-    renderServerHistoryDialog();
-    try {
-      const response = await sendServerHistoryRuntimeMessage({
-        type: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
-        requestId,
-        sessionId: normalizedId,
-        forceRefresh: userInitiated === true
-      });
-      if (
-        epoch !== serverHistoryLifecycleEpoch ||
-        serverHistoryStatusRequestBySessionId.get(normalizedId) !== requestId ||
-        response?.requestId !== requestId
-      ) return false;
-      const normalized = normalizeServerHistoryStatus(response, normalizedId);
-      if (!normalized) {
-        const error = new Error("Invalid server status response");
-        error.code = response?.errorCode || response?.code || "unavailable";
-        throw error;
-      }
-      serverHistoryStatusBySessionId.set(normalizedId, normalized);
-      if (userInitiated) {
-        if (normalized.status === "active") {
-          serverHistoryNotice = normalized.playing !== null &&
-            normalized.maxPlayers !== null
-            ? `Status updated: Active · ${normalized.playing.toLocaleString()}/${normalized.maxPlayers.toLocaleString()} players.`
-            : "Status updated: Active · Player count unavailable.";
-        } else {
-          serverHistoryNotice =
-            "Status updated: Server status unknown · Player count unavailable.";
-        }
-      }
-      return true;
-    } catch (error) {
-      if (epoch === serverHistoryLifecycleEpoch) {
-        serverHistoryStatusBySessionId.set(normalizedId, Object.freeze({
-          sessionId: normalizedId,
-          status: "unknown",
-          playing: null,
-          maxPlayers: null,
-          checkedAt: Date.now(),
-          source: null,
-          reason: error?.code || "unavailable"
-        }));
-        if (userInitiated) {
-          serverHistoryNotice =
-            "Status updated: Server status unknown · Player count unavailable.";
-        }
-      }
-      return false;
-    } finally {
-      if (
-        epoch === serverHistoryLifecycleEpoch &&
-        serverHistoryStatusRequestBySessionId.get(normalizedId) === requestId
-      ) {
-        serverHistoryStatusRequestBySessionId.delete(normalizedId);
-        serverHistoryPendingStatusIds.delete(normalizedId);
-        renderServerHistoryDialog();
-      }
     }
   }
 
@@ -15673,9 +15486,8 @@
         return true;
       }
       const responseCode = response?.errorCode || response?.code;
-      if (["inactive", "unknown", "not-found"].includes(responseCode)) {
-        serverHistoryStatusBySessionId.delete(normalizedId);
-        serverHistoryNotice = "That server could no longer be confirmed. Check its status again.";
+      if (responseCode === "not-found") {
+        serverHistoryNotice = "That saved history entry is no longer available.";
       } else {
         serverHistoryNotice = "Roblox could not open that server.";
       }
@@ -15718,7 +15530,6 @@
         response?.ok !== true
       ) throw new Error("History was not cleared");
       serverHistorySessions = [];
-      serverHistoryStatusBySessionId.clear();
       serverHistoryConfirmClear = false;
       serverHistoryNotice = "Server History cleared from this device.";
       return true;
@@ -15739,11 +15550,7 @@
     serverHistoryLifecycleEpoch += 1;
     serverHistoryLoadState = "idle";
     serverHistoryErrorCode = "";
-    serverHistoryTracking = null;
     serverHistorySessions = [];
-    serverHistoryStatusBySessionId.clear();
-    serverHistoryPendingStatusIds.clear();
-    serverHistoryStatusRequestBySessionId.clear();
     serverHistoryPendingRejoinId = null;
     serverHistoryConfirmClear = false;
     serverHistoryClearPending = false;
@@ -15770,7 +15577,6 @@
       "rsl-dialog rsl-server-history-dialog foundation-web-dialog-overlay " +
       "padding-medium foundation-web-portal-zindex bg-common-backdrop";
     dialog.setAttribute("aria-labelledby", "rsl-server-history-title");
-    dialog.setAttribute("aria-describedby", "rsl-server-history-description");
     dialog.innerHTML = `
       <div class="rsl-dialog__surface rsl-server-history__surface relative radius-large bg-surface-100 stroke-muted stroke-standard foundation-web-dialog-content shadow-transient-high" data-size="Large">
         <div class="rsl-dialog__close-container absolute foundation-web-dialog-close-container">
@@ -15779,11 +15585,8 @@
         <div class="rsl-dialog__body rsl-server-history__body">
           <header class="rsl-dialog__header rsl-server-history__header">
             <h2 id="rsl-server-history-title" class="content-emphasis text-title-large">Server History</h2>
-            <p id="rsl-server-history-description" class="content-default text-body-medium">RoTool keeps only your latest 30 server sessions for this Roblox account, locally on this device. Nothing is uploaded.</p>
-            <p class="rsl-server-history__accuracy content-default text-body-medium">First seen and Last seen are based on roughly one-minute presence observations, so they are estimates—not exact join or leave times.</p>
-            <p class="rsl-server-history__tracking content-default text-body-medium" data-rsl-server-history-tracking></p>
+            <div class="rsl-server-history__live-status content-default text-body-medium" role="status" aria-live="polite" aria-atomic="true" data-rsl-server-history-live-status></div>
           </header>
-          <div class="rsl-server-history__live-status content-default text-body-medium" role="status" aria-live="polite" aria-atomic="true" data-rsl-server-history-live-status></div>
           <ul class="rsl-server-history__list" aria-label="Latest server sessions" data-rsl-server-history-list></ul>
         </div>
         <div class="rsl-server-history__clear-confirmation" role="alertdialog" aria-modal="false" aria-live="assertive" aria-atomic="true" aria-labelledby="rsl-server-history-clear-confirmation-label" data-rsl-server-history-clear-confirmation hidden>
@@ -16954,7 +16757,6 @@
       limit: SERVER_HISTORY_LIMIT,
       messageTypes: Object.freeze({
         get: SERVER_HISTORY_GET_MESSAGE_TYPE,
-        status: SERVER_HISTORY_STATUS_MESSAGE_TYPE,
         clear: SERVER_HISTORY_CLEAR_MESSAGE_TYPE,
         rejoin: SERVER_HISTORY_REJOIN_MESSAGE_TYPE
       })
@@ -16965,12 +16767,13 @@
       normalizeServerHistoryTimestamp;
     contentTestHooks.normalizeServerHistorySession = normalizeServerHistorySession;
     contentTestHooks.normalizeServerHistoryResponse = normalizeServerHistoryResponse;
-    contentTestHooks.normalizeServerHistoryStatus = normalizeServerHistoryStatus;
+    contentTestHooks.getRobloxPageLocale = getRobloxPageLocale;
     contentTestHooks.formatServerHistoryTimestamp = formatServerHistoryTimestamp;
     contentTestHooks.formatServerHistoryDuration = formatServerHistoryDuration;
-    contentTestHooks.getServerHistoryUnknownExplanation =
-      getServerHistoryUnknownExplanation;
-    contentTestHooks.canRejoinServerHistoryStatus = canRejoinServerHistoryStatus;
+    contentTestHooks.formatServerHistoryCompactTimestamp =
+      formatServerHistoryCompactTimestamp;
+    contentTestHooks.formatServerHistoryCompactDuration =
+      formatServerHistoryCompactDuration;
     contentTestHooks.makeServerHistorySidebarRow = makeServerHistorySidebarRow;
     contentTestHooks.placeServerHistorySidebarRow = placeServerHistorySidebarRow;
     contentTestHooks.mountServerHistorySidebarRow = mountServerHistorySidebarRow;
@@ -16979,7 +16782,6 @@
     contentTestHooks.closeServerHistoryDialog = closeServerHistoryDialog;
     contentTestHooks.renderServerHistoryDialog = renderServerHistoryDialog;
     contentTestHooks.loadServerHistory = loadServerHistory;
-    contentTestHooks.checkServerHistoryStatus = checkServerHistoryStatus;
     contentTestHooks.rejoinServerHistorySession = rejoinServerHistorySession;
     contentTestHooks.clearServerHistory = clearServerHistory;
     contentTestHooks.cleanupServerHistoryFeature = cleanupServerHistoryFeature;
@@ -16992,9 +16794,6 @@
       loadState: serverHistoryLoadState,
       errorCode: serverHistoryErrorCode,
       sessions: serverHistorySessions.slice(),
-      tracking: serverHistoryTracking,
-      statuses: Array.from(serverHistoryStatusBySessionId.entries()),
-      pendingStatusIds: Array.from(serverHistoryPendingStatusIds),
       pendingRejoinId: serverHistoryPendingRejoinId,
       clearPending: serverHistoryClearPending,
       confirmClear: serverHistoryConfirmClear,

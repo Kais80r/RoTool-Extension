@@ -301,6 +301,13 @@ test("Server History is strict opt-in and registers a one-minute alarm", async (
     true
   );
   assert.equal(fetchCalls.length, 0, "default-off startup must not poll presence");
+  hooks.setServerHistoryFeatureStateForTests(false, true);
+  assert.deepEqual(plain(await hooks.getServerHistoryResponse(90)), {
+    ok: true,
+    requestId: 90,
+    enabled: false,
+    sessions: []
+  });
 
   fetchHandler = async (input) => {
     const url = new URL(String(input));
@@ -706,348 +713,137 @@ test("presence accepts only an exact in-game user/place/job sample", () => {
   }
 });
 
-test("public status scan checks Desc then Asc edges and finds an exact UUID", async () => {
-  let request = 0;
-  fetchHandler = async () => {
-    request += 1;
-    return request === 1
-      ? jsonResponse({ data: [{ id: JOB_B, playing: 3, maxPlayers: 20 }], nextPageCursor: "capped" })
-      : jsonResponse({ data: [{ id: JOB_A.toUpperCase(), playing: 7, maxPlayers: 12 }], nextPageCursor: null });
-  };
-  const result = plain(await hooks.scanServerHistoryPublicServers(storedSession({ isOpen: true })));
-  assert.deepEqual(result, {
-    status: "active",
-    playing: 7,
-    maxPlayers: 12,
-    source: "public-server-list",
-    reason: null
-  });
-  assert.equal(fetchCalls.length, 2);
-  const firstUrl = new URL(fetchCalls[0].url);
-  assert.equal(firstUrl.pathname, "/v1/games/1001/servers/Public");
-  assert.equal(firstUrl.searchParams.get("limit"), "100");
-  assert.equal(firstUrl.searchParams.get("excludeFullGames"), "false");
-  assert.equal(firstUrl.searchParams.get("sortOrder"), "Desc");
-  assert.equal(firstUrl.searchParams.has("cursor"), false);
-  assert.equal(fetchCalls[0].options.credentials, "include");
-  const secondUrl = new URL(fetchCalls[1].url);
-  assert.equal(secondUrl.searchParams.get("sortOrder"), "Asc");
-  assert.equal(secondUrl.searchParams.has("cursor"), false);
-  assert.equal(constants.maxServerRequests, 2);
-  assert.equal(fetchCalls.length <= constants.maxServerRequests, true);
-});
+test("localized experience metadata follows a validated page locale", async () => {
+  assert.equal(constants.fallbackLocale, "en-US");
+  assert.equal(hooks.normalizeServerHistoryLocale("de-DE"), "de-DE");
+  assert.equal(hooks.normalizeServerHistoryLocale("EN_us"), "en-US");
+  assert.equal(hooks.normalizeServerHistoryLocale("zh_hans_cn"), "zh-Hans-CN");
+  for (const invalid of [
+    "",
+    " ",
+    "e",
+    "de DE",
+    "de/DE",
+    "de-DE\r\nX-Test: injected",
+    "*",
+    "a".repeat(129)
+  ]) {
+    assert.equal(
+      hooks.normalizeServerHistoryLocale(invalid),
+      "en-US",
+      `unsafe locale must fall back: ${JSON.stringify(invalid)}`
+    );
+  }
 
-test("an exact live Job match stays active when Roblox omits usable counts", async () => {
-  fetchHandler = async () => jsonResponse({
-    data: [{ id: JOB_A, playing: "unknown", maxPlayers: null }],
-    nextPageCursor: null
-  });
-  const result = plain(await hooks.scanServerHistoryPublicServers(storedSession()));
-  assert.deepEqual(result, {
-    status: "active",
-    playing: null,
-    maxPlayers: null,
-    source: "public-server-list",
-    reason: null
-  });
-});
-
-test("status misses, capped lists, rate limits, and failures stay unknown", async () => {
-  fetchHandler = async () => jsonResponse({ data: [], nextPageCursor: null });
-  let result = plain(await hooks.scanServerHistoryPublicServers(storedSession()));
-  assert.equal(result.status, "unknown");
-  assert.equal(result.reason, "not-visible");
-  assert.equal("ended" in result, false);
-  assert.equal(fetchCalls.length, 1, "a complete first edge must stop without a second request");
-  assert.equal(new URL(fetchCalls[0].url).searchParams.get("sortOrder"), "Desc");
-
-  let request = 0;
-  fetchCalls.length = 0;
-  fetchHandler = async () => {
-    request += 1;
-    return jsonResponse({ data: [], nextPageCursor: `capped-${request}` });
-  };
-  result = plain(await hooks.scanServerHistoryPublicServers(storedSession()));
-  assert.equal(result.status, "unknown");
-  assert.equal(result.reason, "list-limited");
-  assert.equal(fetchCalls.length, constants.maxServerRequests);
-  assert.deepEqual(
-    fetchCalls.map(({ url }) => new URL(url).searchParams.get("sortOrder")),
-    ["Desc", "Asc"]
-  );
-
-  fetchCalls.length = 0;
-  fetchHandler = async () => jsonResponse({ errors: [] }, 429, { "Retry-After": "1" });
-  result = plain(await hooks.scanServerHistoryPublicServers(storedSession()));
-  assert.equal(result.status, "unknown");
-  assert.equal(result.reason, "rate-limited");
-
-  fetchHandler = async () => { throw new Error("timeout"); };
-  result = plain(await hooks.scanServerHistoryPublicServers(storedSession()));
-  assert.equal(result.status, "unknown");
-  assert.equal(result.reason, "unavailable");
-});
-
-test("current presence can confirm active without inventing a player count", async () => {
-  hooks.setServerHistoryFeatureStateForTests(true, true);
-  const session = storedSession({ isOpen: true, endedAt: null, endReason: null });
-  let scans = 0;
-  const status = plain(await hooks.checkServerHistoryStatus("601", session, {
-    now: NOW,
-    scanPublicServers: async () => {
-      scans += 1;
-      return { status: "unknown", playing: null, maxPlayers: null, reason: "not-visible" };
-    },
-    fetchPresence: async () => sample(JOB_A, "1001")
-  }));
-  assert.deepEqual(status, {
-    status: "active",
-    playing: null,
-    maxPlayers: null,
-    checkedAt: NOW,
-    source: "current-presence",
-    reason: null
-  });
-  const cached = plain(await hooks.checkServerHistoryStatus("601", session, {
-    now: NOW + constants.statusCacheTtlMs,
-    scanPublicServers: async () => { scans += 1; throw new Error("must be cached"); },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  }));
-  assert.deepEqual(cached, status);
-  assert.equal(scans, 1);
-
-  const refreshed = plain(await hooks.checkServerHistoryStatus("601", session, {
-    now: NOW + constants.statusCacheTtlMs + 1,
-    scanPublicServers: async () => {
-      scans += 1;
-      return { status: "unknown", playing: null, maxPlayers: null, reason: "unavailable" };
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  }));
-  assert.equal(refreshed.status, "unknown");
-  assert.equal(refreshed.reason, "unavailable");
-  assert.equal(scans, 2);
-});
-
-test("forced status checks reuse an identical in-flight scan but bypass its completed cache", async () => {
-  hooks.setServerHistoryFeatureStateForTests(true, true);
-  const session = storedSession();
-  let releaseFirstScan;
-  const firstScanGate = new Promise((resolve) => {
-    releaseFirstScan = resolve;
-  });
-  let scans = 0;
-  const first = hooks.checkServerHistoryStatus("603", session, {
-    now: NOW,
-    scanPublicServers: async () => {
-      scans += 1;
-      await firstScanGate;
-      return {
-        status: "active",
-        playing: 4,
-        maxPlayers: 20,
-        source: "public-server-list",
-        reason: null
-      };
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  });
-  await Promise.resolve();
-  const overlappingForced = hooks.checkServerHistoryStatus("603", session, {
-    now: NOW + 1,
-    forceRefresh: true,
-    scanPublicServers: async () => {
-      scans += 1;
-      throw new Error("an in-flight refresh must be reused");
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  });
-  assert.equal(scans, 1);
-  releaseFirstScan();
-  const [firstResult, overlappingResult] = await Promise.all([
-    first,
-    overlappingForced
-  ]);
-  assert.deepEqual(plain(overlappingResult), plain(firstResult));
-  assert.equal(scans, 1);
-
-  const completedForced = plain(await hooks.checkServerHistoryStatus(
-    "603",
-    session,
-    {
-      now: NOW + 2,
-      forceRefresh: true,
-      scanPublicServers: async () => {
-        scans += 1;
-        return {
-          status: "active",
-          playing: 5,
-          maxPlayers: 20,
-          source: "public-server-list",
-          reason: null
-        };
-      },
-      fetchPresence: async () => ({ kind: "not-in-game" })
-    }
-  ));
-  assert.equal(completedForced.playing, 5);
-  assert.equal(scans, 2);
-});
-
-test("a stale lifecycle scan cannot evict its in-flight replacement", async () => {
-  hooks.setServerHistoryFeatureStateForTests(true, true);
-  const session = storedSession();
-  let releaseOldScan;
-  let releaseReplacementScan;
-  const oldGate = new Promise((resolve) => {
-    releaseOldScan = resolve;
-  });
-  const replacementGate = new Promise((resolve) => {
-    releaseReplacementScan = resolve;
-  });
-  let scans = 0;
-  const oldScan = hooks.checkServerHistoryStatus("604", session, {
-    now: NOW,
-    scanPublicServers: async () => {
-      scans += 1;
-      await oldGate;
-      return { status: "unknown", playing: null, maxPlayers: null, reason: "not-visible" };
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  });
-  await Promise.resolve();
-  hooks.applyServerHistoryFeatureValue(
-    { version: 1, flags: { serverHistory: false } },
-    false
-  );
-  hooks.applyServerHistoryFeatureValue(
-    { version: 1, flags: { serverHistory: true } },
-    false
-  );
-  const replacementScan = hooks.checkServerHistoryStatus("604", session, {
-    now: NOW + 1,
-    forceRefresh: true,
-    scanPublicServers: async () => {
-      scans += 1;
-      await replacementGate;
-      return {
-        status: "active",
-        playing: 6,
-        maxPlayers: 20,
-        source: "public-server-list",
-        reason: null
-      };
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  });
-  assert.equal(scans, 2);
-  assert.equal(hooks.getServerHistoryStateForTests().statusRequestsInFlight, 1);
-
-  releaseOldScan();
-  await oldScan;
-  assert.equal(
-    hooks.getServerHistoryStateForTests().statusRequestsInFlight,
-    1,
-    "the stale completion must leave the replacement registered"
-  );
-  const overlappingReplacement = hooks.checkServerHistoryStatus("604", session, {
-    now: NOW + 2,
-    forceRefresh: true,
-    scanPublicServers: async () => {
-      scans += 1;
-      throw new Error("the replacement must still be reused");
-    },
-    fetchPresence: async () => ({ kind: "not-in-game" })
-  });
-  assert.equal(scans, 2);
-  releaseReplacementScan();
-  const [replacementResult, overlappingResult] = await Promise.all([
-    replacementScan,
-    overlappingReplacement
-  ]);
-  assert.deepEqual(plain(overlappingResult), plain(replacementResult));
-  assert.equal(scans, 2);
-  assert.equal(hooks.getServerHistoryStateForTests().statusRequestsInFlight, 0);
-});
-
-test("user status refresh bypasses the cache while automatic checks reuse it", async () => {
-  const memory = memoryStorage({
-    version: constants.storageVersion,
-    accounts: {
-      "602": {
-        sessions: [storedSession({ sessionId: "refresh_session" })],
-        pendingNonGameCount: 0,
-        trackingState: "not-in-game",
-        lastCheckedAt: NOW,
-        updatedAt: NOW
-      }
-    }
-  });
-  hooks.setServerHistoryFeatureStateForTests(true, true);
-  let listRequests = 0;
-  fetchHandler = async (input) => {
+  fetchHandler = async (input, options) => {
     const url = new URL(String(input));
-    if (url.hostname === "users.roblox.com") return jsonResponse({ id: 602 });
-    if (url.hostname === "games.roblox.com" && url.pathname.includes("/servers/Public")) {
-      listRequests += 1;
-      return jsonResponse({
-        data: [{ id: JOB_A, playing: listRequests, maxPlayers: 20 }],
-        nextPageCursor: null
-      });
-    }
-    if (url.hostname === "presence.roblox.com") {
-      return jsonResponse({ userPresences: [] });
-    }
-    throw new Error(`Unexpected URL ${url}`);
+    assert.equal(url.hostname, "games.roblox.com");
+    assert.equal(url.pathname, "/v1/games");
+    assert.equal(url.searchParams.get("universeIds"), "66654135");
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.headers["Accept-Language"], "en-US");
+    return jsonResponse({
+      data: [{
+        id: 66654135,
+        rootPlaceId: 142823291,
+        name: "Murder Mystery 2"
+      }]
+    });
   };
+  const details = await hooks.fetchServerHistoryExperienceDetails(
+    ["66654135", "66654135"],
+    "en_US"
+  );
+  assert.equal(fetchCalls.length, 1);
+  assert.deepEqual(plain(details.get("66654135")), {
+    experienceName: "Murder Mystery 2"
+  });
 
-  const automatic = await invokeHandler(
-    hooks.handleCheckServerHistoryStatusMessage,
-    {
-      type: constants.statusMessageType,
-      requestId: 30,
-      sessionId: "refresh_session",
-      forceRefresh: false
-    }
+  const responseSession = plain(hooks.sanitizeServerHistorySessionForResponse(
+    storedSession({
+      universeId: "66654135",
+      lastLocation: "Mordgeheimnis 2"
+    }),
+    details.get("66654135")
+  ));
+  assert.equal(
+    responseSession.experienceName,
+    "Murder Mystery 2",
+    "Games metadata must override a previously stored localized Presence title"
   );
-  assert.equal(automatic.ok, true);
-  assert.equal(automatic.playing, 1);
-  const cachedAutomatic = await invokeHandler(
-    hooks.handleCheckServerHistoryStatusMessage,
-    {
-      type: constants.statusMessageType,
-      requestId: 31,
-      sessionId: "refresh_session",
-      forceRefresh: false
-    }
-  );
-  assert.equal(cachedAutomatic.playing, 1);
-  assert.equal(listRequests, 1, "automatic newest-session checks should use the 60s cache");
+  assert.deepEqual(Object.keys(responseSession).sort(), [
+    "experienceName",
+    "firstSeenAt",
+    "lastSeenAt",
+    "placeId",
+    "sessionId",
+    "universeId"
+  ]);
+  for (const privateField of [
+    "rootPlaceId",
+    "endedAt",
+    "observationCount",
+    "isCurrent",
+    "endReason",
+    "gameInstanceId"
+  ]) {
+    assert.equal(Object.hasOwn(responseSession, privateField), false);
+  }
+});
 
-  const refreshed = await invokeHandler(
-    hooks.handleCheckServerHistoryStatusMessage,
-    {
-      type: constants.statusMessageType,
-      requestId: 32,
-      sessionId: "refresh_session",
-      forceRefresh: true
-    }
-  );
-  assert.equal(refreshed.playing, 2);
-  assert.equal(listRequests, 2, "an explicit Check status action must bypass the cache");
-  assert.equal(memory.read().accounts["602"].sessions.length, 1);
+test("Presence title fallback is requested in deterministic English", async () => {
+  fetchHandler = async (input, options) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "presence.roblox.com");
+    assert.equal(options.credentials, "include");
+    assert.equal(options.headers["Accept-Language"], "en-US");
+    assert.deepEqual(JSON.parse(options.body), { userIds: [501] });
+    return jsonResponse({
+      userPresences: [{
+        userId: 501,
+        userPresenceType: 2,
+        placeId: 1001,
+        universeId: 2001,
+        rootPlaceId: 1001,
+        gameId: JOB_A,
+        lastLocation: "Murder Mystery 2"
+      }]
+    });
+  };
+  const presence = plain(await hooks.fetchServerHistoryPresence("501"));
+  assert.equal(presence.kind, "in-game");
+  assert.equal(presence.lastLocation, "Murder Mystery 2");
+  assert.equal(fetchCalls.length, 1);
+});
 
-  const malformed = await invokeHandler(
-    hooks.handleCheckServerHistoryStatusMessage,
-    {
-      type: constants.statusMessageType,
-      requestId: 33,
-      sessionId: "refresh_session",
-      forceRefresh: "true"
-    }
+test("Server History has no player/status lookup or public-server-list path", () => {
+  const implementationStart = backgroundSource.indexOf(
+    "function getServerHistoryFeatureValue("
   );
-  assert.deepEqual(malformed, { ok: false, requestId: 33, errorCode: "invalid" });
-  assert.equal(listRequests, 2);
+  const implementationEnd = backgroundSource.indexOf(
+    "function normalizePrivateServerPlaceId(",
+    implementationStart
+  );
+  assert.notEqual(implementationStart, -1);
+  assert.notEqual(implementationEnd, -1);
+  const implementation = backgroundSource.slice(
+    implementationStart,
+    implementationEnd
+  );
+  assert.doesNotMatch(implementation, /\/servers\/Public/);
+  assert.doesNotMatch(
+    implementation,
+    /check-server-history-status|scanServerHistoryPublicServers|checkServerHistoryStatus|handleCheckServerHistoryStatusMessage|playing|maxPlayers/
+  );
+  assert.equal(Object.hasOwn(constants, "statusMessageType"), false);
+  assert.equal(Object.hasOwn(hooks, "scanServerHistoryPublicServers"), false);
+  assert.equal(Object.hasOwn(hooks, "checkServerHistoryStatus"), false);
+  assert.equal(Object.hasOwn(hooks, "handleCheckServerHistoryStatusMessage"), false);
+  assert.equal(
+    (backgroundSource.match(/\/servers\/Public/g) || []).length,
+    1,
+    "the unrelated Random Server feature should be the sole public-list consumer"
+  );
 });
 
 test("message handlers require trusted top-frame Roblox senders and strict requests", async () => {
@@ -1071,11 +867,6 @@ test("message handlers require trusted top-frame Roblox senders and strict reque
     })
   );
   assert.equal(evilPage.errorCode, "invalid");
-  const badSession = await invokeHandler(
-    hooks.handleCheckServerHistoryStatusMessage,
-    { type: constants.statusMessageType, requestId: 3, sessionId: "../../job" }
-  );
-  assert.equal(badSession.errorCode, "invalid");
   const missingClearGuard = await invokeHandler(
     hooks.handleClearServerHistoryMessage,
     { type: constants.clearMessageType, requestId: 4 }
@@ -1128,11 +919,28 @@ test("clear and rejoin resolve only the signed-in account's owned opaque session
   };
 
   assert.equal(launchCalls.length, 0, "history must never launch a server automatically");
+  hooks.setServerHistoryFeatureStateForTests(false, true);
+  const disabled = await invokeHandler(
+    hooks.handleRejoinServerHistoryMessage,
+    { type: constants.rejoinMessageType, requestId: 9, sessionId: "owned_opaque" }
+  );
+  assert.deepEqual(disabled, {
+    ok: false,
+    requestId: 9,
+    sessionId: "owned_opaque",
+    errorCode: "disabled"
+  });
+  hooks.setServerHistoryFeatureStateForTests(true, true);
   const missing = await invokeHandler(
     hooks.handleRejoinServerHistoryMessage,
     { type: constants.rejoinMessageType, requestId: 10, sessionId: "other_account" }
   );
-  assert.equal(missing.errorCode, "not-found");
+  assert.deepEqual(missing, {
+    ok: false,
+    requestId: 10,
+    sessionId: "other_account",
+    errorCode: "not-found"
+  });
   assert.equal(launchCalls.length, 0);
 
   const rejoined = await invokeHandler(
@@ -1196,7 +1004,7 @@ test("clear and rejoin resolve only the signed-in account's owned opaque session
       throw error;
     }
   }
-  console.log(`PASS Server History background state, storage, status, and trust (${tests.length} cases)`);
+  console.log(`PASS Server History background state, storage, locale, and trust (${tests.length} cases)`);
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
