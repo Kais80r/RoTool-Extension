@@ -51,8 +51,17 @@ assert.match(
 );
 assert.match(
   contentSource,
-  /key: "gameCcu"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "gameCcuHoverGraph"[\s\S]*?\]/,
-  "the hover graph must be independently configurable beneath Player Counts"
+  /key: "gameCcu"[\s\S]*?label: "Player Counts \(CCU\)"[\s\S]*?\}\),\s*Object\.freeze\(\{\s*key: "gameCcuHoverGraph"[\s\S]*?label: "CCU Hover Graph"/,
+  "the hover graph must be its own top-level Experiences setting"
+);
+const playerCountsDefinition = contentSource.slice(
+  contentSource.indexOf('      key: "gameCcu"'),
+  contentSource.indexOf('      key: "gameCcuHoverGraph"')
+);
+assert.doesNotMatch(
+  playerCountsDefinition,
+  /children\s*:/,
+  "CCU Hover Graph must not be disabled or visually nested beneath Player Counts"
 );
 assert.match(contentSource, /const FEATURE_SETTING_DEFINITIONS = Object\.freeze\(/);
 assert.match(contentSource, /FEATURE_DEFINITIONS\.flatMap/);

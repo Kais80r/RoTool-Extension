@@ -46,6 +46,23 @@ for (const [key] of sidebarDefinitions) {
 }
 assert.equal(hooks.defaultFeatureSettings.sidebarShortcuts, true);
 assert.equal(hooks.defaultFeatureSettings.gameCcuHoverGraph, true);
+const playerCountsDefinition = hooks.featureDefinitions.find(
+  (definition) => definition.key === "gameCcu"
+);
+const graphDefinition = hooks.featureDefinitions.find(
+  (definition) => definition.key === "gameCcuHoverGraph"
+);
+assert.ok(graphDefinition, "CCU Hover Graph must be a top-level feature definition");
+assert.equal(graphDefinition.group, "Experiences");
+assert.equal(graphDefinition.children, undefined);
+assert.equal(playerCountsDefinition.children, undefined);
+assert.equal(
+  hooks.featureSettingDefinitions.find(
+    (definition) => definition.key === "gameCcuHoverGraph"
+  ).parentKey,
+  undefined,
+  "CCU Hover Graph must not inherit Player Counts disabled state"
+);
 
 const oldPayload = hooks.normalizeFeatureSettings({
   version: 1,
@@ -64,6 +81,16 @@ assert.equal(oldPayload.quickPlay, false);
 assert.equal(oldPayload.gameCcu, true);
 assert.equal(oldPayload.sidebarHome, true);
 assert.equal(oldPayload.gameCcuHoverGraph, true);
+const oldCountsOffPayload = hooks.normalizeFeatureSettings({
+  version: 1,
+  flags: { gameCcu: false }
+});
+assert.equal(oldCountsOffPayload.gameCcu, false);
+assert.equal(
+  oldCountsOffPayload.gameCcuHoverGraph,
+  true,
+  "older saved settings must default the newly independent graph on"
+);
 
 const individual = { ...hooks.defaultFeatureSettings };
 for (const [key] of sidebarDefinitions) {

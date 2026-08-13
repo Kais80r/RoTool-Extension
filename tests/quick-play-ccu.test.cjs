@@ -1277,6 +1277,176 @@ async function runContentCcuBehaviorContracts() {
     const fixture = loadContentCcuFixture();
     fixture.hooks.setFeatureSettingsForTests({
       version: 1,
+      flags: {
+        quickPlay: false,
+        gameCcu: false,
+        gameCcuHoverGraph: true
+      }
+    });
+    const nativeRecentlyPlayed = makeContentCcuGraphCard(
+      fixture.document,
+      "699",
+      "9699",
+      { external: true, wide: false }
+    );
+    nativeRecentlyPlayed.root.setAttribute("data-testid", "game-tile");
+    nativeRecentlyPlayed.label.textContent = "3.7K";
+
+    fixture.hooks.mountGameTileCcuGraphTriggers();
+    assert.equal(
+      nativeRecentlyPlayed.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      true,
+      "graph-only mode must bind Roblox's native Recently Played CCU"
+    );
+    assert.equal(
+      nativeRecentlyPlayed.root.querySelector("[data-rsl-game-tile-ccu]"),
+      null,
+      "graph-only mode must not add a RoTool player-count container"
+    );
+    assert.equal(
+      nativeRecentlyPlayed.root.querySelector("[data-rsl-game-tile-ccu-value]"),
+      null,
+      "graph-only mode must not add a second CCU value"
+    );
+
+    const overlay = fixture.hooks.openGameTileCcuGraph(nativeRecentlyPlayed.label);
+    assert.ok(overlay, "the native CCU trigger must open the graph");
+    assert.equal(fixture.calls.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(fixture.calls[0].message)), {
+      type: "rsl:get-game-ccu-history",
+      requestId: 1,
+      universeId: "9699"
+    });
+    const currentBucket = Math.floor(Date.now() / (5 * 60_000)) * (5 * 60_000);
+    fixture.calls[0].reply({
+      ok: true,
+      requestId: 1,
+      universeId: "9699",
+      tracked: true,
+      points: [
+        { timestamp: currentBucket - 5 * 60_000, playing: 3_650 },
+        { timestamp: currentBucket, playing: 3_700 }
+      ]
+    });
+    await flushContentMicrotasks();
+    assert.ok(
+      overlay.querySelector(".rsl-game-ccu-graph__chart"),
+      "graph-only mode must render returned history"
+    );
+
+    fixture.hooks.cleanupGameTileCcuFeature();
+    assert.equal(nativeRecentlyPlayed.label.isConnected, true);
+    assert.equal(nativeRecentlyPlayed.label.textContent, "3.7K");
+    assert.equal(
+      nativeRecentlyPlayed.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      true,
+      "Player Counts cleanup must leave the graph trigger intact"
+    );
+    assert.equal(
+      fixture.document.querySelector("[data-rsl-game-ccu-graph-overlay]"),
+      overlay,
+      "Player Counts cleanup must not close the independent graph"
+    );
+
+    fixture.hooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: {
+        quickPlay: false,
+        gameCcu: false,
+        gameCcuHoverGraph: false
+      }
+    });
+    fixture.hooks.mountGameTileCcuGraphTriggers();
+    assert.equal(nativeRecentlyPlayed.label.isConnected, true);
+    assert.equal(nativeRecentlyPlayed.label.textContent, "3.7K");
+    assert.equal(
+      nativeRecentlyPlayed.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      false,
+      "disabling the graph must remove only RoTool's trigger marker"
+    );
+    assert.equal(
+      fixture.document.querySelector("[data-rsl-game-ccu-graph-overlay]"),
+      null,
+      "disabling the graph must close its overlay"
+    );
+    assert.equal(fixture.calls.length, 1, "disabled graphs must send no new request");
+  }
+
+  {
+    const fixture = loadContentCcuFixture();
+    fixture.hooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: { gameCcu: false, gameCcuHoverGraph: true }
+    });
+    const placeOnly = makeContentCcuGraphCard(
+      fixture.document,
+      "698",
+      "unused",
+      { external: true, wide: false }
+    );
+    placeOnly.link.setAttribute("href", "/games/698/recently-played");
+    placeOnly.label.textContent = "842";
+    const ratingLookalike = makeContentCcuGraphCard(
+      fixture.document,
+      "697",
+      "9697",
+      { external: true, wide: false }
+    );
+    ratingLookalike.label.textContent = "95%";
+    ratingLookalike.label.setAttribute("aria-label", "95% Rating");
+
+    fixture.hooks.mountGameTileCcuGraphTriggers();
+    assert.equal(
+      placeOnly.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      true,
+      "a native place-only Recently Played count must be graphable"
+    );
+    assert.equal(
+      ratingLookalike.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      false,
+      "rating percentages must never be mistaken for CCU graph triggers"
+    );
+
+    const overlay = fixture.hooks.openGameTileCcuGraph(placeOnly.label);
+    assert.ok(overlay);
+    assert.deepEqual(JSON.parse(JSON.stringify(fixture.calls[0].message)), {
+      type: "rsl:get-game-ccu-history",
+      requestId: 1,
+      placeId: "698"
+    });
+    const currentBucket = Math.floor(Date.now() / (5 * 60_000)) * (5 * 60_000);
+    fixture.calls[0].reply({
+      ok: true,
+      requestId: 1,
+      placeId: "698",
+      universeId: "5698",
+      tracked: true,
+      points: [
+        { timestamp: currentBucket - 5 * 60_000, playing: 820 },
+        { timestamp: currentBucket, playing: 842 }
+      ]
+    });
+    await flushContentMicrotasks();
+    assert.equal(
+      fixture.hooks.getGameTileCcuGraphStateForTests().universeId,
+      "5698",
+      "the resolved universe must become the active graph identity"
+    );
+    assert.equal(overlay.id, "rsl-game-ccu-graph-5698");
+    assert.equal(overlay.getAttribute("data-state"), "ready");
+    assert.ok(overlay.querySelector(".rsl-game-ccu-graph__chart"));
+    assert.equal(
+      placeOnly.root.querySelector("[data-rsl-game-tile-ccu-value]"),
+      null,
+      "place resolution for the graph must not add RoTool's count"
+    );
+    fixture.hooks.cleanupGameTileCcuGraphDisplay();
+  }
+
+  {
+    const fixture = loadContentCcuFixture();
+    fixture.hooks.setFeatureSettingsForTests({
+      version: 1,
       flags: { quickPlay: false, gameCcu: true }
     });
     const eligible = makeContentCcuCard(fixture.document, "101");
@@ -2984,6 +3154,7 @@ async function runContentCcuGraphBehaviorContracts() {
     "mountGameTileCcuGraphTriggers",
     "openGameTileCcuGraph",
     "closeGameTileCcuGraph",
+    "cleanupGameTileCcuGraphDisplay",
     "normalizeGameTileCcuHistoryPoints",
     "downsampleGameTileCcuGraphPoints",
     "downsampleGameTileCcuGraphSegments",
@@ -3614,8 +3785,23 @@ async function runContentCcuGraphBehaviorContracts() {
     );
     fixture.hooks.cleanupGameTileCcuFeature();
     assert.equal(card.label.isConnected, true, "cleanup must preserve an external/BTR CCU label");
+    assert.equal(
+      card.label.hasAttribute("data-rsl-game-ccu-graph-trigger"),
+      true,
+      "Player Counts cleanup must preserve the independent graph trigger"
+    );
+    assert.equal(
+      card.label.getAttribute("tabindex"),
+      "0",
+      "Player Counts cleanup must preserve graph-owned keyboard access"
+    );
+    fixture.hooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: { gameCcu: false, gameCcuHoverGraph: false }
+    });
+    fixture.hooks.mountGameTileCcuGraphTriggers();
     assert.equal(card.label.hasAttribute("data-rsl-game-ccu-graph-trigger"), false);
-    assert.equal(card.label.hasAttribute("tabindex"), false, "cleanup removes only owned tabindex");
+    assert.equal(card.label.hasAttribute("tabindex"), false, "graph cleanup removes owned tabindex");
   }
 
   {
@@ -3743,13 +3929,23 @@ async function runContentCcuGraphBehaviorContracts() {
     });
     const abandonedByCleanup = Array.from(cleanupFixture.timers.values())[0];
     cleanupFixture.hooks.cleanupGameTileCcuFeature();
+    assert.equal(
+      cleanupFixture.timers.size,
+      1,
+      "Player Counts cleanup must preserve independent graph hover intent"
+    );
+    cleanupFixture.hooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: { quickPlay: false, gameCcu: false, gameCcuHoverGraph: false }
+    });
+    cleanupFixture.hooks.mountGameTileCcuGraphTriggers();
     assert.equal(cleanupFixture.timers.size, 0);
     abandonedByCleanup.callback();
     assert.equal(cleanupFixture.calls.length, 0);
     assert.equal(
       cleanupFixture.document.querySelector("[data-rsl-game-ccu-graph-overlay]"),
       null,
-      "feature cleanup must cancel a pending hover intent"
+      "graph cleanup must cancel a pending hover intent"
     );
   }
 
@@ -4103,6 +4299,16 @@ async function runContentCcuGraphBehaviorContracts() {
     );
     assert.equal(fixture.timers.size, 0);
     fixture.hooks.cleanupGameTileCcuFeature();
+    assert.equal(
+      card.link.getAttribute("aria-describedby"),
+      "native-description rsl-game-ccu-graph-9702",
+      "Player Counts cleanup must preserve the independent graph description"
+    );
+    fixture.hooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: { gameCcu: false, gameCcuHoverGraph: false }
+    });
+    fixture.hooks.mountGameTileCcuGraphTriggers();
     assert.equal(card.link.getAttribute("aria-describedby"), "native-description");
   }
 
@@ -5363,7 +5569,7 @@ async function runContentCcuGraphBehaviorContracts() {
 
     fixture.hooks.openGameTileCcuGraph(card.label);
     const cleanupPending = fixture.calls.at(-1);
-    fixture.hooks.cleanupGameTileCcuFeature();
+    fixture.hooks.cleanupGameTileCcuGraphDisplay();
     cleanupPending.reply({
       ok: true,
       requestId: cleanupPending.message.requestId,
@@ -5607,6 +5813,7 @@ for (const hookName of [
   "hasCurrentGameCcuHistoryPoint",
   "seedVisibleChartsGameCcuHistory",
   "getTrustedRobloxChartsTabId",
+  "getGameCcuHistoryFeatureValue",
   "handleGameCcuHistoryMessage",
   "ensureGameCcuHistoryAlarm",
   "resetGameCcuHistoryStateForTests",
@@ -5658,7 +5865,7 @@ function sendCcu(games, requestId = 1) {
   });
 }
 
-function sendCcuHistory(universeId, requestId = 1, sender = trustedSender) {
+function sendCcuHistory(identity, requestId = 1, sender = trustedSender) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(
       () => reject(new Error("CCU history fixture response timed out")),
@@ -5672,8 +5879,11 @@ function sendCcuHistory(universeId, requestId = 1, sender = trustedSender) {
       clearTimeout(timeout);
       resolve({ keepChannel, response: responseValue });
     };
+    const identityFields = identity && typeof identity === "object"
+      ? identity
+      : { universeId: identity };
     keepChannel = runtimeListener(
-      { type: "rsl:get-game-ccu-history", requestId, universeId },
+      { type: "rsl:get-game-ccu-history", requestId, ...identityFields },
       sender,
       (response) => {
         responseReceived = true;
@@ -5826,7 +6036,7 @@ function ratingRequestsSince(start) {
     const requestsBefore = requestLog.length;
     hooks.applyGameCcuHistoryFeatureValue({
       version: 1,
-      flags: { gameCcu: false }
+      flags: { gameCcu: true, gameCcuHoverGraph: false }
     });
     assert.equal(hooks.getGameCcuHistoryStateForTests().featureEnabled, false);
     assert.equal(alarmClears.length, clearsBefore + 1);
@@ -5837,11 +6047,21 @@ function ratingRequestsSince(start) {
 
     hooks.applyGameCcuHistoryFeatureValue({
       version: 1,
-      flags: { gameCcu: true }
+      flags: { gameCcu: false, gameCcuHoverGraph: true }
     });
     assert.equal(hooks.getGameCcuHistoryStateForTests().featureEnabled, true);
     assert.equal(alarmCreates.length, createsBefore + 1);
     assert.equal(alarmCreates.at(-1).info.periodInMinutes, 5);
+
+    hooks.applyGameCcuHistoryFeatureValue({
+      version: 1,
+      flags: { gameCcu: false }
+    });
+    assert.equal(
+      hooks.getGameCcuHistoryStateForTests().featureEnabled,
+      true,
+      "legacy settings without the graph flag must preserve default-on history"
+    );
   }
 
   {
@@ -6406,6 +6626,45 @@ function ratingRequestsSince(start) {
     const untracked = await sendCcuHistory("8888", 8_889);
     assert.equal(untracked.response.tracked, false);
     assert.deepEqual(JSON.parse(JSON.stringify(untracked.response.points)), []);
+
+    hooks.resetGameCcuHistoryStateForTests();
+    hooks.setGameCcuHistoryStorageOverrideForTests({
+      append() { return 1; },
+      read(universeId) {
+        return {
+          universeId,
+          tracked: true,
+          points: [
+            { timestamp: 6_600_000, playing: 820 },
+            { timestamp: 6_900_000, playing: 842 }
+          ]
+        };
+      }
+    });
+    const placeResolutionLogStart = requestLog.length;
+    const placeOnlyHistory = await sendCcuHistory(
+      { placeId: "698" },
+      8_890
+    );
+    assert.equal(placeOnlyHistory.keepChannel, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(placeOnlyHistory.response)), {
+      ok: true,
+      requestId: 8_890,
+      universeId: "5698",
+      placeId: "698",
+      tracked: true,
+      points: [
+        { timestamp: 6_600_000, playing: 820 },
+        { timestamp: 6_900_000, playing: 842 }
+      ]
+    });
+    assert.equal(
+      requestLog.slice(placeResolutionLogStart).some((href) =>
+        new URL(href).pathname === "/universes/v1/places/698/universe"
+      ),
+      true,
+      "place-only native counts must resolve their universe in the background"
+    );
   }
 
   {

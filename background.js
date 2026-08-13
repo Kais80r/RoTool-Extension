@@ -5929,15 +5929,17 @@ async function runGameCcuHistoryCollectionIfStale(options = {}) {
   return runGameCcuHistoryCollection({ ...options, now });
 }
 
-function getGameCcuFeatureValue(rawValue) {
-  return !(
-    rawValue &&
-    typeof rawValue === "object" &&
-    rawValue.version === FEATURE_SETTINGS_VERSION &&
-    rawValue.flags &&
-    typeof rawValue.flags === "object" &&
-    rawValue.flags.gameCcu === false
-  );
+function getGameCcuHistoryFeatureValue(rawValue) {
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    rawValue.version !== FEATURE_SETTINGS_VERSION ||
+    !rawValue.flags ||
+    typeof rawValue.flags !== "object"
+  ) {
+    return true;
+  }
+  return rawValue.flags.gameCcuHoverGraph !== false;
 }
 
 function ensureGameCcuHistoryAlarm() {
@@ -5971,7 +5973,7 @@ function clearGameCcuHistoryAlarm() {
 
 function applyGameCcuHistoryFeatureValue(rawValue, runWhenEnabled = false) {
   const wasEnabled = gameCcuHistoryFeatureEnabled;
-  gameCcuHistoryFeatureEnabled = getGameCcuFeatureValue(rawValue);
+  gameCcuHistoryFeatureEnabled = getGameCcuHistoryFeatureValue(rawValue);
   if (!gameCcuHistoryFeatureEnabled) {
     clearGameCcuHistoryAlarm();
     return;
@@ -6085,30 +6087,40 @@ function handleGameCcuHistoryMessage(message, sender, sendResponse) {
     return false;
   }
   const requestId = normalizeRandomServerRequestId(message.requestId);
-  const universeId = typeof message.universeId === "string"
+  const requestedUniverseId = typeof message.universeId === "string"
     ? normalizeId(message.universeId)
+    : null;
+  const placeId = typeof message.placeId === "string"
+    ? normalizeId(message.placeId)
     : null;
   if (
     requestId === null ||
-    !universeId ||
+    (!requestedUniverseId && !placeId) ||
+    (requestedUniverseId && placeId) ||
     getTrustedRobloxTopFrameTabId(sender) === null
   ) {
     sendResponse({
       ok: false,
       requestId: requestId ?? 0,
-      universeId,
+      universeId: requestedUniverseId,
       code: "INVALID"
     });
     return false;
   }
-  getGameCcuHistoryForRequest(universeId, {
-    allowChartsSeed: getTrustedRobloxChartsTabId(sender) !== null
-  })
-    .then((history) => {
+  Promise.resolve(
+    requestedUniverseId || resolveUniverseId(placeId)
+  )
+    .then((universeId) =>
+      getGameCcuHistoryForRequest(universeId, {
+        allowChartsSeed: getTrustedRobloxChartsTabId(sender) !== null
+      }).then((history) => ({ history, universeId }))
+    )
+    .then(({ history, universeId }) => {
       sendResponse({
         ok: true,
         requestId,
         universeId,
+        ...(placeId ? { placeId } : {}),
         tracked: history.tracked,
         points: history.points
       });
@@ -6117,10 +6129,13 @@ function handleGameCcuHistoryMessage(message, sender, sendResponse) {
       sendResponse({
         ok: false,
         requestId,
-        universeId,
+        universeId: requestedUniverseId,
+        ...(placeId ? { placeId } : {}),
         code: error instanceof GameCcuHistoryError
           ? error.code
-          : "STORAGE_UNAVAILABLE"
+          : error instanceof ContextCopyError
+            ? "ROBLOX_UNAVAILABLE"
+            : "STORAGE_UNAVAILABLE"
       });
     });
   return true;
@@ -7650,6 +7665,7 @@ if (globalThis.__rslBackgroundTestHooks) {
     getLatestGameCcuHistorySnapshotState,
     runGameCcuHistoryCollection,
     runGameCcuHistoryCollectionIfStale,
+    getGameCcuHistoryFeatureValue,
     hasCurrentGameCcuHistoryPoint,
     seedVisibleChartsGameCcuHistory,
     getGameCcuHistoryForRequest,

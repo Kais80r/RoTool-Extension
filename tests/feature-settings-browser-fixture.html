@@ -170,7 +170,7 @@
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 3 ||
+            advancedButtons.length !== 2 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
@@ -184,7 +184,6 @@
           if (
               !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
               !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
-              !disclosureNames.includes("Advanced settings for Player Counts (CCU)") ||
             new Set(disclosureNames).size !== disclosureNames.length
           ) {
             throw new Error("Advanced disclosures do not have distinct contextual accessible names");
@@ -309,14 +308,17 @@
           }
 
           const graphSwitch = dialog.querySelector("[data-rsl-feature-key='gameCcuHoverGraph']");
-          await hooks.saveFeatureSettingsForTests({ gameCcuHoverGraph: false });
           await hooks.saveFeatureSettingsForTests({ gameCcu: false });
-          if (graphSwitch.checked || !graphSwitch.disabled) {
-            throw new Error("Player Counts did not preserve and disable its Hover Graph choice");
+          if (!graphSwitch.checked || graphSwitch.disabled || gameCcuSwitch.checked) {
+            throw new Error("Player Counts incorrectly disabled the independent Hover Graph");
+          }
+          await hooks.saveFeatureSettingsForTests({ gameCcuHoverGraph: false });
+          if (graphSwitch.checked || graphSwitch.disabled) {
+            throw new Error("Hover Graph could not be switched independently of Player Counts");
           }
           await hooks.saveFeatureSettingsForTests({ gameCcu: true });
           if (graphSwitch.checked || graphSwitch.disabled || !gameCcuSwitch.checked) {
-            throw new Error("Re-enabling Player Counts changed its preserved Hover Graph choice");
+            throw new Error("Re-enabling Player Counts changed the independent Hover Graph choice");
           }
 
           await hooks.saveFeatureSettingsForTests({

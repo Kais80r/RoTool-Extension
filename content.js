@@ -642,14 +642,13 @@
       key: "gameCcu",
       group: "Experiences",
       label: "Player Counts (CCU)",
-      description: "Show player counts on experience cards.",
-      children: [
-        Object.freeze({
-          key: "gameCcuHoverGraph",
-          label: "CCU Hover Graph",
-          description: "Show the 12-hour graph when hovering or focusing a player count."
-        })
-      ]
+      description: "Show player counts on experience cards."
+    }),
+    Object.freeze({
+      key: "gameCcuHoverGraph",
+      group: "Experiences",
+      label: "CCU Hover Graph",
+      description: "Show the 12-hour graph when hovering or focusing any player count."
     }),
     Object.freeze({
       key: "copyRobloxIds",
@@ -880,6 +879,7 @@
   const gameTileCcuPendingPlaceIds = new Set();
   const gameTileCcuRetryAfterByPlaceId = new Map();
   const gameTileCcuQueuedByPlaceId = new Map();
+  const gameTileCcuGraphUniverseByPlaceId = new Map();
   const gameTileCcuGraphHistoryCache = new Map();
   const gameTileCcuGraphHistoryRequests = new Map();
   const gameTileCcuGraphInteractionModels = new WeakMap();
@@ -8953,7 +8953,9 @@
       const expectedIdentity = gameTileCcuIdentityByRoot.get(root);
       const cached = gameTileCcuCacheByPlaceId.get(identity.placeId);
       identity.universeId = normalizeGameTileCcuUniverseId(
-        expectedIdentity?.universeId || cached?.universeId
+        expectedIdentity?.universeId ||
+          cached?.universeId ||
+          gameTileCcuGraphUniverseByPlaceId.get(identity.placeId)
       );
     }
     return identity;
@@ -9010,10 +9012,7 @@
   }
 
   function isUsableGameTileCcuGraphTrigger(metric) {
-    if (
-      !isFeatureEnabled("gameCcu") ||
-      !isFeatureEnabled("gameCcuHoverGraph")
-    ) {
+    if (!isFeatureEnabled("gameCcuHoverGraph")) {
       return false;
     }
     const root = getGameTileCcuGraphRoot(metric);
@@ -9023,6 +9022,11 @@
         'a.game-card-link[href], a[href*="/games/"]'
       ) && getGameTileCcuGraphRoot(ariaHiddenAncestor) === root
     );
+    const metricText = [
+      metric?.textContent,
+      metric?.getAttribute?.("aria-label"),
+      metric?.getAttribute?.("title")
+    ].filter(Boolean).join(" ");
     return Boolean(
       metric?.matches?.(".playing-counts-label") &&
       metric.isConnected !== false &&
@@ -9030,6 +9034,7 @@
       !metric.closest?.("[hidden]") &&
       (!ariaHiddenAncestor || hiddenOnlyByCardLink) &&
       hasMeaningfulGameTileMetric(metric) &&
+      !/[%\uFF05]/u.test(metricText) &&
       root &&
       getGameTileCcuGraphIdentity(root) &&
       findGameTileCcuGraphThumbnail(root)
@@ -9048,10 +9053,7 @@
   }
 
   function mountGameTileCcuGraphTriggers() {
-    if (
-      !isFeatureEnabled("gameCcu") ||
-      !isFeatureEnabled("gameCcuHoverGraph")
-    ) {
+    if (!isFeatureEnabled("gameCcuHoverGraph")) {
       if (
         gameTileCcuGraphEventsBound ||
         activeGameTileCcuGraph ||
@@ -9155,15 +9157,23 @@
 
   function requestGameTileCcuHistory(
     universeId,
-    { bypassCache = false } = {}
+    { bypassCache = false, placeId = null } = {}
   ) {
+    universeId = normalizeGameTileCcuUniverseId(universeId);
+    placeId = normalizeGameTileCcuPlaceId(placeId);
+    if (!universeId && !placeId) {
+      return Promise.reject(new Error("missing-identity"));
+    }
     if (!bypassCache) {
-      const cached = getCachedGameTileCcuHistory(universeId);
+      const cached = universeId
+        ? getCachedGameTileCcuHistory(universeId)
+        : null;
       if (cached) {
-        return Promise.resolve(cached);
+        return Promise.resolve({ ...cached, universeId });
       }
     }
-    const pending = gameTileCcuGraphHistoryRequests.get(universeId);
+    const requestKey = universeId ? `u:${universeId}` : `p:${placeId}`;
+    const pending = gameTileCcuGraphHistoryRequests.get(requestKey);
     if (pending) {
       return pending;
     }
@@ -9174,12 +9184,13 @@
     const lifecycleEpoch = gameTileCcuGraphLifecycleEpoch;
     const request = new Promise((resolve, reject) => {
       try {
+        const message = {
+          type: GAME_TILE_CCU_HISTORY_MESSAGE_TYPE,
+          requestId,
+          ...(universeId ? { universeId } : { placeId })
+        };
         chrome.runtime.sendMessage(
-          {
-            type: GAME_TILE_CCU_HISTORY_MESSAGE_TYPE,
-            requestId,
-            universeId
-          },
+          message,
           (response) => {
             if (chrome.runtime.lastError) {
               reject(new Error("runtime-error"));
@@ -9192,14 +9203,20 @@
             if (
               !response?.ok ||
               response.requestId !== requestId ||
-              normalizeGameTileCcuUniverseId(response.universeId) !== universeId ||
+              !normalizeGameTileCcuUniverseId(response.universeId) ||
+              (universeId &&
+                normalizeGameTileCcuUniverseId(response.universeId) !== universeId) ||
               !Array.isArray(response.points)
             ) {
               reject(new Error("invalid-response"));
               return;
             }
+            const resolvedUniverseId = normalizeGameTileCcuUniverseId(
+              response.universeId
+            );
             const points = normalizeGameTileCcuHistoryPoints(response.points);
             const history = {
+              universeId: resolvedUniverseId,
               points,
               tracked: response.tracked === true
                 ? true
@@ -9209,7 +9226,19 @@
                     ? true
                     : null
             };
-            setCachedGameTileCcuHistory(universeId, history);
+            if (placeId) {
+              gameTileCcuGraphUniverseByPlaceId.delete(placeId);
+              gameTileCcuGraphUniverseByPlaceId.set(placeId, resolvedUniverseId);
+              while (
+                gameTileCcuGraphUniverseByPlaceId.size >
+                GAME_TILE_CCU_CACHE_MAX_ENTRIES
+              ) {
+                gameTileCcuGraphUniverseByPlaceId.delete(
+                  gameTileCcuGraphUniverseByPlaceId.keys().next().value
+                );
+              }
+            }
+            setCachedGameTileCcuHistory(resolvedUniverseId, history);
             resolve(history);
           }
         );
@@ -9217,10 +9246,10 @@
         reject(new Error("runtime-error"));
       }
     });
-    gameTileCcuGraphHistoryRequests.set(universeId, request);
+    gameTileCcuGraphHistoryRequests.set(requestKey, request);
     void request.finally(() => {
-      if (gameTileCcuGraphHistoryRequests.get(universeId) === request) {
-        gameTileCcuGraphHistoryRequests.delete(universeId);
+      if (gameTileCcuGraphHistoryRequests.get(requestKey) === request) {
+        gameTileCcuGraphHistoryRequests.delete(requestKey);
       }
     }).catch(() => {});
     return request;
@@ -10943,13 +10972,12 @@
     if (
       !active ||
       active !== activeGameTileCcuGraph ||
-      !isFeatureEnabled("gameCcu") ||
       !isFeatureEnabled("gameCcuHoverGraph") ||
       !isActiveGameTileCcuGraphCurrent(active)
     ) {
       return false;
     }
-    const { overlay, universeId } = active;
+    const { overlay, universeId, placeId } = active;
     if (showLoading) {
       renderGameTileCcuGraphState(
         overlay,
@@ -10959,8 +10987,20 @@
       );
       queueGameTileCcuGraphPosition(active);
     }
-    requestGameTileCcuHistory(universeId, { bypassCache }).then(
+    requestGameTileCcuHistory(universeId, { bypassCache, placeId }).then(
       (history) => {
+        if (
+          active === activeGameTileCcuGraph &&
+          !active.universeId &&
+          normalizeGameTileCcuUniverseId(history.universeId)
+        ) {
+          active.universeId = normalizeGameTileCcuUniverseId(history.universeId);
+          active.overlay.id = `rsl-game-ccu-graph-${active.universeId}`;
+          setGameTileCcuGraphDescriptionTarget(
+            active,
+            active.descriptionTarget || active.trigger
+          );
+        }
         if (
           active !== activeGameTileCcuGraph ||
           !isActiveGameTileCcuGraphCurrent(active)
@@ -11034,7 +11074,6 @@
     { pinned = false, describedByTarget = metric } = {}
   ) {
     if (
-      !isFeatureEnabled("gameCcu") ||
       !isFeatureEnabled("gameCcuHoverGraph") ||
       !isUsableGameTileCcuGraphTrigger(metric)
     ) {
@@ -11116,16 +11155,6 @@
     positionGameTileCcuGraphPopover(activeGameTileCcuGraph);
     queueGameTileCcuGraphPosition(activeGameTileCcuGraph);
 
-    if (!identity.universeId) {
-      renderGameTileCcuGraphState(
-        overlay,
-        "unavailable",
-        "History unavailable",
-        "Roblox has not identified this experience yet."
-      );
-      queueGameTileCcuGraphPosition(activeGameTileCcuGraph);
-      return overlay;
-    }
     loadGameTileCcuGraphHistory(activeGameTileCcuGraph, {
       showLoading: true
     });
@@ -11144,7 +11173,6 @@
 
   function scheduleGameTileCcuGraphHoverIntent(trigger) {
     if (
-      !isFeatureEnabled("gameCcu") ||
       !isFeatureEnabled("gameCcuHoverGraph") ||
       !isUsableGameTileCcuGraphTrigger(trigger)
     ) {
@@ -11450,7 +11478,6 @@
   function ensureGameTileCcuGraphEvents() {
     if (
       gameTileCcuGraphEventsBound ||
-      !isFeatureEnabled("gameCcu") ||
       !isFeatureEnabled("gameCcuHoverGraph") ||
       !document.addEventListener
     ) {
@@ -11508,6 +11535,7 @@
     removeGameTileCcuGraphEvents();
     gameTileCcuGraphHistoryRequests.clear();
     gameTileCcuGraphHistoryCache.clear();
+    gameTileCcuGraphUniverseByPlaceId.clear();
     document
       .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_TRIGGER_ATTRIBUTE}]`)
       .forEach(restoreGameTileCcuGraphTrigger);
@@ -12144,19 +12172,42 @@
           owned.remove();
         }
       });
-    mountGameTileCcuGraphTriggers();
     void flushGameTileCcuRequests(now);
   }
 
   function invalidateStaleGameTileCcuControls(mutations) {
+    if (isFeatureEnabled("gameCcuHoverGraph")) {
+      if (gameTileCcuGraphHoverIntent &&
+        !isUsableGameTileCcuGraphTrigger(gameTileCcuGraphHoverIntent.trigger)) {
+        clearGameTileCcuGraphHoverIntent();
+      }
+      validateActiveGameTileCcuGraph();
+      const graphMetricChanged = mutations.some((mutation) => {
+        const nodes = [
+          mutation.target?.nodeType === Node.ELEMENT_NODE
+            ? mutation.target
+            : mutation.target?.parentElement,
+          ...Array.from(mutation.addedNodes || []),
+          ...Array.from(mutation.removedNodes || [])
+        ].filter(Boolean);
+        return nodes.some((node) => {
+          const element = node?.nodeType === Node.ELEMENT_NODE
+            ? node
+            : node?.parentElement;
+          return Boolean(
+            element?.matches?.(".playing-counts-label") ||
+            element?.closest?.(".playing-counts-label") ||
+            element?.querySelector?.(".playing-counts-label")
+          );
+        });
+      });
+      if (graphMetricChanged) {
+        mountGameTileCcuGraphTriggers();
+      }
+    }
     if (!isFeatureEnabled("gameCcu")) {
       return;
     }
-    if (gameTileCcuGraphHoverIntent &&
-      !isUsableGameTileCcuGraphTrigger(gameTileCcuGraphHoverIntent.trigger)) {
-      clearGameTileCcuGraphHoverIntent();
-    }
-    validateActiveGameTileCcuGraph();
     const touchedRatingScopes = new Set();
     const ratingScopeSelector =
       `.game-card-info, ${GAME_TILE_SPONSORED_FOOTER_SELECTOR}`;
@@ -12248,7 +12299,6 @@
 
   function cleanupGameTileCcuFeature() {
     gameTileCcuLifecycleEpoch += 1;
-    cleanupGameTileCcuGraphDisplay();
     window.clearTimeout(gameTileCcuRefreshTimer);
     gameTileCcuRefreshTimer = null;
     gameTileCcuRefreshTimerDueAt = 0;
@@ -12256,7 +12306,6 @@
     gameTileCcuQueuedByPlaceId.clear();
     gameTileCcuPendingPlaceIds.clear();
     gameTileCcuRetryAfterByPlaceId.clear();
-    gameTileCcuGraphHistoryCache.clear();
     document
       .querySelectorAll(
         `[${GAME_TILE_CCU_CONTAINER_ATTRIBUTE}], ` +
@@ -14808,6 +14857,11 @@
     } else {
       cleanupGameTileCcuFeature();
     }
+    if (isFeatureEnabled("gameCcuHoverGraph")) {
+      mountGameTileCcuGraphTriggers();
+    } else {
+      cleanupGameTileCcuGraphDisplay();
+    }
   }
 
   function mountSidebar() {
@@ -15014,10 +15068,7 @@
           previousSettings[key] === nextSettings[key]
       )
     ) {
-      if (
-        isFeatureEnabled("gameCcu") &&
-        isFeatureEnabled("gameCcuHoverGraph")
-      ) {
+      if (isFeatureEnabled("gameCcuHoverGraph")) {
         mountGameTileCcuGraphTriggers();
       }
       return;
@@ -15798,6 +15849,8 @@
       invalidateStaleGameTileCcuControls;
     contentTestHooks.mutationsAffectExtensionMount = mutationsAffectExtensionMount;
     contentTestHooks.cleanupGameTileCcuFeature = cleanupGameTileCcuFeature;
+    contentTestHooks.cleanupGameTileCcuGraphDisplay =
+      cleanupGameTileCcuGraphDisplay;
     contentTestHooks.getGameTileCcuLinkIdentity = getGameTileCcuLinkIdentity;
     contentTestHooks.queueGameTileCcuRoot = queueGameTileCcuRoot;
     contentTestHooks.mountGameTileCcuGraphTriggers =

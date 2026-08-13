@@ -20,8 +20,12 @@ const mountTriggers = between(
   "  function mountGameTileCcuGraphTriggers(",
   "  function normalizeGameTileCcuHistoryPoints("
 );
-assert.match(mountTriggers, /!isFeatureEnabled\("gameCcu"\)/);
 assert.match(mountTriggers, /!isFeatureEnabled\("gameCcuHoverGraph"\)/);
+assert.doesNotMatch(
+  mountTriggers,
+  /isFeatureEnabled\("gameCcu"\)/,
+  "native Roblox player counts must remain graph triggers when RoTool Player Counts is off"
+);
 assert.ok(
   mountTriggers.indexOf('!isFeatureEnabled("gameCcuHoverGraph")') <
     mountTriggers.indexOf("ensureGameTileCcuGraphEvents()"),
@@ -65,8 +69,25 @@ assert.match(eventBinding, /!isFeatureEnabled\("gameCcuHoverGraph"\)/);
 assert.ok(
   eventBinding.indexOf('!isFeatureEnabled("gameCcuHoverGraph")') <
     eventBinding.indexOf('document.addEventListener("pointerover"'),
-  "the child guard must precede every document listener"
+  "the graph guard must precede every document listener"
 );
+
+for (const [name, source] of [
+  ["isUsableGameTileCcuGraphTrigger", between(
+    "  function isUsableGameTileCcuGraphTrigger(",
+    "  function restoreGameTileCcuGraphTrigger("
+  )],
+  ["openGameTileCcuGraph", openGraph],
+  ["loadGameTileCcuGraphHistory", loadHistory],
+  ["scheduleGameTileCcuGraphHoverIntent", hoverIntent],
+  ["ensureGameTileCcuGraphEvents", eventBinding]
+]) {
+  assert.doesNotMatch(
+    source,
+    /isFeatureEnabled\("gameCcu"\)/,
+    `${name} must not couple graph behavior to RoTool Player Counts`
+  );
+}
 
 const cleanup = between(
   "  function cleanupGameTileCcuGraphDisplay(",
@@ -129,7 +150,39 @@ assert.doesNotMatch(
   /return[^}]*gameCcuHoverGraph/,
   "the graph child must not gate player-count mounting or CCU requests"
 );
-assert.match(mountCounts, /mountGameTileCcuGraphTriggers\(\)[\s\S]*?flushGameTileCcuRequests/);
+assert.doesNotMatch(
+  mountCounts,
+  /mountGameTileCcuGraphTriggers|cleanupGameTileCcuGraphDisplay/,
+  "the Player Counts mount lifecycle must not own the graph lifecycle"
+);
+assert.match(mountCounts, /flushGameTileCcuRequests/);
+
+const cleanupCounts = between(
+  "  function cleanupGameTileCcuFeature(",
+  "  function findQuickPlayRootThumbnail("
+);
+for (const graphArtifact of [
+  "cleanupGameTileCcuGraphDisplay",
+  "GAME_TILE_CCU_GRAPH_TRIGGER_ATTRIBUTE",
+  "GAME_TILE_CCU_GRAPH_OVERLAY_ATTRIBUTE",
+  "gameTileCcuGraphHistoryRequests"
+]) {
+  assert.equal(
+    cleanupCounts.includes(graphArtifact),
+    false,
+    `turning off Player Counts must leave the independent graph intact (${graphArtifact})`
+  );
+}
+
+const mountFeatures = between(
+  "  function mountExtensionFeatures(",
+  "  function mountSidebar("
+);
+assert.match(
+  mountFeatures,
+  /if \(isFeatureEnabled\("gameCcu"\)\) \{[\s\S]*?mountGameTileCcu\(\)[\s\S]*?cleanupGameTileCcuFeature\(\)[\s\S]*?if \(isFeatureEnabled\("gameCcuHoverGraph"\)\) \{[\s\S]*?mountGameTileCcuGraphTriggers\(\)[\s\S]*?cleanupGameTileCcuGraphDisplay\(\)/,
+  "Player Counts and CCU Hover Graph need separate mount and cleanup branches"
+);
 
 const reconcile = between(
   "  function reconcileFeatureSettings(",
@@ -156,17 +209,16 @@ assert.ok(
 );
 
 const backgroundFeatureValue = background.slice(
-  background.indexOf("function getGameCcuFeatureValue("),
-  background.indexOf("function syncGameCcuHistoryAlarm(")
+  background.indexOf("function getGameCcuHistoryFeatureValue("),
+  background.indexOf("function ensureGameCcuHistoryAlarm(")
 );
-assert.match(backgroundFeatureValue, /rawValue\.flags\.gameCcu === false/);
-assert.doesNotMatch(backgroundFeatureValue, /gameCcuHoverGraph/);
+assert.match(backgroundFeatureValue, /rawValue\.flags\.gameCcuHoverGraph !== false/);
 assert.doesNotMatch(
-  background,
-  /gameCcuHoverGraph/,
-  "hiding the foreground graph must not disable background Chart snapshots"
+  backgroundFeatureValue,
+  /flags\.gameCcu(?:\W|$)/,
+  "Player Counts alone must not keep graph-history collection running"
 );
 
 console.log(
-  "PASS RoTool CCU Hover Graph child gating, targeted cleanup, and retained collection"
+  "PASS independent CCU Hover Graph gating, cleanup, and graph-owned collection"
 );
