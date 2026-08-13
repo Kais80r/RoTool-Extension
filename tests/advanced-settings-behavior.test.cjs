@@ -20,6 +20,7 @@ class FakeAnchor {
     this.href = href;
     this.id = id;
     this.classes = new Set(classes);
+    this.classList = { contains: (name) => this.classes.has(name) };
   }
 
   matches(selector) {
@@ -41,6 +42,7 @@ class FakeButton {
   constructor(id = "", classes = []) {
     this.id = id;
     this.classes = new Set(classes);
+    this.classList = { contains: (name) => this.classes.has(name) };
   }
 
   matches(selector) {
@@ -163,7 +165,10 @@ function makeNativeSidebarHarness(layout) {
         layout === "redesigned"
           ? "https://www.roblox.com/giftcards-us"
           : "https://www.roblox.com/giftcards",
-        layout === "legacy" ? "nav-giftcards" : ""
+        layout === "legacy" ? "nav-giftcards" : "",
+        layout === "redesigned"
+          ? ["text-title-large", "flex", "items-center"]
+          : []
       )
     ],
     classes: layout === "redesigned" ? ["icon-regular-gift-card"] : [],
@@ -171,7 +176,9 @@ function makeNativeSidebarHarness(layout) {
   });
   const store = new FakeSidebarRow(layout, {
     ids: layout === "legacy" ? ["nav-shop"] : [],
-    classes: layout === "redesigned" ? ["icon-regular-building-store"] : [],
+    classes: layout === "redesigned"
+      ? ["text-title-large", "flex", "items-center", "icon-regular-building-store"]
+      : [],
     text: "Offizieller Shop"
   });
   const englishLookalike = new FakeSidebarRow(layout, {

@@ -3639,14 +3639,13 @@
   position: relative;
   display: grid;
   min-width: 0;
-  margin: 0 16px 14px 36px;
-  overflow: hidden;
-  background: var(--color-surface-100, var(--rsl-fallback-surface));
-  border: var(--stroke-standard, 1px) solid
+  margin: 0 16px 14px;
+  overflow: visible;
+  grid-template-columns: minmax(0, 1fr);
+  border-top: var(--stroke-standard, 1px) solid
     var(--color-stroke-default, var(--rsl-fallback-stroke));
-  border-radius: var(--radius-medium, 8px);
-  box-shadow: inset 3px 0 0
-    var(--color-action-emphasis-background, #335fff);
+  border-bottom: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
 }
 
 .rsl-feature-settings__children[hidden] {
@@ -3654,9 +3653,9 @@
 }
 
 .rsl-feature-settings__children .rsl-feature-settings__row--child {
-  min-height: 56px;
-  padding: 10px 12px 10px 14px;
-  gap: 14px;
+  min-height: 44px;
+  padding: 8px 10px;
+  gap: 12px;
 }
 
 .rsl-feature-settings__children
@@ -3666,15 +3665,113 @@
     var(--color-stroke-default, var(--rsl-fallback-stroke));
 }
 
+.rsl-feature-settings__children .rsl-feature-settings__copy > strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .rsl-feature-settings__children .rsl-feature-settings__copy > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rsl-feature-settings__children-toolbar {
+  display: flex;
+  min-height: 42px;
+  padding: 7px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  grid-column: 1 / -1;
+}
+
+.rsl-feature-settings__children-summary {
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.rsl-feature-settings__children-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.rsl-feature-settings__bulk-action {
+  min-height: 28px;
+  padding: 3px 8px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-small, 6px);
+  cursor: pointer;
+  font: inherit;
   font-size: 12px;
-  line-height: 17px;
+  font-weight: 700;
+}
+
+.rsl-feature-settings__bulk-action:hover:not(:disabled) {
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  background: var(--color-state-hover, rgb(255 255 255 / 6%));
+}
+
+.rsl-feature-settings__bulk-action:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, #6aa7ff);
+  outline-offset: 1px;
+}
+
+.rsl-feature-settings__bulk-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rsl-feature-settings__children-heading {
+  margin: 0;
+  padding: 9px 10px 5px;
+  grid-column: 1 / -1;
+  color: var(--color-content-muted, var(--rsl-fallback-muted));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 620px) {
+  .rsl-feature-settings__children[data-rsl-feature-children="sidebarShortcuts"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="sidebarShortcuts"]
+    .rsl-feature-settings__row--child {
+    border-top: var(--stroke-standard, 1px) solid
+      var(--color-stroke-default, var(--rsl-fallback-stroke));
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="sidebarShortcuts"]
+    .rsl-feature-settings__row--child[data-rsl-feature-section-column="right"] {
+    border-left: var(--stroke-standard, 1px) solid
+      var(--color-stroke-default, var(--rsl-fallback-stroke));
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="sidebarShortcuts"]
+    .rsl-feature-settings__row--child[data-rsl-feature-section-index="0"]:has(
+      [data-rsl-feature-key="sidebarCustomShortcuts"]
+    ) {
+    grid-column: 1 / -1;
+  }
 }
 
 .rsl-feature-settings__children[data-rsl-feature-parent-disabled],
 .rsl-feature-settings__children[data-rsl-feature-children-disabled] {
-  box-shadow: inset 3px 0 0
-    var(--color-stroke-default, var(--rsl-fallback-stroke));
   opacity: 0.6;
 }
 
@@ -3836,7 +3933,7 @@
   .rsl-feature-settings__children {
     margin-right: 12px;
     margin-bottom: 12px;
-    margin-left: 20px;
+    margin-left: 12px;
   }
 
   .rsl-feature-settings__children .rsl-feature-settings__row--child {

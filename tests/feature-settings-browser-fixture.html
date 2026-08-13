@@ -84,12 +84,26 @@
     </script>
     <script>
       globalThis.__rslFixtureStorage = {};
+      globalThis.__rslDeferredStorageCallback = null;
+      globalThis.__rslDeferStorageCallback = false;
+      globalThis.__rslFailNextStorageWrite = false;
       globalThis.chrome = {
         runtime: { lastError: null },
         storage: {
           local: {
             set(values, callback) {
+              if (globalThis.__rslFailNextStorageWrite) {
+                globalThis.__rslFailNextStorageWrite = false;
+                globalThis.chrome.runtime.lastError = { message: "Fixture write failed" };
+                callback?.();
+                globalThis.chrome.runtime.lastError = null;
+                return;
+              }
               Object.assign(globalThis.__rslFixtureStorage, values);
+              if (globalThis.__rslDeferStorageCallback) {
+                globalThis.__rslDeferredStorageCallback = callback || null;
+                return;
+              }
               callback?.();
             }
           }
@@ -107,6 +121,16 @@
             flags: {
               sidebarShortcuts: true,
               sidebarCustomShortcuts: true,
+              sidebarHome: true,
+              sidebarProfile: true,
+              sidebarRobloxPlus: true,
+              sidebarMessages: true,
+              sidebarFriends: true,
+              sidebarAvatar: true,
+              sidebarInventory: true,
+              sidebarTrade: true,
+              sidebarCommunities: true,
+              sidebarBlog: true,
               sidebarGiftCards: true,
               sidebarOfficialStore: true,
               quickSettings: true,
@@ -117,6 +141,7 @@
               quickPlayActionPrivate: true,
               quickPlayActionRandom: true,
               gameCcu: true,
+              gameCcuHoverGraph: true,
               copyRobloxIds: true
             }
           });
@@ -138,14 +163,14 @@
           roToolButton.click();
           const dialog = document.getElementById("rsl-feature-settings-dialog");
           const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
-          if (!dialog?.open || switches.length !== 13 || switches.some((input) => !input.checked)) {
-            throw new Error("Feature settings dialog did not open with thirteen enabled switches");
+          if (!dialog?.open || switches.length !== 24 || switches.some((input) => !input.checked)) {
+            throw new Error("Feature settings dialog did not open with twenty-four enabled switches");
           }
           const advancedButtons = Array.from(
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 2 ||
+            advancedButtons.length !== 3 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
@@ -157,8 +182,9 @@
             button.getAttribute("aria-label")
           );
           if (
-            !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
-            !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
+              !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
+              !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
+              !disclosureNames.includes("Advanced settings for Player Counts (CCU)") ||
             new Set(disclosureNames).size !== disclosureNames.length
           ) {
             throw new Error("Advanced disclosures do not have distinct contextual accessible names");
@@ -190,10 +216,28 @@
             height: dialogLogoRect.height
           });
 
-          await hooks.saveFeatureSettingsForTests({ quickPlay: false });
-          const saved = globalThis.__rslFixtureStorage.rslFeatureSettingsV1;
           const quickPlaySwitch = dialog.querySelector("[data-rsl-feature-key='quickPlay']");
           const gameCcuSwitch = dialog.querySelector("[data-rsl-feature-key='gameCcu']");
+          globalThis.__rslDeferStorageCallback = true;
+          const pendingQuickPlaySave = hooks.saveFeatureSettingsForTests({ quickPlay: false });
+          if (
+            quickPlaySwitch.checked ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionPlay']")?.disabled ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionPrivate']")?.disabled ||
+            !dialog.querySelector("[data-rsl-feature-key='quickPlayActionRandom']")?.disabled
+          ) {
+            throw new Error("The settings UI waited for storage instead of updating optimistically");
+          }
+          await Promise.resolve();
+          await Promise.resolve();
+          if (!globalThis.__rslDeferredStorageCallback) {
+            throw new Error("The deferred feature setting write did not start");
+          }
+          globalThis.__rslDeferStorageCallback = false;
+          globalThis.__rslDeferredStorageCallback?.();
+          globalThis.__rslDeferredStorageCallback = null;
+          await pendingQuickPlaySave;
+          const saved = globalThis.__rslFixtureStorage.rslFeatureSettingsV1;
           if (
             saved?.version !== 1 ||
             saved.flags?.quickPlay !== false ||
@@ -213,6 +257,66 @@
             dialog.querySelector("[data-rsl-feature-key='quickPlayActionRandom']")?.disabled
           ) {
             throw new Error("Feature settings did not re-enable a feature");
+          }
+
+          const homeSwitch = dialog.querySelector("[data-rsl-feature-key='sidebarHome']");
+          globalThis.__rslFailNextStorageWrite = true;
+          await hooks.saveFeatureSettingsForTests({ sidebarHome: false });
+          if (!homeSwitch?.checked) {
+            throw new Error("A failed settings write did not honestly roll the optimistic switch back");
+          }
+
+          globalThis.__rslDeferStorageCallback = true;
+          const rapidHide = hooks.saveFeatureSettingsForTests({ sidebarHome: false });
+          const rapidShow = hooks.saveFeatureSettingsForTests({ sidebarHome: true });
+          if (!homeSwitch.checked) {
+            throw new Error("Rapid toggles did not immediately show the latest choice");
+          }
+          await Promise.resolve();
+          await Promise.resolve();
+          const firstRapidWrite = globalThis.__rslDeferredStorageCallback;
+          globalThis.__rslDeferredStorageCallback = null;
+          if (!firstRapidWrite) {
+            throw new Error("The first rapid settings write did not start");
+          }
+          firstRapidWrite();
+          for (let index = 0; index < 6 && !globalThis.__rslDeferredStorageCallback; index += 1) {
+            await Promise.resolve();
+          }
+          const secondRapidWrite = globalThis.__rslDeferredStorageCallback;
+          globalThis.__rslDeferredStorageCallback = null;
+          if (!secondRapidWrite) {
+            throw new Error("Rapid settings writes were not serialized");
+          }
+          globalThis.__rslDeferStorageCallback = false;
+          secondRapidWrite();
+          await Promise.all([rapidHide, rapidShow]);
+          if (
+            !homeSwitch.checked ||
+            globalThis.__rslFixtureStorage.rslFeatureSettingsV1?.flags?.sidebarHome !== true
+          ) {
+            throw new Error("Rapid toggles did not persist the latest choice");
+          }
+
+          await hooks.saveFeatureSettingsForTests({ sidebarHome: false });
+          await hooks.saveFeatureSettingsForTests({ sidebarShortcuts: false });
+          if (homeSwitch.checked || !homeSwitch.disabled) {
+            throw new Error("The Sidebar parent did not preserve and disable its individual choices");
+          }
+          await hooks.saveFeatureSettingsForTests({ sidebarShortcuts: true });
+          if (homeSwitch.checked || homeSwitch.disabled) {
+            throw new Error("Re-enabling Sidebar did not restore its preserved individual choices");
+          }
+
+          const graphSwitch = dialog.querySelector("[data-rsl-feature-key='gameCcuHoverGraph']");
+          await hooks.saveFeatureSettingsForTests({ gameCcuHoverGraph: false });
+          await hooks.saveFeatureSettingsForTests({ gameCcu: false });
+          if (graphSwitch.checked || !graphSwitch.disabled) {
+            throw new Error("Player Counts did not preserve and disable its Hover Graph choice");
+          }
+          await hooks.saveFeatureSettingsForTests({ gameCcu: true });
+          if (graphSwitch.checked || graphSwitch.disabled || !gameCcuSwitch.checked) {
+            throw new Error("Re-enabling Player Counts changed its preserved Hover Graph choice");
           }
 
           await hooks.saveFeatureSettingsForTests({
@@ -280,6 +384,11 @@
 
           document.body.dataset.testResult = "pass";
           document.body.dataset.testMessage = "Feature settings browser fixture passed";
+          if (new URL(location.href).searchParams.get("view") === "sidebar") {
+            dialog
+              .querySelector('[data-rsl-feature-disclosure="sidebarShortcuts"]')
+              ?.click();
+          }
           document.title = "PASS: RoTool feature settings fixture";
         } catch (error) {
           document.body.dataset.testResult = "fail";

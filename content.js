@@ -520,17 +520,80 @@
         Object.freeze({
           key: "sidebarCustomShortcuts",
           label: "Custom Shortcuts",
-          description: "Show saved sidebar links and the Add shortcut button."
+          description: "Show saved sidebar links and the Add shortcut button.",
+          section: "RoTool"
         }),
         Object.freeze({
-          key: "sidebarGiftCards",
-          label: "Buy Gift Cards",
-          description: "Show Roblox's Buy Gift Cards sidebar link."
+          key: "sidebarHome",
+          label: "Home",
+          description: "Show Roblox's Home sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarProfile",
+          label: "Profile",
+          description: "Show Roblox's Profile sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarRobloxPlus",
+          label: "Roblox Plus",
+          description: "Show Roblox's subscription sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarMessages",
+          label: "Messages",
+          description: "Show Roblox's Messages sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarFriends",
+          label: "Friends",
+          description: "Show Roblox's Friends sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarAvatar",
+          label: "Avatar",
+          description: "Show Roblox's Avatar sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarInventory",
+          label: "Inventory",
+          description: "Show Roblox's Inventory sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarTrade",
+          label: "Trade",
+          description: "Show Roblox's Trade sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarCommunities",
+          label: "Communities",
+          description: "Show Roblox's Communities sidebar link.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarBlog",
+          label: "Blog",
+          description: "Show Roblox's Blog sidebar link.",
+          section: "Roblox"
         }),
         Object.freeze({
           key: "sidebarOfficialStore",
           label: "Official Store",
-          description: "Show Roblox's Official Store sidebar button."
+          description: "Show Roblox's Official Store sidebar button.",
+          section: "Roblox"
+        }),
+        Object.freeze({
+          key: "sidebarGiftCards",
+          label: "Buy Gift Cards",
+          description: "Show Roblox's Buy Gift Cards sidebar link.",
+          section: "Roblox"
         })
       ]
     }),
@@ -579,7 +642,14 @@
       key: "gameCcu",
       group: "Experiences",
       label: "Player Counts (CCU)",
-      description: "Show player counts and locally stored Chart history on experience cards."
+      description: "Show player counts on experience cards.",
+      children: [
+        Object.freeze({
+          key: "gameCcuHoverGraph",
+          label: "CCU Hover Graph",
+          description: "Show the 12-hour graph when hovering or focusing a player count."
+        })
+      ]
     }),
     Object.freeze({
       key: "copyRobloxIds",
@@ -634,9 +704,17 @@
 
   let shortcuts = [];
   let featureSettings = { ...DEFAULT_FEATURE_SETTINGS };
+  let featureSettingsConfirmed = { ...DEFAULT_FEATURE_SETTINGS };
+  let featureSettingsApplied = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsLoaded = false;
   let featureSettingsLoadGeneration = 0;
   let featureSettingsSaving = false;
+  let featureSettingsPendingWrites = 0;
+  let featureSettingsSaveChain = Promise.resolve();
+  let featureSettingsDeferredStorageValue = null;
+  let featureSettingsReconcileScheduled = false;
+  let featureSettingsReconcileFrame = null;
+  let featureSettingsReconcileTimer = null;
   let featureSettingsDialogOpener = null;
   let featureSettingsNotice = "";
   let featureSettingsNoticeIsError = false;
@@ -1016,6 +1094,8 @@
     if (
       !row?.matches?.("li") ||
       isExtensionRow(row) ||
+      (row.matches?.("li[data-ropro-sidebar-item]") ||
+        row.hasAttribute?.("data-ropro-sidebar-item")) ||
       !row.closest("#left-navigation-container, .left-col-list")
     ) {
       return "";
@@ -1045,6 +1125,118 @@
       ? directControls
       : Array.from(row.querySelectorAll("a[href]"));
     const links = controls.filter((control) => control.matches?.("a[href]"));
+    const directLink = links.length === 1 ? links[0] : null;
+    const directButton = controls.length === 1 && controls[0].matches?.("button")
+      ? controls[0]
+      : null;
+    const getRobloxPathname = (link) => {
+      if (!link) {
+        return "";
+      }
+      try {
+        const url = new URL(link.href, location.origin);
+        const hostname = url.hostname.toLowerCase();
+        return hostname === "roblox.com" || hostname.endsWith(".roblox.com")
+          ? url.pathname.toLowerCase().replace(/\/+$/, "") || "/"
+          : "";
+      } catch {
+        return "";
+      }
+    };
+    const rawPathname = getRobloxPathname(directLink);
+    const pathname = rawPathname.replace(
+      /^\/(?!my(?:\/|$))[a-z]{2}(?=\/)/,
+      ""
+    ) || "/";
+    const directMatches = (selector) => Boolean(
+      directLink?.matches?.(selector) || directButton?.matches?.(selector)
+    );
+    const directHas = (selector) => Boolean(
+      directLink?.querySelector?.(selector) || directButton?.querySelector?.(selector)
+    );
+    const isRedesignedStandardControl = (control) => Boolean(
+      control?.classList?.contains?.("text-title-large") &&
+      control?.classList?.contains?.("flex") &&
+      control?.classList?.contains?.("items-center")
+    );
+    const isRedesignedStandardLink = isRedesignedStandardControl(directLink);
+    const hasRedesignedIcon = (selector) => Boolean(
+      isRedesignedStandardLink && directHas(selector)
+    );
+    if (
+      directMatches("#nav-home") ||
+      (pathname === "/home" && hasRedesignedIcon(".icon-regular-house"))
+    ) {
+      return "home";
+    }
+    if (
+      directMatches("#nav-profile") ||
+      (pathname === "/users/profile" && hasRedesignedIcon(".icon-regular-person"))
+    ) {
+      return "profile";
+    }
+    if (
+      directMatches("#nav-message") ||
+      (pathname === "/my/messages" &&
+        hasRedesignedIcon(".icon-regular-speech-bubble-align-center"))
+    ) {
+      return "messages";
+    }
+    if (
+      directMatches("#nav-friends") ||
+      (pathname === "/users/friends" &&
+        hasRedesignedIcon(".icon-regular-two-people"))
+    ) {
+      return "friends";
+    }
+    if (
+      directMatches("#nav-avatar, #nav-character") ||
+      (pathname === "/my/avatar" &&
+        hasRedesignedIcon(".icon-regular-person-standing"))
+    ) {
+      return "avatar";
+    }
+    if (
+      directMatches("#nav-inventory") ||
+      (pathname === "/users/inventory" &&
+        hasRedesignedIcon(".icon-regular-backpack"))
+    ) {
+      return "inventory";
+    }
+    if (
+      directMatches("#nav-trade") ||
+      (pathname === "/trades" &&
+        hasRedesignedIcon(".icon-regular-hand-two-arrows-horizontal"))
+    ) {
+      return "trade";
+    }
+    if (
+      directMatches("#nav-group") ||
+      (pathname === "/communities" &&
+        hasRedesignedIcon(".icon-regular-three-people"))
+    ) {
+      return "communities";
+    }
+    if (
+      directMatches("#nav-blog") ||
+      (() => {
+        try {
+          return new URL(directLink?.href || "", location.origin).hostname
+            .toLowerCase() === "blog.roblox.com" &&
+            hasRedesignedIcon(".icon-regular-fountain-pen-nib");
+        } catch {
+          return false;
+        }
+      })()
+    ) {
+      return "blog";
+    }
+    if (
+      (pathname === "/plus" &&
+        hasRedesignedIcon(".icon-regular-roblox-plus"))
+    ) {
+      return "robloxPlus";
+    }
     const isGiftCards = links.some((link) => {
       if (link.matches?.("#nav-giftcards")) {
         return true;
@@ -1053,25 +1245,25 @@
         const url = new URL(link.href, location.origin);
         const hostname = url.hostname.toLowerCase();
         return (
+          link === directLink &&
+          isRedesignedStandardLink &&
           (hostname === "roblox.com" || hostname.endsWith(".roblox.com")) &&
-          /^\/giftcards(?:[-\/]|$)/.test(url.pathname.toLowerCase())
+          /^\/giftcards(?:-[a-z]{2}(?:-[a-z]{2})?)?$/.test(
+            url.pathname.toLowerCase().replace(/\/+$/, "")
+          ) &&
+          hasRedesignedIcon(".icon-regular-gift-card")
         );
       } catch {
         return false;
       }
-    }) || controls.some((control) =>
-      Boolean(control.querySelector?.(".icon-regular-gift-card"))
-    ) || (!hasDomChildren && Boolean(row.querySelector(".icon-regular-gift-card")));
+    }) || (!hasDomChildren && Boolean(row.querySelector(".icon-regular-gift-card")));
     if (isGiftCards) {
       return "giftCards";
     }
     if (
-      controls.some(
-        (control) =>
-          control.matches?.("#nav-shop") ||
-          Boolean(control.querySelector?.("#nav-shop")) ||
-          Boolean(control.querySelector?.(".icon-regular-building-store"))
-      ) ||
+      directMatches("#nav-shop") ||
+      (isRedesignedStandardControl(directButton) &&
+        directHas(".icon-regular-building-store")) ||
       (!hasDomChildren &&
         (Boolean(row.querySelector("#nav-shop")) ||
           Boolean(row.querySelector(".icon-regular-building-store"))))
@@ -1102,6 +1294,16 @@
       return;
     }
     const hiddenByKey = {
+      home: !isFeatureEnabled("sidebarHome"),
+      profile: !isFeatureEnabled("sidebarProfile"),
+      robloxPlus: !isFeatureEnabled("sidebarRobloxPlus"),
+      messages: !isFeatureEnabled("sidebarMessages"),
+      friends: !isFeatureEnabled("sidebarFriends"),
+      avatar: !isFeatureEnabled("sidebarAvatar"),
+      inventory: !isFeatureEnabled("sidebarInventory"),
+      trade: !isFeatureEnabled("sidebarTrade"),
+      communities: !isFeatureEnabled("sidebarCommunities"),
+      blog: !isFeatureEnabled("sidebarBlog"),
       giftCards: !isFeatureEnabled("sidebarGiftCards"),
       officialStore: !isFeatureEnabled("sidebarOfficialStore")
     };
@@ -8823,6 +9025,12 @@
   }
 
   function isUsableGameTileCcuGraphTrigger(metric) {
+    if (
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph")
+    ) {
+      return false;
+    }
     const root = getGameTileCcuGraphRoot(metric);
     const ariaHiddenAncestor = metric?.closest?.('[aria-hidden="true"]');
     const hiddenOnlyByCardLink = Boolean(
@@ -8855,6 +9063,19 @@
   }
 
   function mountGameTileCcuGraphTriggers() {
+    if (
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph")
+    ) {
+      if (
+        gameTileCcuGraphEventsBound ||
+        activeGameTileCcuGraph ||
+        gameTileCcuGraphHoverIntent
+      ) {
+        cleanupGameTileCcuGraphDisplay();
+      }
+      return;
+    }
     ensureGameTileCcuGraphEvents();
     const usableMetrics = new Set();
     document.querySelectorAll(".playing-counts-label").forEach((metric) => {
@@ -10737,6 +10958,8 @@
     if (
       !active ||
       active !== activeGameTileCcuGraph ||
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph") ||
       !isActiveGameTileCcuGraphCurrent(active)
     ) {
       return false;
@@ -10825,7 +11048,11 @@
     metric,
     { pinned = false, describedByTarget = metric } = {}
   ) {
-    if (!isFeatureEnabled("gameCcu") || !isUsableGameTileCcuGraphTrigger(metric)) {
+    if (
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph") ||
+      !isUsableGameTileCcuGraphTrigger(metric)
+    ) {
       return null;
     }
     if (
@@ -10931,7 +11158,11 @@
   }
 
   function scheduleGameTileCcuGraphHoverIntent(trigger) {
-    if (!isUsableGameTileCcuGraphTrigger(trigger)) {
+    if (
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph") ||
+      !isUsableGameTileCcuGraphTrigger(trigger)
+    ) {
       return false;
     }
     if (gameTileCcuGraphHoverIntent?.trigger === trigger) {
@@ -11232,7 +11463,12 @@
   }
 
   function ensureGameTileCcuGraphEvents() {
-    if (gameTileCcuGraphEventsBound || !document.addEventListener) {
+    if (
+      gameTileCcuGraphEventsBound ||
+      !isFeatureEnabled("gameCcu") ||
+      !isFeatureEnabled("gameCcuHoverGraph") ||
+      !document.addEventListener
+    ) {
       return;
     }
     gameTileCcuGraphEventsBound = true;
@@ -11279,6 +11515,26 @@
       "scroll",
       handleGameTileCcuGraphViewportChange
     );
+  }
+
+  function cleanupGameTileCcuGraphDisplay() {
+    gameTileCcuGraphLifecycleEpoch += 1;
+    closeGameTileCcuGraph();
+    removeGameTileCcuGraphEvents();
+    gameTileCcuGraphHistoryRequests.clear();
+    gameTileCcuGraphHistoryCache.clear();
+    document
+      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_TRIGGER_ATTRIBUTE}]`)
+      .forEach(restoreGameTileCcuGraphTrigger);
+    document
+      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_OVERLAY_ATTRIBUTE}]`)
+      .forEach((overlay) => overlay.remove());
+    document
+      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_HOST_ATTRIBUTE}]`)
+      .forEach((host) => host.removeAttribute(GAME_TILE_CCU_GRAPH_HOST_ATTRIBUTE));
+    document
+      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_OPEN_ATTRIBUTE}]`)
+      .forEach((root) => root.removeAttribute(GAME_TILE_CCU_GRAPH_OPEN_ATTRIBUTE));
   }
 
   function syncGameTileCcu(
@@ -12007,9 +12263,7 @@
 
   function cleanupGameTileCcuFeature() {
     gameTileCcuLifecycleEpoch += 1;
-    gameTileCcuGraphLifecycleEpoch += 1;
-    closeGameTileCcuGraph();
-    removeGameTileCcuGraphEvents();
+    cleanupGameTileCcuGraphDisplay();
     window.clearTimeout(gameTileCcuRefreshTimer);
     gameTileCcuRefreshTimer = null;
     gameTileCcuRefreshTimerDueAt = 0;
@@ -12017,20 +12271,7 @@
     gameTileCcuQueuedByPlaceId.clear();
     gameTileCcuPendingPlaceIds.clear();
     gameTileCcuRetryAfterByPlaceId.clear();
-    gameTileCcuGraphHistoryRequests.clear();
     gameTileCcuGraphHistoryCache.clear();
-    document
-      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_TRIGGER_ATTRIBUTE}]`)
-      .forEach(restoreGameTileCcuGraphTrigger);
-    document
-      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_OVERLAY_ATTRIBUTE}]`)
-      .forEach((overlay) => overlay.remove());
-    document
-      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_HOST_ATTRIBUTE}]`)
-      .forEach((host) => host.removeAttribute(GAME_TILE_CCU_GRAPH_HOST_ATTRIBUTE));
-    document
-      .querySelectorAll(`[${GAME_TILE_CCU_GRAPH_OPEN_ATTRIBUTE}]`)
-      .forEach((root) => root.removeAttribute(GAME_TILE_CCU_GRAPH_OPEN_ATTRIBUTE));
     document
       .querySelectorAll(
         `[${GAME_TILE_CCU_CONTAINER_ATTRIBUTE}], ` +
@@ -14191,7 +14432,6 @@
       const parentKey = input.getAttribute("data-rsl-feature-parent-key");
       input.checked = isFeatureEnabled(key);
       input.disabled =
-        featureSettingsSaving ||
         !featureSettingsLoaded ||
         Boolean(parentKey && !isFeatureEnabled(parentKey));
     });
@@ -14203,12 +14443,17 @@
       );
     });
     dialog.querySelectorAll("[data-rsl-feature-disclosure]").forEach((button) => {
-      button.disabled = featureSettingsSaving || !featureSettingsLoaded;
+      button.disabled = !featureSettingsLoaded;
+    });
+    dialog.querySelectorAll("[data-rsl-feature-bulk]").forEach((button) => {
+      const parentKey = button.getAttribute("data-rsl-feature-bulk-parent");
+      button.disabled =
+        !featureSettingsLoaded ||
+        Boolean(parentKey && !isFeatureEnabled(parentKey));
     });
     const reset = dialog.querySelector("[data-rsl-feature-reset]");
     if (reset) {
       reset.disabled =
-        featureSettingsSaving ||
         !featureSettingsLoaded ||
         featureSettingsEqual(featureSettings, DEFAULT_FEATURE_SETTINGS);
     }
@@ -14226,33 +14471,68 @@
     }
     dialog.setAttribute(
       "aria-busy",
-      String(featureSettingsSaving || !featureSettingsLoaded)
+      String(!featureSettingsLoaded)
     );
   }
 
   async function saveFeatureSettings(nextSettings, fallbackSettings) {
-    if (!featureSettingsLoaded || featureSettingsSaving) {
+    if (!featureSettingsLoaded) {
       return;
     }
-    featureSettings = normalizeFeatureSettings(
+    const normalizedNext = normalizeFeatureSettings(
       serializeFeatureSettings(nextSettings)
     );
+    featureSettings = normalizedNext;
+    featureSettingsPendingWrites += 1;
     featureSettingsSaving = true;
     featureSettingsNotice = "";
     featureSettingsNoticeIsError = false;
-    reconcileFeatureSettings(fallbackSettings, featureSettings);
+    // Paint the switch first. Potentially expensive page reconciliation is
+    // coalesced after that paint, while persistence stays serialized.
     renderFeatureSettingsDialog();
+    scheduleFeatureSettingsReconcile();
+    const savedSnapshot = { ...featureSettings };
+    const write = featureSettingsSaveChain
+      .catch(() => undefined)
+      .then(() => featureSettingsStorageSet(savedSnapshot));
+    featureSettingsSaveChain = write;
     try {
-      await featureSettingsStorageSet(featureSettings);
-      featureSettingsNotice = "Saved automatically.";
+      await write;
+      featureSettingsConfirmed = { ...savedSnapshot };
+      if (featureSettingsEqual(featureSettings, savedSnapshot)) {
+        featureSettingsNotice = "Saved automatically.";
+      }
     } catch (error) {
-      featureSettings = { ...fallbackSettings };
-      featureSettingsNotice = "That setting could not be saved.";
-      featureSettingsNoticeIsError = true;
-      reconcileFeatureSettings(nextSettings, featureSettings);
+      if (featureSettingsEqual(featureSettings, savedSnapshot)) {
+        featureSettings = { ...featureSettingsConfirmed };
+        featureSettingsNotice = "That setting could not be saved.";
+        featureSettingsNoticeIsError = true;
+        scheduleFeatureSettingsReconcile();
+      }
       console.error("[RoTool] Failed to save feature settings", error);
     } finally {
-      featureSettingsSaving = false;
+      featureSettingsPendingWrites = Math.max(
+        0,
+        featureSettingsPendingWrites - 1
+      );
+      featureSettingsSaving = featureSettingsPendingWrites > 0;
+      if (
+        featureSettingsPendingWrites === 0 &&
+        featureSettingsDeferredStorageValue
+      ) {
+        const deferred = featureSettingsDeferredStorageValue;
+        featureSettingsDeferredStorageValue = null;
+        // Local writes are authoritative while queued. A deferred value that
+        // differs from the last confirmed snapshot is an older own-write event
+        // (or a cross-tab race that the local write necessarily superseded).
+        if (
+          featureSettingsEqual(deferred, featureSettingsConfirmed) &&
+          !featureSettingsEqual(featureSettings, deferred)
+        ) {
+          featureSettings = deferred;
+          scheduleFeatureSettingsReconcile();
+        }
+      }
       renderFeatureSettingsDialog();
     }
   }
@@ -14323,7 +14603,6 @@
       }
       input.setAttribute("role", "switch");
       input.disabled =
-        featureSettingsSaving ||
         !featureSettingsLoaded ||
         Boolean(
           definition.parentKey && !isFeatureEnabled(definition.parentKey)
@@ -14331,7 +14610,6 @@
       input.addEventListener("change", (event) => {
         if (
           event.isTrusted !== true ||
-          featureSettingsSaving ||
           !featureSettingsLoaded ||
           (parentKey && !isFeatureEnabled(parentKey))
         ) {
@@ -14391,12 +14669,71 @@
         children.setAttribute("role", "group");
         children.setAttribute("aria-label", `${definition.label} advanced settings`);
         children.hidden = true;
+        if (definition.key === "sidebarShortcuts") {
+          const toolbar = document.createElement("div");
+          toolbar.className = "rsl-feature-settings__children-toolbar";
+          const toolbarLabel = document.createElement("span");
+          toolbarLabel.className = "rsl-feature-settings__children-summary";
+          toolbarLabel.textContent = "Sidebar items";
+          const actions = document.createElement("span");
+          actions.className = "rsl-feature-settings__children-actions";
+          for (const [action, labelText, enabled] of [
+            ["enable", "Show all", true],
+            ["disable", "Hide all", false]
+          ]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "rsl-feature-settings__bulk-action";
+            button.textContent = labelText;
+            button.setAttribute("data-rsl-feature-bulk", action);
+            button.setAttribute("data-rsl-feature-bulk-parent", definition.key);
+            button.setAttribute("aria-label", `${labelText} sidebar items`);
+            button.addEventListener("click", (event) => {
+              if (
+                event.isTrusted !== true ||
+                !featureSettingsLoaded ||
+                !isFeatureEnabled(definition.key)
+              ) {
+                return;
+              }
+              const previous = { ...featureSettings };
+              const next = { ...featureSettings };
+              definition.children.forEach((child) => {
+                next[child.key] = enabled;
+              });
+              void saveFeatureSettings(next, previous);
+            });
+            actions.append(button);
+          }
+          toolbar.append(toolbarLabel, actions);
+          children.append(toolbar);
+        }
+        let currentSection = "";
+        let currentSectionIndex = 0;
         for (const child of definition.children) {
+          if (child.section && child.section !== currentSection) {
+            currentSection = child.section;
+            const sectionHeading = document.createElement("h4");
+            sectionHeading.className = "rsl-feature-settings__children-heading";
+            sectionHeading.textContent = currentSection;
+            children.append(sectionHeading);
+            currentSectionIndex = 0;
+          }
           const childDefinition = FEATURE_SETTING_DEFINITIONS.find(
             (candidate) => candidate.key === child.key
           );
           if (childDefinition) {
-            children.append(createSettingRow(childDefinition));
+            const childRow = createSettingRow(childDefinition);
+            childRow.setAttribute(
+              "data-rsl-feature-section-index",
+              String(currentSectionIndex)
+            );
+            childRow.setAttribute(
+              "data-rsl-feature-section-column",
+              currentSectionIndex % 2 === 0 ? "left" : "right"
+            );
+            currentSectionIndex += 1;
+            children.append(childRow);
           }
         }
         disclosure.addEventListener("click", () => {
@@ -14415,7 +14752,6 @@
     dialog.querySelector("[data-rsl-feature-reset]")?.addEventListener("click", (event) => {
       if (
         event.isTrusted !== true ||
-        featureSettingsSaving ||
         !featureSettingsLoaded
       ) {
         return;
@@ -14555,6 +14891,56 @@
     }
   }
 
+  function flushFeatureSettingsReconcile() {
+    if (featureSettingsReconcileFrame !== null) {
+      if (
+        featureSettingsReconcileFrame !== -1 &&
+        typeof window.cancelAnimationFrame === "function"
+      ) {
+        window.cancelAnimationFrame(featureSettingsReconcileFrame);
+      }
+      featureSettingsReconcileFrame = null;
+    }
+    if (featureSettingsReconcileTimer !== null) {
+      window.clearTimeout(featureSettingsReconcileTimer);
+      featureSettingsReconcileTimer = null;
+    }
+    featureSettingsReconcileScheduled = false;
+    if (featureSettingsEqual(featureSettingsApplied, featureSettings)) {
+      return false;
+    }
+    const previous = { ...featureSettingsApplied };
+    const next = { ...featureSettings };
+    featureSettingsApplied = next;
+    reconcileFeatureSettings(previous, next);
+    return true;
+  }
+
+  function scheduleFeatureSettingsReconcile() {
+    if (!featureSettingsLoaded || featureSettingsReconcileScheduled) {
+      return false;
+    }
+    featureSettingsReconcileScheduled = true;
+    const afterPaint = () => {
+      featureSettingsReconcileFrame = null;
+      featureSettingsReconcileTimer = window.setTimeout(() => {
+        featureSettingsReconcileTimer = null;
+        flushFeatureSettingsReconcile();
+      }, 0);
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      featureSettingsReconcileFrame = window.requestAnimationFrame(afterPaint);
+    } else {
+      featureSettingsReconcileFrame = -1;
+      featureSettingsReconcileTimer = window.setTimeout(() => {
+        featureSettingsReconcileFrame = null;
+        featureSettingsReconcileTimer = null;
+        flushFeatureSettingsReconcile();
+      }, 0);
+    }
+    return true;
+  }
+
   function reconcileFeatureSettings(previousSettings, nextSettings) {
     if (!featureSettingsLoaded) {
       return;
@@ -14566,11 +14952,25 @@
     ) {
       cleanupSidebarFeature();
     }
-    if (
-      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
-      previousSettings.sidebarGiftCards !== nextSettings.sidebarGiftCards ||
-      previousSettings.sidebarOfficialStore !== nextSettings.sidebarOfficialStore
-    ) {
+    const sidebarVisibilityKeys = [
+      "sidebarShortcuts",
+      "sidebarHome",
+      "sidebarProfile",
+      "sidebarRobloxPlus",
+      "sidebarMessages",
+      "sidebarFriends",
+      "sidebarAvatar",
+      "sidebarInventory",
+      "sidebarTrade",
+      "sidebarCommunities",
+      "sidebarBlog",
+      "sidebarOfficialStore",
+      "sidebarGiftCards"
+    ];
+    const sidebarVisibilityChanged = sidebarVisibilityKeys.some(
+      (key) => previousSettings[key] !== nextSettings[key]
+    );
+    if (sidebarVisibilityChanged) {
       cleanupNativeSidebarVisibility();
     }
     if (
@@ -14597,6 +14997,45 @@
     }
     if (previousSettings.gameCcu !== nextSettings.gameCcu) {
       cleanupGameTileCcuFeature();
+    }
+    if (
+      previousSettings.gameCcuHoverGraph !== nextSettings.gameCcuHoverGraph
+    ) {
+      cleanupGameTileCcuGraphDisplay();
+    }
+
+    const onlySidebarChanged = sidebarVisibilityChanged ||
+      previousSettings.sidebarCustomShortcuts !==
+        nextSettings.sidebarCustomShortcuts;
+    const anyNonSidebarChange = FEATURE_SETTING_DEFINITIONS.some(
+      ({ key }) =>
+        ![...sidebarVisibilityKeys, "sidebarCustomShortcuts"].includes(key) &&
+        previousSettings[key] !== nextSettings[key]
+    );
+    if (onlySidebarChanged && !anyNonSidebarChange) {
+      if (isFeatureEnabled("sidebarShortcuts")) {
+        syncNativeSidebarVisibility();
+        if (isFeatureEnabled("sidebarCustomShortcuts")) {
+          mountSidebar();
+        }
+      }
+      return;
+    }
+    if (
+      previousSettings.gameCcuHoverGraph !== nextSettings.gameCcuHoverGraph &&
+      FEATURE_SETTING_DEFINITIONS.every(
+        ({ key }) =>
+          key === "gameCcuHoverGraph" ||
+          previousSettings[key] === nextSettings[key]
+      )
+    ) {
+      if (
+        isFeatureEnabled("gameCcu") &&
+        isFeatureEnabled("gameCcuHoverGraph")
+      ) {
+        mountGameTileCcuGraphTriggers();
+      }
+      return;
     }
     mountExtensionFeatures();
   }
@@ -15154,11 +15593,13 @@
         const nextSettings = normalizeFeatureSettings(
           changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
         );
-        if (!featureSettingsEqual(featureSettings, nextSettings)) {
-          const previousSettings = { ...featureSettings };
+        if (featureSettingsPendingWrites > 0) {
+          featureSettingsDeferredStorageValue = nextSettings;
+        } else if (!featureSettingsEqual(featureSettings, nextSettings)) {
           featureSettings = nextSettings;
+          featureSettingsConfirmed = { ...nextSettings };
           if (featureSettingsLoaded) {
-            reconcileFeatureSettings(previousSettings, nextSettings);
+            scheduleFeatureSettingsReconcile();
           }
           renderFeatureSettingsDialog();
         }
@@ -15281,6 +15722,7 @@
       ]) => {
         if (featureLoadGeneration === featureSettingsLoadGeneration) {
           featureSettings = storedFeatureSettings;
+          featureSettingsConfirmed = { ...storedFeatureSettings };
         }
         if (collapsedLoadGeneration === quickSettingsCollapsedLoadGeneration) {
           quickSettingsCollapsed = storedCollapsed;
@@ -15303,6 +15745,7 @@
       })
       .finally(() => {
         featureSettingsLoaded = true;
+        featureSettingsApplied = { ...featureSettings };
         renderFeatureSettingsDialog();
         mountExtensionFeatures();
       });
@@ -15342,6 +15785,8 @@
     contentTestHooks.openFeatureSettingsDialog = openFeatureSettingsDialog;
     contentTestHooks.setFeatureSettingsForTests = (rawValue) => {
       featureSettings = normalizeFeatureSettings(rawValue);
+      featureSettingsConfirmed = { ...featureSettings };
+      featureSettingsApplied = { ...featureSettings };
       featureSettingsLoaded = true;
       renderFeatureSettingsDialog();
     };
@@ -15351,8 +15796,11 @@
         { ...featureSettings, ...(changedFlags || {}) },
         previous
       );
+      flushFeatureSettingsReconcile();
       return serializeFeatureSettings(featureSettings);
     };
+    contentTestHooks.flushFeatureSettingsReconcileForTests =
+      flushFeatureSettingsReconcile;
     contentTestHooks.setBestFriendsHomeVisibility = setBestFriendsHomeVisibility;
     contentTestHooks.getRoToolLogoMarkup = getRoToolLogoMarkup;
     contentTestHooks.syncFeatureSettingsButtonGeometry =

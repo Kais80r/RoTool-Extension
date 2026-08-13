@@ -9,13 +9,27 @@ const contentSource = fs.readFileSync(path.join(projectRoot, "content.js"), "utf
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-for (const setting of [
+const sidebarSettings = [
   ["sidebarCustomShortcuts", "Custom Shortcuts"],
-  ["sidebarGiftCards", "Buy Gift Cards"],
+  ["sidebarHome", "Home"],
+  ["sidebarProfile", "Profile"],
+  ["sidebarRobloxPlus", "Roblox Plus"],
+  ["sidebarMessages", "Messages"],
+  ["sidebarFriends", "Friends"],
+  ["sidebarAvatar", "Avatar"],
+  ["sidebarInventory", "Inventory"],
+  ["sidebarTrade", "Trade"],
+  ["sidebarCommunities", "Communities"],
+  ["sidebarBlog", "Blog"],
   ["sidebarOfficialStore", "Official Store"],
+  ["sidebarGiftCards", "Buy Gift Cards"]
+];
+for (const setting of [
+  ...sidebarSettings,
   ["quickPlayActionPlay", "Quick Play"],
   ["quickPlayActionPrivate", "Private Servers"],
-  ["quickPlayActionRandom", "Random Server"]
+  ["quickPlayActionRandom", "Random Server"],
+  ["gameCcuHoverGraph", "CCU Hover Graph"]
 ]) {
   const [key, label] = setting;
   assert.match(
@@ -27,13 +41,18 @@ for (const setting of [
 
 assert.match(
   contentSource,
-  /key: "sidebarShortcuts"[\s\S]*?label: "Sidebar Customization"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "sidebarCustomShortcuts"[\s\S]*?key: "sidebarGiftCards"[\s\S]*?key: "sidebarOfficialStore"[\s\S]*?\]/,
-  "native sidebar visibility controls must be nested beneath Sidebar Shortcuts"
+  /key: "sidebarShortcuts"[\s\S]*?label: "Sidebar Customization"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "sidebarCustomShortcuts"[\s\S]*?key: "sidebarHome"[\s\S]*?key: "sidebarProfile"[\s\S]*?key: "sidebarRobloxPlus"[\s\S]*?key: "sidebarMessages"[\s\S]*?key: "sidebarFriends"[\s\S]*?key: "sidebarAvatar"[\s\S]*?key: "sidebarInventory"[\s\S]*?key: "sidebarTrade"[\s\S]*?key: "sidebarCommunities"[\s\S]*?key: "sidebarBlog"[\s\S]*?key: "sidebarOfficialStore"[\s\S]*?key: "sidebarGiftCards"[\s\S]*?\]/,
+  "every visible sidebar item must have a nested individual setting"
 );
 assert.match(
   contentSource,
   /key: "quickPlay"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "quickPlayActionPlay"[\s\S]*?key: "quickPlayActionPrivate"[\s\S]*?key: "quickPlayActionRandom"[\s\S]*?\]/,
   "per-button controls must be nested beneath Quick Play & Servers"
+);
+assert.match(
+  contentSource,
+  /key: "gameCcu"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "gameCcuHoverGraph"[\s\S]*?\]/,
+  "the hover graph must be independently configurable beneath Player Counts"
 );
 assert.match(contentSource, /const FEATURE_SETTING_DEFINITIONS = Object\.freeze\(/);
 assert.match(contentSource, /FEATURE_DEFINITIONS\.flatMap/);
@@ -83,11 +102,76 @@ assert.match(
 assert.match(stylesSource, /\.rsl-feature-settings__disclosure/);
 assert.match(stylesSource, /\.rsl-feature-settings__children/);
 assert.match(stylesSource, /\.rsl-feature-settings__children\[hidden\]/);
+assert.match(contentSource, /data-rsl-feature-bulk/);
+assert.match(contentSource, /data-rsl-feature-bulk-parent/);
+assert.match(contentSource, /\["enable", "Show all", true\]/);
+assert.match(contentSource, /\["disable", "Hide all", false\]/);
+assert.match(contentSource, /toolbarLabel\.textContent = "Sidebar items"/);
+assert.match(contentSource, /sectionHeading\.textContent = currentSection/);
+assert.match(contentSource, /section: "RoTool"/);
+assert.match(contentSource, /section: "Roblox"/);
+assert.doesNotMatch(contentSource, /sidebarThemes|section: "Other extensions"/);
+const bulkHandlerSource = contentSource.slice(
+  contentSource.indexOf('if (definition.key === "sidebarShortcuts")'),
+  contentSource.indexOf("let currentSection", contentSource.indexOf('if (definition.key === "sidebarShortcuts")'))
+);
+assert.match(bulkHandlerSource, /definition\.children\.forEach\(\(child\) => \{\s*next\[child\.key\] = enabled/);
+assert.equal(
+  (bulkHandlerSource.match(/saveFeatureSettings\(/g) || []).length,
+  1,
+  "Show all / Hide all must compose one persisted settings write"
+);
+assert.doesNotMatch(
+  bulkHandlerSource,
+  /mountExtensionFeatures\(/,
+  "a sidebar bulk action must not trigger a full feature remount"
+);
+assert.match(bulkHandlerSource, /void saveFeatureSettings\(next, previous\)/);
+assert.doesNotMatch(
+  bulkHandlerSource,
+  /reconcileFeatureSettings\(/,
+  "bulk choices should use the one optimistic reconcile inside saveFeatureSettings"
+);
+const saveFeatureSettingsSource = contentSource.slice(
+  contentSource.indexOf("async function saveFeatureSettings("),
+  contentSource.indexOf("function createFeatureSettingsDialog(")
+);
+assert.ok(
+  saveFeatureSettingsSource.indexOf("reconcileFeatureSettings(fallbackSettings, featureSettings)") <
+    saveFeatureSettingsSource.indexOf("featureSettingsStorageSet(savedSnapshot)"),
+  "settings must reconcile visibly before the deferred storage write"
+);
+assert.ok(
+  saveFeatureSettingsSource.indexOf("renderFeatureSettingsDialog()") <
+    saveFeatureSettingsSource.indexOf("featureSettingsStorageSet(savedSnapshot)"),
+  "switches must render their optimistic state before storage finishes"
+);
+assert.match(
+  contentSource,
+  /querySelectorAll\("\[data-rsl-feature-bulk\]"\)[\s\S]*?data-rsl-feature-bulk-parent[\s\S]*?button\.disabled[\s\S]*?!isFeatureEnabled\(parentKey\)/,
+  "bulk actions must clearly disable with their parent"
+);
+
+const childPanelCssStart = stylesSource.indexOf(".rsl-feature-settings__children {");
+const childPanelCssEnd = stylesSource.indexOf("\n}", childPanelCssStart) + 2;
+const childPanelCss = stylesSource.slice(childPanelCssStart, childPanelCssEnd);
+assert.doesNotMatch(childPanelCss, /box-shadow|inset|#335fff|action-emphasis/);
+const childPanelBackground = childPanelCss.match(/background\s*:\s*([^;]+);/)?.[1]?.trim();
+assert.ok(
+  !childPanelBackground || childPanelBackground === "transparent",
+  "the long child list should stay flush instead of becoming a heavy inset card"
+);
+assert.match(stylesSource, /\.rsl-feature-settings__children \.rsl-feature-settings__row--child\s*\{[\s\S]*?min-height:\s*(?:4[4-9]|[5-9]\d)px/);
+assert.match(stylesSource, /\.rsl-feature-settings__children \.rsl-feature-settings__copy > span\s*\{[\s\S]*?position:\s*absolute[\s\S]*?clip:/);
+assert.match(stylesSource, /@media \(min-width: 620px\)[\s\S]*?data-rsl-feature-children="sidebarShortcuts"[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+assert.match(contentSource, /data-rsl-feature-section-index/);
+assert.match(contentSource, /data-rsl-feature-section-column/);
+assert.match(stylesSource, /data-rsl-feature-section-column="right"[\s\S]*?border-left/);
+assert.match(stylesSource, /@media \(max-width: 520px\)[\s\S]*?\.rsl-feature-settings__children/);
 
 assert.match(contentSource, /const NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE = "data-rsl-native-sidebar-hidden"/);
 assert.match(contentSource, /function syncNativeSidebarVisibility\(/);
 assert.match(contentSource, /function cleanupNativeSidebarVisibility\(/);
-assert.match(contentSource, /\^\\\/giftcards\(\?:\[-\\\/\]\|\$\)/);
 assert.match(contentSource, /icon-regular-gift-card/);
 assert.match(contentSource, /icon-regular-building-store/);
 assert.match(contentSource, /#nav-giftcards/);
@@ -111,6 +195,11 @@ const nativeVisibilitySource = contentSource.slice(
   contentSource.indexOf("function getNativeSidebarSemanticKey("),
   contentSource.indexOf("function normalizeBestFriendIds(")
 );
+assert.match(nativeVisibilitySource, /link === directLink/);
+assert.match(nativeVisibilitySource, /isRedesignedStandardLink/);
+assert.match(nativeVisibilitySource, /hostname === "roblox\.com" \|\| hostname\.endsWith\("\.roblox\.com"\)/);
+assert.match(nativeVisibilitySource, /giftcards[\s\S]*?\[a-z\]\{2\}[\s\S]*?icon-regular-gift-card/);
+assert.match(nativeVisibilitySource, /row\.matches\?\.\("li\[data-ropro-sidebar-item\]"\)/);
 assert.doesNotMatch(
   nativeVisibilitySource,
   /textContent|innerText|Buy Gift Cards|Official Store/,
@@ -236,7 +325,7 @@ assert.ok(
 assert.match(readme, /Buy Gift Cards/);
 assert.match(readme, /Official Store/);
 assert.match(readme, /Quick Play[\s\S]*Private Servers[\s\S]*Random Server/);
-assert.match(readme, /hidden rather than removed|hide[^.]*rather than remov/i);
+assert.match(readme, /marked rather than removed|hide[^.]*rather than remov/i);
 
 console.log(
   "PASS RoTool advanced settings disclosure, native sidebar visibility, and per-action Quick Play configuration"

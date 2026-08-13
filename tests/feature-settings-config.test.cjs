@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.34");
+assert.equal(manifest.version, "0.16.35");
 assert.match(manifest.description, /configurable/);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -62,8 +62,14 @@ assert.doesNotMatch(
 );
 assert.match(content, /dialog\.id = FEATURE_SETTINGS_DIALOG_ID/);
 assert.match(content, /input\.setAttribute\("role", "switch"\)/);
-assert.match(content, /await featureSettingsStorageSet\(featureSettings\)/);
+assert.match(content, /featureSettingsStorageSet\(savedSnapshot\)/);
+assert.match(content, /featureSettingsSaveChain[\s\S]*?\.then\(\(\) => featureSettingsStorageSet\(savedSnapshot\)\)/);
 assert.match(content, /chrome\.storage\.onChanged\.addListener/);
+assert.match(
+  content,
+  /if \(featureSettingsPendingWrites > 0\) \{\s*featureSettingsDeferredStorageValue = nextSettings;[\s\S]*?scheduleFeatureSettingsReconcile\(\)/,
+  "cross-tab settings must be deferred safely during a local write and reconciled afterward"
+);
 assert.match(content, /contentTestHooks\.setFeatureSettingsForTests/);
 assert.match(content, /contentTestHooks\.saveFeatureSettingsForTests/);
 assert.match(content, /contentTestHooks\.setBestFriendsHomeVisibility/);
