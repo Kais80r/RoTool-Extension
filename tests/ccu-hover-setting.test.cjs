@@ -139,8 +139,12 @@ assert.match(
   reconcile,
   /previousSettings\.gameCcuHoverGraph !== nextSettings\.gameCcuHoverGraph[\s\S]*?cleanupGameTileCcuGraphDisplay\(\)/
 );
+const graphOnlyBranchStart = reconcile.search(
+  /if \(\r?\n\s+previousSettings\.gameCcuHoverGraph/
+);
+assert.ok(graphOnlyBranchStart >= 0, "the graph-only reconcile branch must exist");
 const graphOnlyBranch = reconcile.slice(
-  reconcile.indexOf("if (\n      previousSettings.gameCcuHoverGraph"),
+  graphOnlyBranchStart,
   reconcile.lastIndexOf("mountExtensionFeatures()")
 );
 assert.match(graphOnlyBranch, /FEATURE_SETTING_DEFINITIONS\.every/);

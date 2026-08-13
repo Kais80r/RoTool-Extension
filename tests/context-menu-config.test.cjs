@@ -10,7 +10,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.jso
 
 assert.equal(manifest.name, "RoTool");
 assert.equal(manifest.short_name, "RoTool");
-assert.equal(manifest.version, "0.16.35");
+assert.equal(manifest.version, "0.16.36");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 assert.ok(manifest.permissions.includes("contextMenus"));
