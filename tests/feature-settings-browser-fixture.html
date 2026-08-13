@@ -134,6 +134,9 @@
               sidebarGiftCards: true,
               sidebarOfficialStore: true,
               quickSettings: true,
+              quickSettingsOnlineStatus: true,
+              quickSettingsCurrentExperience: true,
+              quickSettingsInventory: true,
               bestFriends: true,
               friendFilters: true,
               quickPlay: true,
@@ -163,14 +166,14 @@
           roToolButton.click();
           const dialog = document.getElementById("rsl-feature-settings-dialog");
           const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
-          if (!dialog?.open || switches.length !== 24 || switches.some((input) => !input.checked)) {
-            throw new Error("Feature settings dialog did not open with twenty-four enabled switches");
+          if (!dialog?.open || switches.length !== 27 || switches.some((input) => !input.checked)) {
+            throw new Error("Feature settings dialog did not open with twenty-seven enabled switches");
           }
           const advancedButtons = Array.from(
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 2 ||
+            advancedButtons.length !== 3 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
@@ -183,11 +186,29 @@
           );
           if (
               !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
+              !disclosureNames.includes("Advanced settings for Quick Settings") ||
               !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
             new Set(disclosureNames).size !== disclosureNames.length
           ) {
             throw new Error("Advanced disclosures do not have distinct contextual accessible names");
           }
+          const quickSettingsDisclosure = dialog.querySelector(
+            '[data-rsl-feature-disclosure="quickSettings"]'
+          );
+          const quickSettingsAdvanced = document.getElementById(
+            quickSettingsDisclosure?.getAttribute("aria-controls") || ""
+          );
+          quickSettingsDisclosure?.click();
+          if (
+            quickSettingsDisclosure?.getAttribute("aria-expanded") !== "true" ||
+            quickSettingsAdvanced?.hidden ||
+            quickSettingsAdvanced?.getAttribute("role") !== "group" ||
+            quickSettingsAdvanced?.getAttribute("aria-label") !==
+              "Quick Settings advanced settings"
+          ) {
+            throw new Error("Quick Settings Advanced is not an accessible disclosure");
+          }
+          quickSettingsDisclosure.click();
           const headerLogo = roToolButton.querySelector(".rsl-navbar-settings-logo");
           const dialogLogo = dialog.querySelector(".rsl-feature-settings__logo");
           const buttonRect = roToolButton.getBoundingClientRect();
@@ -256,6 +277,107 @@
             dialog.querySelector("[data-rsl-feature-key='quickPlayActionRandom']")?.disabled
           ) {
             throw new Error("Feature settings did not re-enable a feature");
+          }
+
+          const quickSettingsSwitch = dialog.querySelector(
+            "[data-rsl-feature-key='quickSettings']"
+          );
+          const quickSettingsOnlineStatusSwitch = dialog.querySelector(
+            "[data-rsl-feature-key='quickSettingsOnlineStatus']"
+          );
+          const quickSettingsCurrentExperienceSwitch = dialog.querySelector(
+            "[data-rsl-feature-key='quickSettingsCurrentExperience']"
+          );
+          const quickSettingsInventorySwitch = dialog.querySelector(
+            "[data-rsl-feature-key='quickSettingsInventory']"
+          );
+          await hooks.saveFeatureSettingsForTests({
+            quickSettingsCurrentExperience: false
+          });
+          await hooks.saveFeatureSettingsForTests({ quickSettings: false });
+          if (
+            quickSettingsSwitch.checked ||
+            !quickSettingsOnlineStatusSwitch.checked ||
+            quickSettingsCurrentExperienceSwitch.checked ||
+            !quickSettingsInventorySwitch.checked ||
+            !quickSettingsOnlineStatusSwitch.disabled ||
+            !quickSettingsCurrentExperienceSwitch.disabled ||
+            !quickSettingsInventorySwitch.disabled
+          ) {
+            throw new Error(
+              "The Quick Settings master did not preserve and disable its individual controls"
+            );
+          }
+          const quickSettingsParentOffSaved =
+            globalThis.__rslFixtureStorage.rslFeatureSettingsV1;
+          if (
+            quickSettingsParentOffSaved.flags?.quickSettings !== false ||
+            quickSettingsParentOffSaved.flags?.quickSettingsOnlineStatus !== true ||
+            quickSettingsParentOffSaved.flags?.quickSettingsCurrentExperience !== false ||
+            quickSettingsParentOffSaved.flags?.quickSettingsInventory !== true
+          ) {
+            throw new Error("Quick Settings parent-off persistence erased a child choice");
+          }
+          await hooks.saveFeatureSettingsForTests({ quickSettings: true });
+          if (
+            !quickSettingsSwitch.checked ||
+            !quickSettingsOnlineStatusSwitch.checked ||
+            quickSettingsCurrentExperienceSwitch.checked ||
+            !quickSettingsInventorySwitch.checked ||
+            quickSettingsOnlineStatusSwitch.disabled ||
+            quickSettingsCurrentExperienceSwitch.disabled ||
+            quickSettingsInventorySwitch.disabled
+          ) {
+            throw new Error("Re-enabling Quick Settings did not restore its child choices");
+          }
+
+          globalThis.__rslFailNextStorageWrite = true;
+          await hooks.saveFeatureSettingsForTests({ quickSettingsOnlineStatus: false });
+          if (!quickSettingsOnlineStatusSwitch.checked) {
+            throw new Error(
+              "A failed Quick Settings child write did not roll its optimistic state back"
+            );
+          }
+
+          globalThis.__rslDeferStorageCallback = true;
+          const rapidQuickSettingsHide = hooks.saveFeatureSettingsForTests({
+            quickSettingsInventory: false
+          });
+          const rapidQuickSettingsShow = hooks.saveFeatureSettingsForTests({
+            quickSettingsInventory: true
+          });
+          if (!quickSettingsInventorySwitch.checked) {
+            throw new Error("Rapid Quick Settings child toggles did not paint the latest choice");
+          }
+          await Promise.resolve();
+          await Promise.resolve();
+          const firstQuickSettingsWrite = globalThis.__rslDeferredStorageCallback;
+          globalThis.__rslDeferredStorageCallback = null;
+          if (!firstQuickSettingsWrite) {
+            throw new Error("The first rapid Quick Settings child write did not start");
+          }
+          firstQuickSettingsWrite();
+          for (
+            let index = 0;
+            index < 6 && !globalThis.__rslDeferredStorageCallback;
+            index += 1
+          ) {
+            await Promise.resolve();
+          }
+          const secondQuickSettingsWrite = globalThis.__rslDeferredStorageCallback;
+          globalThis.__rslDeferredStorageCallback = null;
+          if (!secondQuickSettingsWrite) {
+            throw new Error("Rapid Quick Settings child writes were not serialized");
+          }
+          globalThis.__rslDeferStorageCallback = false;
+          secondQuickSettingsWrite();
+          await Promise.all([rapidQuickSettingsHide, rapidQuickSettingsShow]);
+          if (
+            !quickSettingsInventorySwitch.checked ||
+            globalThis.__rslFixtureStorage.rslFeatureSettingsV1?.flags
+              ?.quickSettingsInventory !== true
+          ) {
+            throw new Error("Rapid Quick Settings child toggles did not persist the latest choice");
           }
 
           const homeSwitch = dialog.querySelector("[data-rsl-feature-key='sidebarHome']");

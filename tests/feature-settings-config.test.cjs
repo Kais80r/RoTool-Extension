@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.16.40");
+assert.equal(manifest.version, "0.16.41");
 assert.match(manifest.description, /configurable/);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -20,6 +20,9 @@ assert.match(content, /const FEATURE_SETTINGS_VERSION = 1/);
 for (const key of [
   "sidebarShortcuts",
   "quickSettings",
+  "quickSettingsOnlineStatus",
+  "quickSettingsCurrentExperience",
+  "quickSettingsInventory",
   "bestFriends",
   "friendFilters",
   "quickPlay",
@@ -78,7 +81,16 @@ assert.match(content, /contentTestHooks\.syncFeatureSettingsButtonGeometry/);
 assert.match(content, /if \(isFeatureEnabled\("sidebarShortcuts"\)\)/);
 assert.match(content, /const presenceFiltersEnabled = isFeatureEnabled\("friendFilters"\)/);
 assert.match(content, /const bestFriendsEnabled = isFeatureEnabled\("bestFriends"\)/);
-assert.match(content, /const quickSettingsEnabled = isFeatureEnabled\("quickSettings"\)/);
+assert.match(
+  content,
+  /const quickSettingsEnabled = getEnabledQuickSettingAliases\(\)\.length > 0/,
+  "the Home card must depend on at least one enabled Quick Settings child"
+);
+assert.match(
+  content,
+  /key: "quickSettings"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "quickSettingsOnlineStatus"[\s\S]*?key: "quickSettingsCurrentExperience"[\s\S]*?key: "quickSettingsInventory"[\s\S]*?\]/,
+  "Quick Settings Advanced must expose exactly the three privacy rows"
+);
 assert.match(content, /if \(isFeatureEnabled\("quickPlay"\)\)/);
 assert.match(content, /if \(isFeatureEnabled\("gameCcu"\)\)/);
 assert.match(content, /function cleanupSidebarFeature\(/);
@@ -89,7 +101,7 @@ assert.match(content, /function cleanupQuickPlayFeature\(/);
 assert.match(content, /function cleanupGameTileCcuFeature\(/);
 assert.match(
   content,
-  /if \(previousSettings\.bestFriends !== nextSettings\.bestFriends\) \{\s*cleanupBestFriendsHome[\s\S]*?\}\s*if \(previousSettings\.quickSettings !== nextSettings\.quickSettings\) \{\s*cleanupQuickSettingsHome\(\)/,
+  /if \(previousSettings\.bestFriends !== nextSettings\.bestFriends\) \{\s*cleanupBestFriendsHome[\s\S]*?\}\s*const quickSettingsKeys = \[[\s\S]*?"quickSettingsOnlineStatus"[\s\S]*?"quickSettingsCurrentExperience"[\s\S]*?"quickSettingsInventory"[\s\S]*?const quickSettingsChanged = quickSettingsKeys\.some/,
   "Best Friends and Quick Settings must have independent cleanup lifecycles"
 );
 assert.match(

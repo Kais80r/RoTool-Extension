@@ -26,6 +26,9 @@ const sidebarSettings = [
 ];
 for (const setting of [
   ...sidebarSettings,
+  ["quickSettingsOnlineStatus", "Online Status"],
+  ["quickSettingsCurrentExperience", "Current Experience"],
+  ["quickSettingsInventory", "Inventory Visibility"],
   ["quickPlayActionPlay", "Quick Play"],
   ["quickPlayActionPrivate", "Private Servers"],
   ["quickPlayActionRandom", "Random Server"],
@@ -43,6 +46,11 @@ assert.match(
   contentSource,
   /key: "sidebarShortcuts"[\s\S]*?label: "Sidebar Customization"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "sidebarCustomShortcuts"[\s\S]*?key: "sidebarHome"[\s\S]*?key: "sidebarProfile"[\s\S]*?key: "sidebarRobloxPlus"[\s\S]*?key: "sidebarMessages"[\s\S]*?key: "sidebarFriends"[\s\S]*?key: "sidebarAvatar"[\s\S]*?key: "sidebarInventory"[\s\S]*?key: "sidebarTrade"[\s\S]*?key: "sidebarCommunities"[\s\S]*?key: "sidebarBlog"[\s\S]*?key: "sidebarOfficialStore"[\s\S]*?key: "sidebarGiftCards"[\s\S]*?\]/,
   "every visible sidebar item must have a nested individual setting"
+);
+assert.match(
+  contentSource,
+  /key: "quickSettings"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "quickSettingsOnlineStatus"[\s\S]*?key: "quickSettingsCurrentExperience"[\s\S]*?key: "quickSettingsInventory"[\s\S]*?\]/,
+  "the three Home privacy controls must be nested beneath Quick Settings"
 );
 assert.match(
   contentSource,

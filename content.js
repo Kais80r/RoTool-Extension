@@ -601,7 +601,24 @@
       key: "quickSettings",
       group: "Interface",
       label: "Quick Settings",
-      description: "Show Online Status, Current Experience, and Inventory controls on Home."
+      description: "Show selected Roblox privacy controls on Home.",
+      children: [
+        Object.freeze({
+          key: "quickSettingsOnlineStatus",
+          label: "Online Status",
+          description: "Show the Online Status control."
+        }),
+        Object.freeze({
+          key: "quickSettingsCurrentExperience",
+          label: "Current Experience",
+          description: "Show the Current Experience control."
+        }),
+        Object.freeze({
+          key: "quickSettingsInventory",
+          label: "Inventory Visibility",
+          description: "Show the Inventory Visibility control."
+        })
+      ]
     }),
     Object.freeze({
       key: "bestFriends",
@@ -1078,6 +1095,35 @@
 
   function isFeatureEnabled(key) {
     return featureSettings[key] !== false;
+  }
+
+  const QUICK_SETTING_FEATURE_KEYS = Object.freeze({
+    onlineStatus: "quickSettingsOnlineStatus",
+    currentExperience: "quickSettingsCurrentExperience",
+    inventory: "quickSettingsInventory"
+  });
+
+  function isQuickSettingEnabled(alias, settings = featureSettings) {
+    const featureKey = QUICK_SETTING_FEATURE_KEYS[alias];
+    return Boolean(
+      featureKey &&
+        settings?.quickSettings !== false &&
+        settings?.[featureKey] !== false
+    );
+  }
+
+  function getEnabledQuickSettingAliases(settings = featureSettings) {
+    return QUICK_SETTING_DEFINITIONS
+      .map(({ alias }) => alias)
+      .filter((alias) => isQuickSettingEnabled(alias, settings));
+  }
+
+  function hasQuickSettingsSnapshotForEnabledControls() {
+    const requiredAliases = getEnabledQuickSettingAliases();
+    return (
+      requiredAliases.length > 0 &&
+      requiredAliases.every((alias) => Boolean(quickSettingsValues[alias]))
+    );
   }
 
   function isQuickPlayActionEnabled(action) {
@@ -5907,6 +5953,7 @@
       quickSettingsLoadState,
       quickSettingsErrorCode,
       quickSettingsNotice,
+      getEnabledQuickSettingAliases(),
       Array.from(quickSettingsPendingOperations.keys()).sort(),
       QUICK_SETTING_SNAPSHOT_ALIASES.map((alias) => {
         const setting = quickSettingsValues[alias];
@@ -6016,7 +6063,12 @@
     select.value = setting?.value || "";
     select.disabled = disabled;
     select.addEventListener("change", (event) => {
-      if (event.isTrusted !== true || disabled || !setting) {
+      if (
+        event.isTrusted !== true ||
+        disabled ||
+        !setting ||
+        !isQuickSettingEnabled(definition.alias)
+      ) {
         return;
       }
       const requestedValue = select.value;
@@ -6324,11 +6376,20 @@
   }
 
   function renderQuickSettings(carousel) {
+    const enabledDefinitions = QUICK_SETTING_DEFINITIONS.filter(({ alias }) =>
+      isQuickSettingEnabled(alias)
+    );
+    if (enabledDefinitions.length === 0) {
+      carousel
+        ?.querySelector?.(`:scope > [${QUICK_SETTINGS_ATTRIBUTE}]`)
+        ?.remove();
+      return null;
+    }
     const section = ensureQuickSettingsSection(carousel);
     syncQuickSettingsCollapsedState(section);
     const signature = getQuickSettingsSignature();
     if (section.dataset.rslQuickSettingsSignature === signature) {
-      return;
+      return section;
     }
     const activeElement = document.activeElement;
     if (section.contains(activeElement) && activeElement?.id) {
@@ -6400,7 +6461,7 @@
     controls.className = "rsl-quick-settings__controls";
     controls.setAttribute("role", "group");
     controls.setAttribute("aria-label", "Roblox Quick Settings");
-    for (const definition of QUICK_SETTING_DEFINITIONS) {
+    for (const definition of enabledDefinitions) {
       controls.append(makeQuickSettingCard(definition));
     }
     section.replaceChildren(header, controls);
@@ -6430,12 +6491,21 @@
         quickSettingsFocusRestoreId = "";
       } else if (!focusStayedInPanel) {
         quickSettingsFocusRestoreId = "";
+      } else if (!focusTarget) {
+        // A row can disappear while its select owns focus. Do not carry that
+        // stale ID into a later unrelated render.
+        quickSettingsFocusRestoreId = "";
       }
     }
+    return section;
   }
 
   function loadQuickSettings(forceRefresh = false) {
-    if (!isFeatureEnabled("quickSettings") || !isHomePage()) {
+    if (
+      !isFeatureEnabled("quickSettings") ||
+      getEnabledQuickSettingAliases().length === 0 ||
+      !isHomePage()
+    ) {
       return Promise.resolve();
     }
     if (quickSettingsRequestPromise) {
@@ -6444,7 +6514,11 @@
     if (quickSettingsPendingOperations.size > 0) {
       return Promise.resolve();
     }
-    if (!forceRefresh && quickSettingsLoadState === "ready") {
+    if (
+      !forceRefresh &&
+      quickSettingsLoadState === "ready" &&
+      hasQuickSettingsSnapshotForEnabledControls()
+    ) {
       return Promise.resolve();
     }
 
@@ -6513,6 +6587,7 @@
     const currentExperience = quickSettingsValues.currentExperience;
     if (
       !isHomePage() ||
+      !isQuickSettingEnabled("onlineStatus") ||
       !quickSettingsViewerUserId ||
       quickSettingsLoadState !== "ready" ||
       !onlineStatus?.editable ||
@@ -6609,6 +6684,7 @@
     const setting = quickSettingsValues[alias];
     if (
       !isHomePage() ||
+      !isQuickSettingEnabled(alias) ||
       !quickSettingsViewerUserId ||
       quickSettingsLoadState !== "ready" ||
       !setting?.editable ||
@@ -8421,7 +8497,7 @@
 
   function mountBestFriendsCarousel() {
     const bestFriendsEnabled = isFeatureEnabled("bestFriends");
-    const quickSettingsEnabled = isFeatureEnabled("quickSettings");
+    const quickSettingsEnabled = getEnabledQuickSettingAliases().length > 0;
     if (!isHomePage() || (!bestFriendsEnabled && !quickSettingsEnabled)) {
       cleanupBestFriendsHome(isFriendsPage());
       cleanupQuickSettingsHome();
@@ -15021,8 +15097,52 @@
     if (previousSettings.bestFriends !== nextSettings.bestFriends) {
       cleanupBestFriendsHome(isFriendsPage() && nextSettings.bestFriends);
     }
-    if (previousSettings.quickSettings !== nextSettings.quickSettings) {
-      cleanupQuickSettingsHome();
+    const quickSettingsKeys = [
+      "quickSettings",
+      "quickSettingsOnlineStatus",
+      "quickSettingsCurrentExperience",
+      "quickSettingsInventory"
+    ];
+    const quickSettingsChanged = quickSettingsKeys.some(
+      (key) => previousSettings[key] !== nextSettings[key]
+    );
+    if (quickSettingsChanged) {
+      const hadEnabledControls =
+        getEnabledQuickSettingAliases(previousSettings).length > 0;
+      const hasEnabledControls = getEnabledQuickSettingAliases().length > 0;
+      // A child preference can change in another tab while the master is off.
+      // When both effective states are empty, preserve it without touching a
+      // Home surface that was already absent.
+      if (hadEnabledControls && !hasEnabledControls) {
+        cleanupQuickSettingsHome();
+        // Re-measure the shared Home stack immediately after the last control
+        // disappears; this keeps Best Friends in place without remounting any
+        // unrelated feature.
+        mountBestFriendsCarousel();
+      } else if (hasEnabledControls) {
+        // Preserve the current snapshot and live selects when possible. A newly
+        // exposed control is loaded only if the existing snapshot did not
+        // include it, while hiding a row never causes an unrelated remount.
+        const carousel = document.querySelector(
+          `[${BEST_FRIENDS_CAROUSEL_ATTRIBUTE}]`
+        );
+        if (carousel) {
+          renderQuickSettings(carousel);
+          const nativeCarousel = findNativeHomeFriendsCarousel();
+          if (nativeCarousel) {
+            placeBestFriendsCarousel(carousel, nativeCarousel);
+            observeBestFriendsGeometry(carousel);
+          }
+        } else {
+          mountBestFriendsCarousel();
+        }
+        if (
+          !hadEnabledControls ||
+          !hasQuickSettingsSnapshotForEnabledControls()
+        ) {
+          void loadQuickSettings(false);
+        }
+      }
     }
     const quickPlayActionsChanged =
       previousSettings.quickPlayActionPlay !== nextSettings.quickPlayActionPlay ||
@@ -15058,6 +15178,16 @@
           mountSidebar();
         }
       }
+      return;
+    }
+    if (
+      quickSettingsChanged &&
+      FEATURE_SETTING_DEFINITIONS.every(
+        ({ key }) =>
+          quickSettingsKeys.includes(key) ||
+          previousSettings[key] === nextSettings[key]
+      )
+    ) {
       return;
     }
     if (
@@ -15813,6 +15943,12 @@
     contentTestHooks.syncNativeSidebarVisibility = syncNativeSidebarVisibility;
     contentTestHooks.cleanupNativeSidebarVisibility =
       cleanupNativeSidebarVisibility;
+    contentTestHooks.isQuickSettingEnabled = isQuickSettingEnabled;
+    contentTestHooks.getEnabledQuickSettingAliases =
+      getEnabledQuickSettingAliases;
+    contentTestHooks.renderQuickSettings = renderQuickSettings;
+    contentTestHooks.loadQuickSettings = loadQuickSettings;
+    contentTestHooks.cleanupQuickSettingsHome = cleanupQuickSettingsHome;
     contentTestHooks.isQuickPlayActionEnabled = isQuickPlayActionEnabled;
     contentTestHooks.makeQuickPlaySurface = makeQuickPlaySurface;
     contentTestHooks.cancelQueuedPrivateServerSupportRequests =

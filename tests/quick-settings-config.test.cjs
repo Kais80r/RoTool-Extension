@@ -18,7 +18,7 @@ function functionSource(source, name, nextName) {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-assert.equal(manifest.version, "0.16.40");
+assert.equal(manifest.version, "0.16.41");
 assert.match(manifest.description, /Quick Settings/);
 assert.ok(manifest.host_permissions.includes("https://apis.roblox.com/*"));
 
@@ -462,7 +462,10 @@ assert.match(readme, /CSRF token stays only in the extension worker's memory/);
 assert.match(readme, /\*\*Online Status\*\*, \*\*Current Experience\*\*, and \*\*Inventory Visibility\*\* are separate controls/);
 assert.match(readme, /automatically change Current Experience to the matching audience whenever Online Status changes/);
 assert.match(readme, /restores the previous Experience choice whenever Roblox still permits it/);
-assert.match(readme, /compact three-row settings stack anchored to the left/);
+assert.match(readme, /compact settings stack anchored to the left/);
+assert.match(readme, /Expand \*\*Advanced\*\* beneath Quick Settings to show or hide them independently/);
+assert.match(readme, /hiding every control removes the whole Home card and skips its Roblox settings request/);
+assert.match(readme, /including when the Current Experience row itself is hidden/);
 assert.match(readme, /\*\*Hide\*\* minimizes the card/);
 
 console.log("PASS RoTool Quick Settings API, trusted mutation, UI, and layout contract");
