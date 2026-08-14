@@ -322,8 +322,13 @@ const quickPlayResultSource = contentSource.slice(
 assert.match(quickPlayResultSource, /const action = button\.getAttribute\(QUICK_PLAY_ACTION_ATTRIBUTE\)/);
 assert.match(
   quickPlayResultSource,
-  /const action =[\s\S]*?if \(\s*!isQuickPlayActionEnabled\(action\)[\s\S]*?clearQuickPlayFeedback\(button\)/,
-  "stale or forged page results must pass the specific child-action guard before changing UI state"
+  /if \(gameEventSurface\) \{[\s\S]*?!isFeatureEnabled\("gameEvents"\)[\s\S]*?action !== "play"[\s\S]*?result\?\.action !== "play"[\s\S]*?handleGameEventJoinResult\(button, result\.code\)[\s\S]*?return;/,
+  "Game Events results need their own feature, action, version, and result-code guard"
+);
+assert.match(
+  quickPlayResultSource,
+  /if \(\s*!isFeatureEnabled\("quickPlay"\)[\s\S]*?!isQuickPlayActionEnabled\(action\)[\s\S]*?result\?\.action !== action[\s\S]*?clearQuickPlayFeedback\(button\)/,
+  "stale or forged Quick Play results must pass both feature and child-action guards before changing UI state"
 );
 const randomServerRequestSource = contentSource.slice(
   contentSource.indexOf("function handleRandomServerRequest("),

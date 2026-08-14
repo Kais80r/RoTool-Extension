@@ -8,6 +8,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const contentSource = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
 
 const sidebarDefinitions = [
+  ["sidebarGameEvents", "Game Events", null],
   ["sidebarServerHistory", "Server History", null],
   ["sidebarCustomShortcuts", "Custom Shortcuts", null],
   ["sidebarHome", "Home", "home"],
@@ -46,7 +47,9 @@ for (const [key] of sidebarDefinitions) {
   assert.equal(hooks.defaultFeatureSettings[key], true, `${key} must default on`);
 }
 assert.equal(hooks.defaultFeatureSettings.sidebarShortcuts, true);
+assert.equal(hooks.defaultFeatureSettings.sidebarGameEvents, true);
 assert.equal(hooks.defaultFeatureSettings.sidebarServerHistory, true);
+assert.equal(hooks.defaultFeatureSettings.gameEvents, true);
 assert.equal(hooks.defaultFeatureSettings.serverHistory, false);
 assert.equal(hooks.defaultFeatureSettings.gameCcuHoverGraph, true);
 const playerCountsDefinition = hooks.featureDefinitions.find(
@@ -83,7 +86,9 @@ assert.equal(oldPayload.sidebarGiftCards, false);
 assert.equal(oldPayload.quickPlay, false);
 assert.equal(oldPayload.gameCcu, true);
 assert.equal(oldPayload.sidebarHome, true);
+assert.equal(oldPayload.sidebarGameEvents, true);
 assert.equal(oldPayload.sidebarServerHistory, true);
+assert.equal(oldPayload.gameEvents, true);
 assert.equal(oldPayload.serverHistory, false);
 assert.equal(oldPayload.gameCcuHoverGraph, true);
 const oldCountsOffPayload = hooks.normalizeFeatureSettings({

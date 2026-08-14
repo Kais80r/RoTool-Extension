@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.17.6");
+assert.equal(manifest.version, "0.18.0");
 assert.match(manifest.description, /configurable/i);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -19,6 +19,7 @@ assert.match(content, /const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV
 assert.match(content, /const FEATURE_SETTINGS_VERSION = 1/);
 for (const key of [
   "sidebarShortcuts",
+  "sidebarGameEvents",
   "sidebarServerHistory",
   "quickSettings",
   "quickSettingsOnlineStatus",
@@ -28,6 +29,7 @@ for (const key of [
   "friendFilters",
   "quickPlay",
   "gameCcu",
+  "gameEvents",
   "serverHistory",
   "copyRobloxIds"
 ]) {
@@ -37,6 +39,16 @@ assert.match(
   content,
   /FEATURE_SETTING_DEFINITIONS\.map\(\(\{ key, defaultEnabled \}\) =>\s*\[\s*key,\s*defaultEnabled !== false\s*\]\s*\)/,
   "feature defaults must be explicit so opt-in features do not silently become enabled"
+);
+assert.match(
+  content,
+  /key: "gameEvents"[\s\S]*?label: "Game Events"/,
+  "Game Events must have its own independently configurable feature"
+);
+assert.match(
+  content,
+  /key: "sidebarGameEvents"[\s\S]*?label: "Game Events"/,
+  "the independently remembered Game Events sidebar choice must default on"
 );
 assert.match(
   content,

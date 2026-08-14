@@ -10,6 +10,7 @@
   const QUICK_PLAY_SURFACE_ATTRIBUTE = "data-rsl-quick-play-surface";
   const QUICK_PLAY_ACTION_ATTRIBUTE = "data-rsl-quick-play-action";
   const QUICK_PLAY_PLACE_ID_ATTRIBUTE = "data-rsl-quick-play-place-id";
+  const GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE = "data-rsl-game-events-launch-surface";
   const QUICK_PLAY_RESULT_EVENT = "rotool:quick-play-result:v1";
   const RANDOM_SERVER_REQUEST_EVENT = "rotool:random-server-request:v1";
   const RANDOM_SERVER_RESPONSE_EVENT = "rotool:random-server-response:v1";
@@ -115,7 +116,9 @@
       surface.querySelectorAll(`button[${QUICK_PLAY_ACTION_ATTRIBUTE}]`)
     ).filter(
       (candidate) =>
-        candidate.closest(`[${QUICK_PLAY_SURFACE_ATTRIBUTE}]`) === surface
+        candidate.closest(
+          `[${QUICK_PLAY_SURFACE_ATTRIBUTE}], [${GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE}]`
+        ) === surface
     );
     if (!ownedButtons.includes(button)) {
       ownedButtons.push(button);
@@ -359,8 +362,14 @@
     }
 
     const action = button.getAttribute(QUICK_PLAY_ACTION_ATTRIBUTE);
-    const surface = button.closest(`[${QUICK_PLAY_SURFACE_ATTRIBUTE}]`);
-    if ((action !== "play" && action !== "random") || !surface) {
+    const quickPlaySurface = button.closest(`[${QUICK_PLAY_SURFACE_ATTRIBUTE}]`);
+    const gameEventSurface = button.closest(`[${GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE}]`);
+    const surface = gameEventSurface || quickPlaySurface;
+    if (
+      (action !== "play" && action !== "random") ||
+      !surface ||
+      (gameEventSurface && action !== "play")
+    ) {
       return false;
     }
 

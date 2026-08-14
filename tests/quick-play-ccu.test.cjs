@@ -3098,17 +3098,15 @@ async function runContentCcuGraphBehaviorContracts() {
   assert.match(upLineRule, /stroke:\s*#38c976/i, "rising edges must be green");
   assert.match(downLineRule, /stroke:\s*#ff4d61/i, "falling edges must be red");
   assert.match(flatLineRule, /stroke:\s*#aab1bd/i, "unchanged edges must be gray");
-  assert.match(
-    stylesSource,
-    /\.rsl-game-ccu-graph__latest-point--up\s*\{[^}]*fill:\s*#38c976/i
+  assert.doesNotMatch(
+    contentSource,
+    /rsl-game-ccu-graph__latest-point/,
+    "the saved series must not render a stuck endpoint cursor"
   );
-  assert.match(
+  assert.doesNotMatch(
     stylesSource,
-    /\.rsl-game-ccu-graph__latest-point--down\s*\{[^}]*fill:\s*#ff4d61/i
-  );
-  assert.match(
-    stylesSource,
-    /\.rsl-game-ccu-graph__latest-point--flat\s*,[\s\S]*?\{[^}]*fill:\s*#aab1bd/i
+    /\.rsl-game-ccu-graph__latest-point(?:--[a-z]+)?\b/,
+    "removed endpoint cursors must not retain dead CSS"
   );
   const areaRule = /\.rsl-game-ccu-graph__area\s*\{([^}]*)\}/
     .exec(stylesSource)?.[1] || "";
@@ -4392,21 +4390,19 @@ async function runContentCcuGraphBehaviorContracts() {
       null,
       "the graph must not turn a retained history payload into thousands of point markers"
     );
-    assert.ok(
-      densePlot.querySelectorAll("circle").length <= 1,
-      "2,016 observations must still use at most the single latest-value circle"
+    assert.equal(
+      densePlot.querySelectorAll("circle").length,
+      0,
+      "dense saved history must not reintroduce an endpoint cursor circle"
     );
     assert.ok(
       densePlot.children.length <= 10,
       "dense history should remain a bounded set of aggregate SVG paths"
     );
-    const denseLatestRadius = Number(
-      denseOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-        ?.getAttribute("r")
-    );
-    assert.ok(
-      denseLatestRadius > 0 && denseLatestRadius <= 2,
-      "the latest observation should be distinct without looking like another stacked line"
+    assert.equal(
+      denseOverlay.querySelector(".rsl-game-ccu-graph__latest-point"),
+      null,
+      "the graph line itself must be the only persistent series indicator"
     );
 
     const longSegment = Array.from({ length: 200 }, (_, index) => ({
@@ -4664,11 +4660,11 @@ async function runContentCcuGraphBehaviorContracts() {
       "the resumed segment must begin at the fresh post-gap CCU value"
     );
     assert.notEqual(lineCommands[2].y, lineCommands[1].y);
-    const oneGapLatest = oneGapOverlay.querySelector(
-      ".rsl-game-ccu-graph__latest-point"
+    assert.equal(
+      oneGapOverlay.querySelector(".rsl-game-ccu-graph__latest-point"),
+      null,
+      "an internal-gap graph must end with its real line rather than a cursor dot"
     );
-    assert.equal(Number(oneGapLatest?.getAttribute("cx")), lineCommands.at(-1).x);
-    assert.equal(Number(oneGapLatest?.getAttribute("cy")), lineCommands.at(-1).y);
     const oneGapIntervals = fixture.hooks.getGameTileCcuGraphGapIntervals(
       oneGapPoints,
       oneGapPoints[0].timestamp,
@@ -4809,10 +4805,9 @@ async function runContentCcuGraphBehaviorContracts() {
       "area rendering must preserve every exact real-observation edge"
     );
     assert.equal(
-      directionalOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-        ?.getAttribute("data-trend"),
-      "up",
-      "the latest point must use only the latest real edge"
+      directionalOverlay.querySelector(".rsl-game-ccu-graph__latest-point"),
+      null,
+      "directional lines must not add a separate endpoint cursor"
     );
     assert.equal(directionalOverlay.getAttribute("data-latest-trend"), "up");
     assert.match(
@@ -4848,9 +4843,9 @@ async function runContentCcuGraphBehaviorContracts() {
       );
       assert.equal(caseOverlay.getAttribute("data-latest-trend"), latestCase.trend);
       assert.equal(
-        caseOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-          ?.getAttribute("data-trend"),
-        latestCase.trend
+        caseOverlay.querySelector(".rsl-game-ccu-graph__latest-point"),
+        null,
+        "trend changes must remain on the line and summary, not an endpoint dot"
       );
       assert.match(caseOverlay.getAttribute("aria-label"), latestCase.accessible);
     }
@@ -5151,9 +5146,9 @@ async function runContentCcuGraphBehaviorContracts() {
       "an isolated resumed point has no trend until its segment gets another sample"
     );
     assert.equal(
-      isolatedResumeOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-        ?.getAttribute("data-trend"),
-      "neutral"
+      isolatedResumeOverlay.querySelector(".rsl-game-ccu-graph__latest-point"),
+      null,
+      "an isolated saved sample must not gain a second endpoint cursor"
     );
     const isolatedResumeMarkerPath = isolatedResumeOverlay.querySelector(
       ".rsl-game-ccu-graph__isolated-point"
@@ -5165,16 +5160,6 @@ async function runContentCcuGraphBehaviorContracts() {
       isolatedResumeMarkers.length,
       1,
       "only the real isolated post-gap observation should receive an isolated marker"
-    );
-    assert.equal(
-      Number(isolatedResumeOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-        ?.getAttribute("cx")),
-      Number(isolatedResumeMarkers[0][1])
-    );
-    assert.equal(
-      Number(isolatedResumeOverlay.querySelector(".rsl-game-ccu-graph__latest-point")
-        ?.getAttribute("cy")),
-      Number(isolatedResumeMarkers[0][2])
     );
     assert.match(
       isolatedResumeOverlay.getAttribute("aria-label"),

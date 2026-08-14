@@ -578,6 +578,11 @@ try {
 
   $identicalUpdaterResult = Install-RoToolUpdaterCore -UpdaterRoot $installedUpdaterRoot -StagingRoot $stagedUpdaterRoot -StateRoot $updaterStateRoot -RunningVersion "1.1.0"
   Assert-True (-not [bool]$identicalUpdaterResult.Updated) "byte-identical updater core is a safe no-op"
+  $differentSameVersionUpdaterRoot = Join-Path $fixtureRoot "different-same-version-updater"
+  New-TestUpdaterCore -Root $differentSameVersionUpdaterRoot -Version "1.1.0" -Marker "different-build-bytes"
+  Assert-Throws {
+    [void](Install-RoToolUpdaterCore -UpdaterRoot $installedUpdaterRoot -StagingRoot $differentSameVersionUpdaterRoot -StateRoot $updaterStateRoot -RunningVersion "1.1.0")
+  } "differs without a newer updater version" "different updater bytes require a newer updater version"
   $olderUpdaterRoot = Join-Path $fixtureRoot "older-updater"
   New-TestUpdaterCore -Root $olderUpdaterRoot -Version "1.0.0" -Marker "older"
   Assert-Throws {
@@ -643,6 +648,11 @@ try {
     "updater/updater.config.json"
   ) | Sort-Object)
   Assert-SequenceEqual @((Get-ZipEntryNames $setupArchive) | Sort-Object) $expectedSetupEntries "setup archive adds only updater bootstrap files"
+  $sourceUpdaterVersion = Get-RoToolUpdaterVersionFromFile (Join-Path $ProjectRoot "updater\Update-RoTool.ps1")
+  $builtUpdaterScript = Read-ZipTextEntry -Path $updaterArchive -EntryName "Update-RoTool.ps1"
+  $builtSetupUpdaterScript = Read-ZipTextEntry -Path $setupArchive -EntryName "updater/Update-RoTool.ps1"
+  Assert-True ($builtUpdaterScript -cmatch "(?m)^\`$script:UpdaterVersion\s*=\s*\`"$([regex]::Escape($sourceUpdaterVersion))\`"\s*$") "updater archive declares the current source updater version"
+  Assert-True ($builtSetupUpdaterScript -cmatch "(?m)^\`$script:UpdaterVersion\s*=\s*\`"$([regex]::Escape($sourceUpdaterVersion))\`"\s*$") "setup archive embeds the current source updater version"
   $embeddedConfiguration = Read-ZipTextEntry -Path $setupArchive -EntryName "updater/updater.config.json" | ConvertFrom-Json
   Assert-Equal ([string]$embeddedConfiguration.repository) "sample-owner/sample-repo" "setup archive embeds release repository"
   Assert-Equal ([string]$embeddedConfiguration.browser) "auto" "setup archive uses automatic browser detection"

@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "RoTool",
   "short_name": "RoTool",
-  "version": "0.17.6",
-  "description": "Configurable Server History, Quick Settings, Player Counts, Quick Play, Random Server, Private Servers, Best Friends & ID copying.",
+  "version": "0.18.0",
+  "description": "Configurable Game Events, Server History, Quick Settings, Quick Play, Random Server, Private Servers, Best Friends & ID copying.",
   "permissions": [
     "storage",
     "alarms",

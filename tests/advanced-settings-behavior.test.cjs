@@ -749,7 +749,9 @@ const quickPlayResultHandlerSource = sourceBetween(
   "  function dispatchRandomServerResponse("
 );
 const enabledLaunchActions = new Set();
+const enabledLaunchFeatures = new Set(["quickPlay"]);
 let clearedLaunchFeedback = 0;
+const gameEventLaunchFeedback = [];
 let scheduledLaunchFeedback = 0;
 const launchFeedbackTimers = new Map();
 const handleQuickPlayResult = new Function(
@@ -757,16 +759,22 @@ const handleQuickPlayResult = new Function(
   "isQuickPlayActionEnabled",
   "QUICK_PLAY_ACTION_ATTRIBUTE",
   "QUICK_PLAY_SURFACE_ATTRIBUTE",
+  "GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE",
+  "handleGameEventJoinResult",
   "clearQuickPlayFeedback",
   "window",
   "quickPlayFeedbackTimers",
   "QUICK_PLAY_FEEDBACK_MS",
   `${quickPlayResultHandlerSource}\nreturn handleQuickPlayResult;`
 )(
-  (key) => key === "quickPlay",
+  (key) => enabledLaunchFeatures.has(key),
   (action) => enabledLaunchActions.has(action),
   "data-rsl-quick-play-action",
   "data-rsl-quick-play-surface",
+  "data-rsl-game-events-launch-surface",
+  (button, code) => {
+    gameEventLaunchFeedback.push({ button, code });
+  },
   () => {
     clearedLaunchFeedback += 1;
   },
@@ -780,7 +788,7 @@ const handleQuickPlayResult = new Function(
   1_600
 );
 
-function makeLaunchResultButton(action) {
+function makeLaunchResultButton(action, surfaceAttribute = "data-rsl-quick-play-surface") {
   const attributes = new Map([
     ["data-rsl-quick-play-action", action],
     ["aria-label", `${action} original label`]
@@ -794,7 +802,7 @@ function makeLaunchResultButton(action) {
       if (selector === "[data-rsl-quick-play-action]") {
         return button;
       }
-      if (selector === "[data-rsl-quick-play-surface]") {
+      if (selector === `[${surfaceAttribute}]`) {
         return surface;
       }
       return null;
@@ -841,6 +849,31 @@ assert.equal(enabledPlayResult.button.dataset.rslQuickPlayState, "launching");
 assert.equal(enabledPlayResult.button.disabled, true);
 assert.equal(enabledPlayResult.attributes.get("aria-busy"), "true");
 assert.equal(clearedLaunchFeedback, 1, "the enabled control proves the result harness is active");
+
+const disabledGameEventResult = makeLaunchResultButton(
+  "play",
+  "data-rsl-game-events-launch-surface"
+);
+handleQuickPlayResult({
+  target: disabledGameEventResult.button,
+  detail: JSON.stringify({ v: 1, action: "play", code: "started" })
+});
+assert.deepEqual(gameEventLaunchFeedback, [],
+  "a forged Game Events result is ignored while the Events feature is disabled");
+
+enabledLaunchFeatures.delete("quickPlay");
+enabledLaunchFeatures.add("gameEvents");
+const enabledGameEventResult = makeLaunchResultButton(
+  "play",
+  "data-rsl-game-events-launch-surface"
+);
+handleQuickPlayResult({
+  target: enabledGameEventResult.button,
+  detail: JSON.stringify({ v: 1, action: "play", code: "started" })
+});
+assert.deepEqual(gameEventLaunchFeedback, [
+  { button: enabledGameEventResult.button, code: "started" }
+], "Game Events launch feedback remains independent from the Quick Play feature switch");
 
 const randomRequestHandlerSource = sourceBetween(
   "  function handleRandomServerRequest(",

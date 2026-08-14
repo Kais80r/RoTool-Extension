@@ -4,6 +4,13 @@ const THUMBNAIL_SPECS = Object.freeze({
   profile: { path: "/v1/users/avatar-headshot", idParameter: "userIds", circular: true },
   game: { path: "/v1/places/gameicons", idParameter: "placeIds", circular: false },
   gameUniverse: { path: "/v1/games/icons", idParameter: "universeIds", circular: false },
+  eventAsset: {
+    path: "/v1/assets",
+    idParameter: "assetIds",
+    circular: false,
+    size: "768x432",
+    format: "Webp"
+  },
   community: { path: "/v1/groups/icons", idParameter: "groupIds", circular: false }
 });
 
@@ -251,6 +258,27 @@ const SERVER_HISTORY_MAX_ACCOUNTS = 8;
 const SERVER_HISTORY_CONTINUITY_GAP_MS = 3 * 60_000;
 const SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH = 100;
 const SERVER_HISTORY_FALLBACK_LOCALE = "en-US";
+const GAME_EVENTS_FEATURE_KEY = "gameEvents";
+const GAME_EVENTS_STORAGE_KEY = "rslGameEventFavoritesV1";
+const GAME_EVENTS_STORAGE_VERSION = 1;
+const GAME_EVENTS_GET_MESSAGE_TYPE = "rsl:get-game-events";
+const GAME_EVENTS_ADD_MESSAGE_TYPE = "rsl:add-game-event-favorite";
+const GAME_EVENTS_REMOVE_MESSAGE_TYPE = "rsl:remove-game-event-favorite";
+const GAME_EVENTS_SEARCH_MESSAGE_TYPE = "rsl:search-game-events-games";
+const GAME_EVENTS_MAX_GAMES_PER_ACCOUNT = 30;
+const GAME_EVENTS_MAX_ACCOUNTS = 8;
+const GAME_EVENTS_MAX_EVENTS_PER_GAME = 10;
+const GAME_EVENTS_MAX_SEARCH_RESULTS = 8;
+const GAME_EVENTS_SEARCH_QUERY_MAX_LENGTH = 100;
+const GAME_EVENTS_SEARCH_CACHE_MAX_ENTRIES = 50;
+const GAME_EVENTS_FETCH_CONCURRENCY = 4;
+const GAME_EVENTS_CACHE_TTL_MS = 10 * 60_000;
+const GAME_EVENTS_CACHE_MAX_ENTRIES =
+  GAME_EVENTS_MAX_GAMES_PER_ACCOUNT * GAME_EVENTS_MAX_ACCOUNTS;
+const GAME_EVENTS_NAME_MAX_LENGTH = 100;
+const GAME_EVENTS_TITLE_MAX_LENGTH = 200;
+const GAME_EVENTS_SUBTITLE_MAX_LENGTH = 300;
+const GAME_EVENTS_FALLBACK_LOCALE = "en-US";
 const PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE = "rsl:get-private-server-support";
 const PRIVATE_SERVER_LIST_MESSAGE_TYPE = "rsl:get-private-servers";
 const PRIVATE_SERVER_JOIN_MESSAGE_TYPE = "rsl:join-private-server";
@@ -372,6 +400,15 @@ let serverHistoryPollPromise = null;
 let serverHistoryStorageWriteTail = Promise.resolve();
 let serverHistoryStorageOverride = null;
 let serverHistorySessionIdSequence = 0;
+let gameEventsFeatureEnabled = true;
+let gameEventsFeatureReady = false;
+let gameEventsFeatureSyncPromise = null;
+let gameEventsStorageWriteTail = Promise.resolve();
+let gameEventsStorageOverride = null;
+const gameEventsCache = new Map();
+const gameEventsRequests = new Map();
+const gameEventsGameResolutionCache = new Map();
+const gameEventsSearchCache = new Map();
 const privateServerSupportCache = new Map();
 const privateServerSupportByPlaceId = new Map();
 const privateServerSupportRequestsByPlaceId = new Map();
@@ -451,6 +488,17 @@ class FriendFilterError extends Error {
     this.status = status;
     this.retryAfterMs = retryAfterMs;
     this.apiCodes = Array.isArray(apiCodes) ? apiCodes : [];
+  }
+}
+
+class GameEventsError extends Error {
+  constructor(code, status = 0, retryAfterMs = 0, viewerUserId = null) {
+    super(code);
+    this.name = "GameEventsError";
+    this.code = code;
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+    this.viewerUserId = viewerUserId;
   }
 }
 
@@ -552,8 +600,8 @@ function isRetryableFetchError(error) {
 async function fetchThumbnailFromSpec(spec, id) {
   const endpoint = new URL(spec.path, "https://thumbnails.roblox.com");
   endpoint.searchParams.set(spec.idParameter, id);
-  endpoint.searchParams.set("size", "150x150");
-  endpoint.searchParams.set("format", "Webp");
+  endpoint.searchParams.set("size", spec.size || "150x150");
+  endpoint.searchParams.set("format", spec.format || "Webp");
   endpoint.searchParams.set("isCircular", String(spec.circular));
 
   for (let attempt = 0; attempt <= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length; attempt += 1) {
@@ -7069,6 +7117,986 @@ function resetServerHistoryStateForTests() {
   serverHistorySessionIdSequence = 0;
 }
 
+function getGameEventsFeatureValue(rawValue) {
+  return !(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === FEATURE_SETTINGS_VERSION &&
+    rawValue.flags &&
+    typeof rawValue.flags === "object" &&
+    !Array.isArray(rawValue.flags) &&
+    rawValue.flags[GAME_EVENTS_FEATURE_KEY] === false
+  );
+}
+
+function applyGameEventsFeatureValue(rawValue) {
+  gameEventsFeatureEnabled = getGameEventsFeatureValue(rawValue);
+  gameEventsFeatureReady = true;
+}
+
+function syncGameEventsFeatureFromStorage() {
+  if (!chrome.storage?.local?.get) {
+    applyGameEventsFeatureValue(null);
+    return Promise.resolve();
+  }
+  const sync = new Promise((resolve) => {
+    chrome.storage.local.get(
+      { [FEATURE_SETTINGS_STORAGE_KEY]: null },
+      (result) => {
+        void chrome.runtime.lastError;
+        applyGameEventsFeatureValue(result?.[FEATURE_SETTINGS_STORAGE_KEY]);
+        resolve();
+      }
+    );
+  });
+  const trackedSync = sync.finally(() => {
+    if (gameEventsFeatureSyncPromise === trackedSync) {
+      gameEventsFeatureSyncPromise = null;
+    }
+  });
+  gameEventsFeatureSyncPromise = trackedSync;
+  return trackedSync;
+}
+
+async function assertGameEventsFeatureEnabled() {
+  if (!gameEventsFeatureReady) {
+    await (gameEventsFeatureSyncPromise || syncGameEventsFeatureFromStorage());
+  }
+  if (!gameEventsFeatureEnabled) {
+    throw new GameEventsError("DISABLED");
+  }
+}
+
+function normalizeGameEventsRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeGameEventsLocale(value) {
+  const locale = typeof value === "string"
+    ? value.trim().replace(/_/g, "-")
+    : "";
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(locale)) {
+    return GAME_EVENTS_FALLBACK_LOCALE;
+  }
+  try {
+    return Intl.getCanonicalLocales(locale)[0] || GAME_EVENTS_FALLBACK_LOCALE;
+  } catch {
+    return GAME_EVENTS_FALLBACK_LOCALE;
+  }
+}
+
+function normalizeGameEventsText(value, maxLength, required = false) {
+  const text = typeof value === "string"
+    ? value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim().slice(0, maxLength)
+    : "";
+  return text || (required ? null : "");
+}
+
+function normalizeGameEventsAddedAt(value, now = Date.now()) {
+  const timestamp = Number(value);
+  return Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp <= now
+    ? timestamp
+    : 0;
+}
+
+function normalizeStoredGameEventsGame(rawGame, now = Date.now()) {
+  if (!rawGame || typeof rawGame !== "object" || Array.isArray(rawGame)) {
+    return null;
+  }
+  const universeId = normalizeId(rawGame.universeId);
+  const placeId = normalizeId(rawGame.placeId);
+  const name = normalizeGameEventsText(
+    rawGame.name,
+    GAME_EVENTS_NAME_MAX_LENGTH,
+    true
+  );
+  const addedAt = normalizeGameEventsAddedAt(rawGame.addedAt, now);
+  return universeId && placeId && name && addedAt
+    ? { universeId, placeId, name, addedAt }
+    : null;
+}
+
+function createEmptyGameEventsAccount() {
+  return { games: [], updatedAt: 0 };
+}
+
+function normalizeStoredGameEventsAccount(rawAccount, now = Date.now()) {
+  const account = createEmptyGameEventsAccount();
+  if (!rawAccount || typeof rawAccount !== "object" || Array.isArray(rawAccount)) {
+    return account;
+  }
+  const seen = new Set();
+  for (const rawGame of Array.isArray(rawAccount.games) ? rawAccount.games : []) {
+    const game = normalizeStoredGameEventsGame(rawGame, now);
+    if (!game || seen.has(game.universeId)) {
+      continue;
+    }
+    seen.add(game.universeId);
+    account.games.push(game);
+    if (account.games.length >= GAME_EVENTS_MAX_GAMES_PER_ACCOUNT) {
+      break;
+    }
+  }
+  account.updatedAt = normalizeGameEventsAddedAt(rawAccount.updatedAt, now) ||
+    Math.max(0, ...account.games.map((game) => game.addedAt));
+  return account;
+}
+
+function createEmptyGameEventsStorage() {
+  return { version: GAME_EVENTS_STORAGE_VERSION, accounts: {} };
+}
+
+function normalizeGameEventsStorage(rawValue, now = Date.now()) {
+  const storage = createEmptyGameEventsStorage();
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    Array.isArray(rawValue) ||
+    rawValue.version !== GAME_EVENTS_STORAGE_VERSION ||
+    !rawValue.accounts ||
+    typeof rawValue.accounts !== "object" ||
+    Array.isArray(rawValue.accounts)
+  ) {
+    return storage;
+  }
+  const accounts = [];
+  for (const [rawViewerUserId, rawAccount] of Object.entries(rawValue.accounts)) {
+    const viewerUserId = normalizeId(rawViewerUserId);
+    if (!viewerUserId) continue;
+    accounts.push([
+      viewerUserId,
+      normalizeStoredGameEventsAccount(rawAccount, now)
+    ]);
+  }
+  accounts.sort((left, right) => right[1].updatedAt - left[1].updatedAt);
+  for (const [viewerUserId, account] of accounts.slice(
+    0,
+    GAME_EVENTS_MAX_ACCOUNTS
+  )) {
+    storage.accounts[viewerUserId] = account;
+  }
+  return storage;
+}
+
+function getGameEventsStorageArea() {
+  return chrome.storage?.local || null;
+}
+
+async function readGameEventsStorage(now = Date.now()) {
+  if (typeof gameEventsStorageOverride?.read === "function") {
+    return normalizeGameEventsStorage(
+      await gameEventsStorageOverride.read(),
+      now
+    );
+  }
+  const storageArea = getGameEventsStorageArea();
+  if (!storageArea?.get) return createEmptyGameEventsStorage();
+  const rawValue = await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (value, error = null) => {
+      if (settled) return;
+      settled = true;
+      error ? reject(error) : resolve(value);
+    };
+    try {
+      const result = storageArea.get(
+        { [GAME_EVENTS_STORAGE_KEY]: null },
+        (values) => {
+          const readError = chrome.runtime?.lastError;
+          finish(
+            values?.[GAME_EVENTS_STORAGE_KEY] ?? null,
+            readError ? new Error(readError.message) : null
+          );
+        }
+      );
+      if (result?.then) {
+        result.then(
+          (values) => finish(values?.[GAME_EVENTS_STORAGE_KEY] ?? null),
+          (error) => finish(null, error)
+        );
+      }
+    } catch (error) {
+      finish(null, error);
+    }
+  });
+  return normalizeGameEventsStorage(rawValue, now);
+}
+
+async function writeGameEventsStorage(value) {
+  const normalized = normalizeGameEventsStorage(value);
+  if (typeof gameEventsStorageOverride?.write === "function") {
+    await gameEventsStorageOverride.write(normalized);
+    return;
+  }
+  const storageArea = getGameEventsStorageArea();
+  if (!storageArea?.set) throw new Error("Game Events storage is unavailable");
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      error ? reject(error) : resolve();
+    };
+    try {
+      const result = storageArea.set(
+        { [GAME_EVENTS_STORAGE_KEY]: normalized },
+        () => {
+          const writeError = chrome.runtime?.lastError;
+          finish(writeError ? new Error(writeError.message) : null);
+        }
+      );
+      if (result?.then) result.then(() => finish(), (error) => finish(error));
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+function normalizeGameEventId(value) {
+  const id = typeof value === "string" || typeof value === "number"
+    ? String(value).trim()
+    : "";
+  return /^(?:\d{1,40}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(id)
+    ? id.toLowerCase()
+    : null;
+}
+
+function parseGameEventsUtcTimestamp(value) {
+  const timestamp = typeof value === "string" ? value.trim() : "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|([+-])(\d{2}):(\d{2}))$/i.exec(
+    timestamp
+  );
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] ? Number(match[8]) : 0;
+  const offsetMinute = match[9] ? Number(match[9]) : 0;
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return null;
+  }
+  const milliseconds = Date.parse(timestamp);
+  return Number.isSafeInteger(milliseconds) ? milliseconds : null;
+}
+
+function getGameEventMediaId(rawEvent) {
+  const thumbnails = Array.isArray(rawEvent?.thumbnails)
+    ? rawEvent.thumbnails
+    : [];
+  const candidates = thumbnails
+    .map((thumbnail, index) => ({
+      mediaId: normalizeId(thumbnail?.mediaId),
+      rank: Number.isSafeInteger(thumbnail?.rank) ? thumbnail.rank : index
+    }))
+    .filter((thumbnail) => thumbnail.mediaId)
+    .sort((left, right) => left.rank - right.rank);
+  return candidates[0]?.mediaId || null;
+}
+
+function normalizeGameEvent(rawEvent, universeId, now = Date.now()) {
+  if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) {
+    return null;
+  }
+  const id = normalizeGameEventId(rawEvent.id);
+  const returnedUniverseId = normalizeId(rawEvent.universeId);
+  const placeId = normalizeId(rawEvent.placeId);
+  const title = normalizeGameEventsText(
+    rawEvent.title,
+    GAME_EVENTS_TITLE_MAX_LENGTH,
+    true
+  );
+  const subtitle = normalizeGameEventsText(
+    rawEvent.subtitle,
+    GAME_EVENTS_SUBTITLE_MAX_LENGTH
+  );
+  const startAt = parseGameEventsUtcTimestamp(rawEvent.eventTime?.startUtc);
+  const endAt = parseGameEventsUtcTimestamp(rawEvent.eventTime?.endUtc);
+  const eventStatus = String(rawEvent.eventStatus || "").trim().toLowerCase();
+  const rejectedStatuses = new Set([
+    "cancelled",
+    "canceled",
+    "moderated",
+    "deleted",
+    "unpublished",
+    "inactive"
+  ]);
+  if (
+    !id ||
+    returnedUniverseId !== universeId ||
+    !placeId ||
+    !title ||
+    String(rawEvent.eventVisibility || "").trim().toLowerCase() !== "public" ||
+    rejectedStatuses.has(eventStatus) ||
+    startAt === null ||
+    endAt === null ||
+    endAt <= startAt ||
+    endAt <= now
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    id,
+    universeId,
+    placeId,
+    title,
+    subtitle,
+    startUtc: new Date(startAt).toISOString(),
+    endUtc: new Date(endAt).toISOString(),
+    startAt,
+    endAt,
+    status: startAt <= now ? "live" : "upcoming",
+    eventUrl: `https://www.roblox.com/events/${encodeURIComponent(id)}`,
+    mediaId: getGameEventMediaId(rawEvent)
+  });
+}
+
+function normalizeGameEventsPayload(payload, universeId, now = Date.now()) {
+  if (!payload || typeof payload !== "object" || !Array.isArray(payload.data)) {
+    throw new GameEventsError("ROBLOX_UNAVAILABLE", 502);
+  }
+  const seen = new Set();
+  const events = [];
+  for (const rawEvent of payload.data) {
+    const event = normalizeGameEvent(rawEvent, universeId, now);
+    if (!event || seen.has(event.id)) continue;
+    seen.add(event.id);
+    events.push(event);
+  }
+  events.sort((left, right) =>
+    (left.status === right.status ? 0 : left.status === "live" ? -1 : 1) ||
+    left.startAt - right.startAt ||
+    left.id.localeCompare(right.id)
+  );
+  return events.slice(0, GAME_EVENTS_MAX_EVENTS_PER_GAME);
+}
+
+function getCurrentGameEvents(events, now = Date.now()) {
+  return events
+    .filter((event) => event.endAt > now)
+    .map((event) => Object.freeze({
+      ...event,
+      status: event.startAt <= now ? "live" : "upcoming"
+    }))
+    .sort((left, right) =>
+      (left.status === right.status ? 0 : left.status === "live" ? -1 : 1) ||
+      left.startAt - right.startAt ||
+      left.id.localeCompare(right.id)
+    )
+    .slice(0, GAME_EVENTS_MAX_EVENTS_PER_GAME);
+}
+
+function setGameEventsCache(universeId, events, fetchedAt = Date.now()) {
+  gameEventsCache.delete(universeId);
+  gameEventsCache.set(universeId, {
+    events,
+    fetchedAt,
+    expiresAt: fetchedAt + GAME_EVENTS_CACHE_TTL_MS
+  });
+  while (gameEventsCache.size > GAME_EVENTS_CACHE_MAX_ENTRIES) {
+    gameEventsCache.delete(gameEventsCache.keys().next().value);
+  }
+}
+
+async function fetchGameEventsForUniverse(
+  universeId,
+  locale = GAME_EVENTS_FALLBACK_LOCALE,
+  now = Date.now()
+) {
+  const endpoint = new URL(
+    `/virtual-events/v1/universes/${universeId}/virtual-events`,
+    "https://apis.roblox.com"
+  );
+  const payload = await fetchJson(endpoint, {
+    method: "GET",
+    cache: "no-store",
+    credentials: "omit",
+    headers: {
+      Accept: "application/json",
+      "Accept-Language": normalizeGameEventsLocale(locale)
+    }
+  });
+  return normalizeGameEventsPayload(payload, universeId, now);
+}
+
+function getGameEventsErrorCode(error) {
+  if (typeof error?.code === "string" && error.code) return error.code;
+  if (error?.status === 400) return "INVALID";
+  if (error?.status === 401) return "UNAUTHENTICATED";
+  if (error?.status === 404) return "NOT_FOUND";
+  if (error?.status === 429) return "RATE_LIMITED";
+  if (typeof error?.status === "number" && error.status >= 500) {
+    return "ROBLOX_UNAVAILABLE";
+  }
+  if (error?.name === "AbortError" || error instanceof TypeError) return "NETWORK";
+  return "ROBLOX_UNAVAILABLE";
+}
+
+async function getGameEventsForUniverse(
+  rawUniverseId,
+  options = {}
+) {
+  const universeId = normalizeId(rawUniverseId);
+  if (!universeId) throw new GameEventsError("INVALID", 400);
+  const now = Number.isSafeInteger(options.now) ? options.now : Date.now();
+  const cached = gameEventsCache.get(universeId) || null;
+  let request = gameEventsRequests.get(universeId);
+  if (!request && !options.forceRefresh && cached && cached.expiresAt > now) {
+    gameEventsCache.delete(universeId);
+    gameEventsCache.set(universeId, cached);
+    return {
+      events: getCurrentGameEvents(cached.events, now),
+      fetchedAt: cached.fetchedAt,
+      stale: false,
+      failureCode: null,
+      usedCachedData: true
+    };
+  }
+  if (!request) {
+    request = fetchGameEventsForUniverse(universeId, options.locale, now)
+      .then((events) => {
+        setGameEventsCache(universeId, events, Date.now());
+        return events;
+      })
+      .finally(() => {
+        if (gameEventsRequests.get(universeId) === request) {
+          gameEventsRequests.delete(universeId);
+        }
+      });
+    gameEventsRequests.set(universeId, request);
+  }
+  try {
+    const events = await request;
+    const fresh = gameEventsCache.get(universeId);
+    return {
+      events: getCurrentGameEvents(events, now),
+      fetchedAt: fresh?.fetchedAt || now,
+      stale: false,
+      failureCode: null,
+      usedCachedData: false
+    };
+  } catch (error) {
+    if (!cached) throw error;
+    return {
+      events: getCurrentGameEvents(cached.events, now),
+      fetchedAt: cached.fetchedAt,
+      stale: true,
+      failureCode: getGameEventsErrorCode(error),
+      usedCachedData: true
+    };
+  }
+}
+
+function normalizeGameEventsInput(value) {
+  const input = typeof value === "string" ? value.trim() : "";
+  return input && input.length <= FRIEND_FILTER_INPUT_MAX_LENGTH ? input : null;
+}
+
+function fetchGameEventsGameDetails(
+  rawUniverseId,
+  locale = GAME_EVENTS_FALLBACK_LOCALE,
+  fallbackPlaceId = null
+) {
+  const universeId = normalizeId(rawUniverseId);
+  if (!universeId) return Promise.reject(new GameEventsError("INVALID", 400));
+  const canonicalLocale = normalizeGameEventsLocale(locale);
+  return getCachedLookup(
+    gameEventsGameResolutionCache,
+    `universe:${canonicalLocale}:${universeId}`,
+    async () => {
+      const endpoint = new URL("/v1/games", "https://games.roblox.com");
+      endpoint.searchParams.set("universeIds", universeId);
+      const payload = await fetchJson(endpoint, {
+        cache: "no-store",
+        credentials: "omit",
+        headers: {
+          Accept: "application/json",
+          "Accept-Language": canonicalLocale
+        }
+      });
+      const game = Array.isArray(payload?.data)
+        ? payload.data.find((entry) => normalizeId(entry?.id) === universeId)
+        : null;
+      const rootPlaceId = normalizeId(game?.rootPlaceId);
+      const name = normalizeGameEventsText(
+        game?.name,
+        GAME_EVENTS_NAME_MAX_LENGTH,
+        true
+      );
+      if (!game || !rootPlaceId || !name) {
+        throw new GameEventsError("NOT_FOUND", 404);
+      }
+      return Object.freeze({ universeId, placeId: rootPlaceId, name });
+    }
+  ).then((game) => {
+    const requestedPlaceId = normalizeId(fallbackPlaceId);
+    return requestedPlaceId ? { ...game, placeId: requestedPlaceId } : game;
+  });
+}
+
+function searchGameEventsGameByName(
+  rawName,
+  locale = GAME_EVENTS_FALLBACK_LOCALE
+) {
+  const query = normalizeGameEventsInput(rawName);
+  if (!query) return Promise.reject(new GameEventsError("INVALID", 400));
+  const canonicalLocale = normalizeGameEventsLocale(locale);
+  const normalizedQuery = normalizeFriendFilterGameName(query);
+  return getCachedLookup(
+    gameEventsGameResolutionCache,
+    `search:${canonicalLocale}:${normalizedQuery}`,
+    async () => {
+      const endpoint = new URL("/search-api/omni-search", "https://apis.roblox.com");
+      endpoint.searchParams.set("searchQuery", query);
+      endpoint.searchParams.set("sessionId", makeFriendFilterGameSearchSessionId());
+      endpoint.searchParams.set("pageType", "all");
+      const payload = await fetchJson(endpoint, {
+        cache: "no-store",
+        credentials: "omit",
+        headers: {
+          Accept: "application/json",
+          "Accept-Language": canonicalLocale
+        }
+      });
+      const candidates = getFriendFilterGameSearchCandidates(payload);
+      const selected = candidates.find((candidate) =>
+        normalizeFriendFilterGameName(candidate.name) === normalizedQuery
+      ) || candidates[0];
+      if (!selected) throw new GameEventsError("NOT_FOUND", 404);
+      return fetchGameEventsGameDetails(selected.universeId, canonicalLocale);
+    }
+  );
+}
+
+function normalizeGameEventsSearchQuery(value) {
+  if (typeof value !== "string") return null;
+  const rawQuery = value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
+  if (rawQuery.length > GAME_EVENTS_SEARCH_QUERY_MAX_LENGTH) return null;
+  const query = rawQuery;
+  return query && query.length >= 2 ? query : null;
+}
+
+function normalizeGameEventsSearchResults(payload) {
+  const groups = Array.isArray(payload?.searchResults)
+    ? payload.searchResults
+    : [];
+  const results = [];
+  const seenUniverseIds = new Set();
+  for (const group of groups) {
+    const groupType = String(group?.contentGroupType || "")
+      .trim()
+      .toLowerCase();
+    if (!["game", "games", "experience", "experiences"].includes(groupType)) {
+      continue;
+    }
+    const contents = Array.isArray(group?.contents) ? group.contents : [];
+    for (const content of contents.slice(0, 50)) {
+      const universeId = normalizeId(content?.universeId);
+      const name = normalizeGameEventsText(
+        content?.name,
+        GAME_EVENTS_NAME_MAX_LENGTH,
+        true
+      );
+      if (!universeId || !name || seenUniverseIds.has(universeId)) continue;
+      seenUniverseIds.add(universeId);
+      const playerCount = content?.playerCount;
+      results.push(Object.freeze({
+        universeId,
+        placeId: normalizeId(content?.rootPlaceId),
+        name,
+        creatorName: normalizeGameEventsText(content?.creatorName, 100),
+        playerCount: Number.isSafeInteger(playerCount) && playerCount >= 0
+          ? playerCount
+          : null
+      }));
+      if (results.length >= GAME_EVENTS_MAX_SEARCH_RESULTS) {
+        return Object.freeze(results);
+      }
+    }
+  }
+  return Object.freeze(results);
+}
+
+function searchGameEventsGames(
+  rawQuery,
+  locale = GAME_EVENTS_FALLBACK_LOCALE
+) {
+  const query = normalizeGameEventsSearchQuery(rawQuery);
+  if (!query) return Promise.reject(new GameEventsError("INVALID", 400));
+  const canonicalLocale = normalizeGameEventsLocale(locale);
+  const normalizedQuery = normalizeFriendFilterGameName(query);
+  const request = getCachedLookup(
+    gameEventsSearchCache,
+    `suggest:${canonicalLocale}:${normalizedQuery}`,
+    async () => {
+      const endpoint = new URL("/search-api/omni-search", "https://apis.roblox.com");
+      endpoint.searchParams.set("searchQuery", query);
+      endpoint.searchParams.set("sessionId", makeFriendFilterGameSearchSessionId());
+      endpoint.searchParams.set("pageType", "all");
+      const payload = await fetchJson(endpoint, {
+        cache: "no-store",
+        credentials: "omit",
+        headers: {
+          Accept: "application/json",
+          "Accept-Language": canonicalLocale
+        }
+      });
+      return normalizeGameEventsSearchResults(payload);
+    }
+  );
+  while (gameEventsSearchCache.size > GAME_EVENTS_SEARCH_CACHE_MAX_ENTRIES) {
+    gameEventsSearchCache.delete(gameEventsSearchCache.keys().next().value);
+  }
+  return request;
+}
+
+async function getGameEventsSearchResponse(message) {
+  await assertGameEventsFeatureEnabled();
+  const viewerUserId = await getVerifiedGameEventsViewerUserId(message);
+  const query = normalizeGameEventsSearchQuery(message?.query);
+  if (!query) throw new GameEventsError("INVALID", 400);
+  const results = await searchGameEventsGames(query, message?.locale);
+  await assertGameEventsFeatureEnabled();
+  await assertCurrentGameEventsViewer(viewerUserId);
+  return {
+    ok: true,
+    requestId: message.requestId,
+    enabled: true,
+    viewerUserId,
+    query,
+    results
+  };
+}
+
+function resolveGameEventsUniverseIdFromPlace(rawPlaceId) {
+  const placeId = normalizeId(rawPlaceId);
+  if (!placeId) return Promise.reject(new GameEventsError("INVALID", 400));
+  return getCachedLookup(
+    gameEventsGameResolutionCache,
+    `place:${placeId}`,
+    async () => {
+      const endpoint = new URL(
+        `/universes/v1/places/${placeId}/universe`,
+        "https://apis.roblox.com"
+      );
+      const payload = await fetchJson(endpoint, {
+        cache: "no-store",
+        credentials: "omit",
+        headers: { Accept: "application/json" }
+      });
+      const universeId = normalizeId(payload?.universeId);
+      if (!universeId) throw new GameEventsError("NOT_FOUND", 404);
+      return universeId;
+    }
+  );
+}
+
+async function resolveGameEventsGame(
+  rawInput,
+  rawUniverseId = null,
+  locale = GAME_EVENTS_FALLBACK_LOCALE
+) {
+  const explicitUniverseId = normalizeId(rawUniverseId);
+  if (explicitUniverseId) {
+    return fetchGameEventsGameDetails(explicitUniverseId, locale);
+  }
+  const input = normalizeGameEventsInput(rawInput);
+  if (!input) throw new GameEventsError("INVALID", 400);
+  let placeId = normalizeId(input);
+  let universeId = null;
+  const looksLikeUrl = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(input);
+  if (!placeId && /^https:\/\//i.test(input)) {
+    const context = parseRobloxContextUrl(input);
+    placeId = normalizeId(context?.placeId);
+    universeId = normalizeId(context?.universeId);
+  }
+  if (universeId) return fetchGameEventsGameDetails(universeId, locale, placeId);
+  if (!placeId) {
+    if (looksLikeUrl) throw new GameEventsError("INVALID", 400);
+    return searchGameEventsGameByName(input, locale);
+  }
+  try {
+    universeId = await resolveGameEventsUniverseIdFromPlace(placeId);
+    return fetchGameEventsGameDetails(universeId, locale, placeId);
+  } catch (error) {
+    if (getGameEventsErrorCode(error) === "NOT_FOUND") {
+      return fetchGameEventsGameDetails(placeId, locale);
+    }
+    throw new GameEventsError(
+      getGameEventsErrorCode(error),
+      error?.status || 0,
+      error?.retryAfterMs || 0
+    );
+  }
+}
+
+function getExpectedGameEventsViewerUserId(message) {
+  if (
+    message?.viewerUserId === undefined ||
+    message?.viewerUserId === null ||
+    message?.viewerUserId === ""
+  ) {
+    return null;
+  }
+  const viewerUserId = normalizeId(message.viewerUserId);
+  if (!viewerUserId) throw new GameEventsError("INVALID", 400);
+  return viewerUserId;
+}
+
+async function getVerifiedGameEventsViewerUserId(message) {
+  const expectedViewerUserId = getExpectedGameEventsViewerUserId(message);
+  const viewerUserId = await getAuthenticatedViewerUserId();
+  if (expectedViewerUserId && expectedViewerUserId !== viewerUserId) {
+    throw new GameEventsError("ACCOUNT_CHANGED", 409, 0, viewerUserId);
+  }
+  return viewerUserId;
+}
+
+async function fetchFreshGameEventsViewerUserId() {
+  const authenticatedUser = await fetchJson(
+    "https://users.roblox.com/v1/users/authenticated",
+    {
+      cache: "no-store",
+      credentials: "include",
+      headers: { Accept: "application/json" }
+    }
+  );
+  const viewerUserId = normalizeId(authenticatedUser?.id);
+  if (!viewerUserId) throw new GameEventsError("UNAUTHENTICATED", 401);
+  return viewerUserId;
+}
+
+async function assertCurrentGameEventsViewer(viewerUserId) {
+  await assertGameEventsFeatureEnabled();
+  const currentViewerUserId = await fetchFreshGameEventsViewerUserId();
+  if (currentViewerUserId !== viewerUserId) {
+    throw new GameEventsError(
+      "ACCOUNT_CHANGED",
+      409,
+      0,
+      currentViewerUserId
+    );
+  }
+  return currentViewerUserId;
+}
+
+async function getGameEventsResponse(message) {
+  await assertGameEventsFeatureEnabled();
+  const viewerUserId = await getVerifiedGameEventsViewerUserId(message);
+  await gameEventsStorageWriteTail.catch(() => undefined);
+  const storage = await readGameEventsStorage();
+  const games = storage.accounts[viewerUserId]?.games || [];
+  const results = new Array(games.length);
+  await runWithConcurrency(games, GAME_EVENTS_FETCH_CONCURRENCY, async (game, index) => {
+    try {
+      results[index] = await getGameEventsForUniverse(game.universeId, {
+        locale: normalizeGameEventsLocale(message.locale),
+        forceRefresh: message.forceRefresh === true
+      });
+    } catch (error) {
+      results[index] = {
+        events: [],
+        fetchedAt: 0,
+        stale: true,
+        failureCode: getGameEventsErrorCode(error),
+        usedCachedData: false
+      };
+    }
+  });
+  const failures = [];
+  const events = [];
+  results.forEach((result, index) => {
+    const game = games[index];
+    if (result.failureCode) {
+      failures.push({
+        universeId: game.universeId,
+        code: result.failureCode,
+        usedCachedData: result.usedCachedData === true
+      });
+    }
+    for (const event of result.events) {
+      events.push({ ...event, gameName: game.name });
+    }
+  });
+  events.sort((left, right) =>
+    (left.status === right.status ? 0 : left.status === "live" ? -1 : 1) ||
+    left.startAt - right.startAt ||
+    left.gameName.localeCompare(right.gameName) ||
+    left.id.localeCompare(right.id)
+  );
+  await assertCurrentGameEventsViewer(viewerUserId);
+  return {
+    ok: true,
+    requestId: message.requestId,
+    enabled: true,
+    viewerUserId,
+    games,
+    events,
+    partial: failures.length > 0,
+    failures
+  };
+}
+
+async function addGameEventFavorite(message) {
+  await assertGameEventsFeatureEnabled();
+  const viewerUserId = await getVerifiedGameEventsViewerUserId(message);
+  const locale = normalizeGameEventsLocale(message.locale);
+  const game = await resolveGameEventsGame(
+    message.input ?? message.game ?? message.value ?? message.placeId ?? "",
+    message.universeId,
+    locale
+  );
+  const operation = gameEventsStorageWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      await assertGameEventsFeatureEnabled();
+      const now = Date.now();
+      const storage = await readGameEventsStorage(now);
+      const account = storage.accounts[viewerUserId] || createEmptyGameEventsAccount();
+      const existing = account.games.find((entry) =>
+        entry.universeId === game.universeId
+      );
+      if (existing) {
+        const changed = existing.name !== game.name || existing.placeId !== game.placeId;
+        existing.name = game.name;
+        existing.placeId = game.placeId;
+        if (changed) {
+          account.updatedAt = now;
+          storage.accounts[viewerUserId] = account;
+          await assertCurrentGameEventsViewer(viewerUserId);
+          await writeGameEventsStorage(storage);
+        }
+        return { game: { ...existing }, alreadyTracked: true };
+      }
+      if (account.games.length >= GAME_EVENTS_MAX_GAMES_PER_ACCOUNT) {
+        await assertCurrentGameEventsViewer(viewerUserId);
+        throw new GameEventsError("LIMIT_REACHED", 400);
+      }
+      const storedGame = { ...game, addedAt: now };
+      account.games.push(storedGame);
+      account.updatedAt = now;
+      storage.accounts[viewerUserId] = account;
+      await assertCurrentGameEventsViewer(viewerUserId);
+      await writeGameEventsStorage(storage);
+      return { game: storedGame, alreadyTracked: false };
+    });
+  gameEventsStorageWriteTail = operation.catch(() => undefined);
+  const result = await operation;
+  await assertCurrentGameEventsViewer(viewerUserId);
+  return {
+    ok: true,
+    requestId: message.requestId,
+    enabled: true,
+    viewerUserId,
+    game: result.game,
+    alreadyTracked: result.alreadyTracked
+  };
+}
+
+async function removeGameEventFavorite(message) {
+  await assertGameEventsFeatureEnabled();
+  const universeId = normalizeId(message.universeId);
+  if (!universeId) throw new GameEventsError("INVALID", 400);
+  const viewerUserId = await getVerifiedGameEventsViewerUserId(message);
+  const operation = gameEventsStorageWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      await assertGameEventsFeatureEnabled();
+      const storage = await readGameEventsStorage();
+      const account = storage.accounts[viewerUserId];
+      if (!account) return false;
+      const nextGames = account.games.filter((game) => game.universeId !== universeId);
+      if (nextGames.length === account.games.length) return false;
+      if (nextGames.length === 0) {
+        delete storage.accounts[viewerUserId];
+      } else {
+        account.games = nextGames;
+        account.updatedAt = Date.now();
+      }
+      await assertCurrentGameEventsViewer(viewerUserId);
+      await writeGameEventsStorage(storage);
+      return true;
+    });
+  gameEventsStorageWriteTail = operation.catch(() => undefined);
+  const removed = await operation;
+  await assertCurrentGameEventsViewer(viewerUserId);
+  return {
+    ok: true,
+    requestId: message.requestId,
+    enabled: true,
+    viewerUserId,
+    universeId,
+    removed
+  };
+}
+
+function sendGameEventsErrorResponse(message, error, sendResponse) {
+  const code = getGameEventsErrorCode(error);
+  if (["UNAUTHENTICATED", "ACCOUNT_CHANGED"].includes(code)) {
+    authenticatedUserRequest = null;
+  }
+  sendResponse({
+    ok: false,
+    requestId: normalizeGameEventsRequestId(message?.requestId) || 0,
+    enabled: code === "DISABLED" ? false : gameEventsFeatureEnabled,
+    code,
+    viewerUserId: normalizeId(error?.viewerUserId),
+    retryAfterMs: Math.max(0, Number(error?.retryAfterMs) || 0)
+  });
+}
+
+function handleGameEventsMessage(message, sender, sendResponse) {
+  const operationByType = new Map([
+    [GAME_EVENTS_GET_MESSAGE_TYPE, getGameEventsResponse],
+    [GAME_EVENTS_ADD_MESSAGE_TYPE, addGameEventFavorite],
+    [GAME_EVENTS_REMOVE_MESSAGE_TYPE, removeGameEventFavorite],
+    [GAME_EVENTS_SEARCH_MESSAGE_TYPE, getGameEventsSearchResponse]
+  ]);
+  const operation = operationByType.get(message?.type);
+  if (!operation) return false;
+  const requestId = normalizeGameEventsRequestId(message.requestId);
+  if (requestId === null || getTrustedRobloxTopFrameTabId(sender) === null) {
+    sendResponse({
+      ok: false,
+      requestId: requestId || 0,
+      enabled: gameEventsFeatureEnabled,
+      code: "INVALID"
+    });
+    return false;
+  }
+  operation({ ...message, requestId })
+    .then(sendResponse)
+    .catch((error) => sendGameEventsErrorResponse(message, error, sendResponse));
+  return true;
+}
+
+function resetGameEventsStateForTests() {
+  gameEventsFeatureEnabled = true;
+  gameEventsFeatureReady = true;
+  gameEventsFeatureSyncPromise = null;
+  gameEventsStorageWriteTail = Promise.resolve();
+  gameEventsStorageOverride = null;
+  gameEventsCache.clear();
+  gameEventsRequests.clear();
+  gameEventsGameResolutionCache.clear();
+  gameEventsSearchCache.clear();
+}
+
 function normalizePrivateServerPlaceId(value) {
   return normalizeRandomServerPlaceId(value);
 }
@@ -8682,6 +9710,82 @@ if (globalThis.__rslBackgroundTestHooks) {
       continuityGapMs: SERVER_HISTORY_CONTINUITY_GAP_MS,
       fallbackLocale: SERVER_HISTORY_FALLBACK_LOCALE
     }),
+    getGameEventsFeatureValue,
+    applyGameEventsFeatureValue,
+    syncGameEventsFeatureFromStorage,
+    normalizeGameEventsRequestId,
+    normalizeGameEventsLocale,
+    normalizeStoredGameEventsGame,
+    normalizeStoredGameEventsAccount,
+    normalizeGameEventsStorage,
+    createEmptyGameEventsAccount,
+    createEmptyGameEventsStorage,
+    readGameEventsStorage,
+    writeGameEventsStorage,
+    normalizeGameEventId,
+    parseGameEventsUtcTimestamp,
+    normalizeGameEvent,
+    normalizeGameEventsPayload,
+    getCurrentGameEvents,
+    setGameEventsCache,
+    fetchGameEventsForUniverse,
+    getGameEventsForUniverse,
+    getGameEventsErrorCode,
+    fetchGameEventsGameDetails,
+    searchGameEventsGameByName,
+    normalizeGameEventsSearchQuery,
+    normalizeGameEventsSearchResults,
+    searchGameEventsGames,
+    getGameEventsSearchResponse,
+    resolveGameEventsUniverseIdFromPlace,
+    resolveGameEventsGame,
+    getExpectedGameEventsViewerUserId,
+    getVerifiedGameEventsViewerUserId,
+    fetchFreshGameEventsViewerUserId,
+    assertCurrentGameEventsViewer,
+    getGameEventsResponse,
+    addGameEventFavorite,
+    removeGameEventFavorite,
+    handleGameEventsMessage,
+    resetGameEventsStateForTests,
+    setGameEventsStorageOverrideForTests(override) {
+      gameEventsStorageOverride = override;
+    },
+    setGameEventsFeatureStateForTests(enabled, ready = true) {
+      gameEventsFeatureEnabled = enabled !== false;
+      gameEventsFeatureReady = ready === true;
+    },
+    waitForGameEventsWritesForTests() {
+      return gameEventsStorageWriteTail.catch(() => undefined);
+    },
+    getGameEventsStateForTests() {
+      return {
+        featureEnabled: gameEventsFeatureEnabled,
+        featureReady: gameEventsFeatureReady,
+        cacheSize: gameEventsCache.size,
+        inFlight: gameEventsRequests.size,
+        searchCacheSize: gameEventsSearchCache.size
+      };
+    },
+    gameEventsConstants: Object.freeze({
+      featureKey: GAME_EVENTS_FEATURE_KEY,
+      storageKey: GAME_EVENTS_STORAGE_KEY,
+      storageVersion: GAME_EVENTS_STORAGE_VERSION,
+      getMessageType: GAME_EVENTS_GET_MESSAGE_TYPE,
+      addMessageType: GAME_EVENTS_ADD_MESSAGE_TYPE,
+      removeMessageType: GAME_EVENTS_REMOVE_MESSAGE_TYPE,
+      searchMessageType: GAME_EVENTS_SEARCH_MESSAGE_TYPE,
+      maxGamesPerAccount: GAME_EVENTS_MAX_GAMES_PER_ACCOUNT,
+      maxAccounts: GAME_EVENTS_MAX_ACCOUNTS,
+      maxEventsPerGame: GAME_EVENTS_MAX_EVENTS_PER_GAME,
+      maxSearchResults: GAME_EVENTS_MAX_SEARCH_RESULTS,
+      searchQueryMaxLength: GAME_EVENTS_SEARCH_QUERY_MAX_LENGTH,
+      searchCacheMaxEntries: GAME_EVENTS_SEARCH_CACHE_MAX_ENTRIES,
+      fetchConcurrency: GAME_EVENTS_FETCH_CONCURRENCY,
+      cacheTtlMs: GAME_EVENTS_CACHE_TTL_MS,
+      fallbackLocale: GAME_EVENTS_FALLBACK_LOCALE,
+      eventAssetThumbnailSize: THUMBNAIL_SPECS.eventAsset.size
+    }),
     parsePrivateServerCursor,
     getPrivateServerSupport,
     getPrivateServerSupportForUniverse,
@@ -8738,11 +9842,13 @@ chrome.runtime.onInstalled?.addListener(() => {
   syncContextMenusFromStorage();
   syncGameCcuHistoryFeatureFromStorage(true);
   syncServerHistoryFeatureFromStorage(true);
+  syncGameEventsFeatureFromStorage();
 });
 
 chrome.runtime.onStartup?.addListener(() => {
   syncGameCcuHistoryFeatureFromStorage("stale");
   syncServerHistoryFeatureFromStorage("startup");
+  syncGameEventsFeatureFromStorage();
 });
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
@@ -8775,6 +9881,9 @@ chrome.storage?.onChanged?.addListener((changes, areaName) => {
   applyServerHistoryFeatureValue(
     changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
     true
+  );
+  applyGameEventsFeatureValue(
+    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
   );
   setupContextMenus();
 });
@@ -8826,6 +9935,15 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === SERVER_HISTORY_REJOIN_MESSAGE_TYPE) {
     return handleRejoinServerHistoryMessage(message, sender, sendResponse);
+  }
+
+  if (
+    message?.type === GAME_EVENTS_GET_MESSAGE_TYPE ||
+    message?.type === GAME_EVENTS_ADD_MESSAGE_TYPE ||
+    message?.type === GAME_EVENTS_REMOVE_MESSAGE_TYPE ||
+    message?.type === GAME_EVENTS_SEARCH_MESSAGE_TYPE
+  ) {
+    return handleGameEventsMessage(message, sender, sendResponse);
   }
 
   if (message?.type === PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE) {
@@ -8928,3 +10046,4 @@ chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 syncGameCcuHistoryFeatureFromStorage("stale");
 syncServerHistoryFeatureFromStorage("startup");
+syncGameEventsFeatureFromStorage();

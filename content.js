@@ -13,6 +13,13 @@
   const BEST_FRIENDS_DIALOG_ID = "rsl-best-friends-dialog";
   const PRIVATE_SERVERS_DIALOG_ID = "rsl-private-servers-dialog";
   const FEATURE_SETTINGS_DIALOG_ID = "rsl-feature-settings-dialog";
+  const GAME_EVENTS_DIALOG_ID = "rsl-game-events-dialog";
+  const GAME_EVENTS_ROW_ID = "rsl-game-events-row";
+  const GAME_EVENTS_GET_MESSAGE_TYPE = "rsl:get-game-events";
+  const GAME_EVENTS_SEARCH_MESSAGE_TYPE = "rsl:search-game-events-games";
+  const GAME_EVENTS_ADD_MESSAGE_TYPE = "rsl:add-game-event-favorite";
+  const GAME_EVENTS_REMOVE_MESSAGE_TYPE = "rsl:remove-game-event-favorite";
+  const GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE = "data-rsl-game-events-launch-surface";
   const SERVER_HISTORY_DIALOG_ID = "rsl-server-history-dialog";
   const SERVER_HISTORY_ROW_ID = "rsl-server-history-row";
   const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
@@ -169,6 +176,9 @@
   const PRIVATE_SERVER_OWNER_THUMBNAIL_UNAVAILABLE_TTL_MS = 5 * 60_000;
   const SERVER_HISTORY_REQUEST_TIMEOUT_MS = 120_000;
   const SERVER_HISTORY_LIMIT = 30;
+  const GAME_EVENTS_REQUEST_TIMEOUT_MS = 180_000;
+  const GAME_EVENTS_MAX_FAVORITES = 30;
+  const GAME_EVENTS_SEARCH_DEBOUNCE_MS = 300;
 
   const QUICK_PLAY_NATIVE_HOST_SELECTOR = [
     ".game-card-thumb-container",
@@ -525,6 +535,12 @@
       description: "Customize shortcuts and native links in Roblox's sidebar.",
       children: [
         Object.freeze({
+          key: "sidebarGameEvents",
+          label: "Game Events",
+          description: "Show RoTool's Game Events sidebar button.",
+          section: "RoTool"
+        }),
+        Object.freeze({
           key: "sidebarServerHistory",
           label: "Server History",
           description: "Show RoTool's Server History sidebar button.",
@@ -681,6 +697,12 @@
       description: "Show the 12-hour graph when hovering or focusing any player count."
     }),
     Object.freeze({
+      key: "gameEvents",
+      group: "Tools",
+      label: "Game Events",
+      description: "Follow official events from games you choose."
+    }),
+    Object.freeze({
       key: "serverHistory",
       group: "Tools",
       label: "Server History",
@@ -739,6 +761,7 @@
     gift: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M12 7v13"/><path d="M12 7H8.5a2 2 0 1 1 2-2c0 1.2 1.5 2 1.5 2ZM12 7h3.5a2 2 0 1 0-2-2c0 1.2-1.5 2-1.5 2Z"/>',
     premium: '<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
     create: '<path d="m14 5 5 5M4 20l3.5-.8L20 6.7 17.3 4 4.8 16.5 4 20Z"/><path d="m13 6 5 5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/><path d="M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/>',
     history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7"/><path d="M3.5 4.5v5h5"/><path d="M12 7.5V12l3 2"/>',
     external: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>',
     link: '<path d="m9.5 14.5 5-5"/><path d="m7.5 16.5-1.7 1.7A3 3 0 0 1 1.6 14l3.2-3.2A3 3 0 0 1 9 10.7"/><path d="m16.5 7.5 1.7-1.7a3 3 0 0 1 4.2 4.2l-3.2 3.2a3 3 0 0 1-4.2.1"/>'
@@ -760,6 +783,35 @@
   let featureSettingsDialogOpener = null;
   let featureSettingsNotice = "";
   let featureSettingsNoticeIsError = false;
+  let gameEventsDialogOpener = null;
+  let gameEventsLifecycleEpoch = 0;
+  let gameEventsRequestSequence = 0;
+  let gameEventsLoadState = "idle";
+  let gameEventsErrorCode = "";
+  let gameEventsFavorites = [];
+  let gameEventsItems = [];
+  let gameEventsViewerUserId = null;
+  let gameEventsPartial = false;
+  let gameEventsStatusFilter = "all";
+  let gameEventsLiveSectionCollapsed = false;
+  let gameEventsAddPanelOpen = false;
+  let gameEventsManagePanelOpen = false;
+  let gameEventsPendingAction = null;
+  let gameEventsNotice = "";
+  let gameEventsMessageSenderForTests = null;
+  let gameEventsSearchTimer = null;
+  let gameEventsSearchSequence = 0;
+  let gameEventsSearchState = "idle";
+  let gameEventsSearchErrorCode = "";
+  let gameEventsSearchResults = [];
+  let gameEventsSearchActiveIndex = -1;
+  let gameEventsSelectedSearchResult = null;
+  let gameEventsMinuteTimer = null;
+  let gameEventsBoundaryTimer = null;
+  let gameEventsResizeObserver = null;
+  const gameEventsThumbnailByUniverseId = new Map();
+  const gameEventsThumbnailRequestByUniverseId = new Map();
+  let gameEventsThumbnailObserver = null;
   let serverHistoryDialogOpener = null;
   let serverHistoryLifecycleEpoch = 0;
   let serverHistoryRequestSequence = 0;
@@ -2041,6 +2093,99 @@
       openDialog();
     });
 
+    return row;
+  }
+
+  function setGameEventsSidebarIcon(icon) {
+    if (!icon) return;
+    icon.classList.remove(
+      "rsl-sidebar-icon--plus",
+      "rsl-sidebar-icon--link",
+      "rsl-sidebar-icon--thumbnail",
+      "rsl-sidebar-icon--thumbnail-profile",
+      "rsl-owned-thumbnail-frame"
+    );
+    icon.classList.add("rsl-sidebar-icon--shortcut");
+    icon.dataset.rslIconType = "calendar";
+    delete icon.dataset.rslThumbnailKey;
+    delete icon.dataset.rslThumbnailState;
+    icon.innerHTML =
+      `<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">` +
+      `${SHORTCUT_ICON_MARKUP.calendar}</svg>`;
+  }
+
+  function makeGameEventsSidebarRow(templateRow) {
+    const { row, anchor, label, icon } = createNativeLookingRow(
+      templateRow,
+      "shortcut",
+      "/home"
+    );
+    row.id = GAME_EVENTS_ROW_ID;
+    row.dataset.rslControl = "game-events";
+    anchor.href = "#";
+    anchor.setAttribute("role", "button");
+    anchor.setAttribute("aria-haspopup", "dialog");
+    anchor.setAttribute("aria-controls", GAME_EVENTS_DIALOG_ID);
+    anchor.setAttribute("aria-label", "Open Game Events");
+    anchor.title = "Events";
+    if (label) label.textContent = "Events";
+    setGameEventsSidebarIcon(icon);
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (event.isTrusted !== true) return;
+      openGameEventsDialog(anchor);
+    });
+    return row;
+  }
+
+  function placeGameEventsSidebarRow(list, row) {
+    const historyRow = document.getElementById(SERVER_HISTORY_ROW_ID);
+    if (historyRow?.parentElement === list && historyRow !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== historyRow) {
+        list.insertBefore(row, historyRow);
+      }
+      return;
+    }
+    const customRows = Array.from(list.querySelectorAll(`[${ROW_ATTRIBUTE}]`));
+    const addRow = document.getElementById(ADD_ROW_ID);
+    const firstOwnedCustomRow = customRows[0] ||
+      (addRow?.parentElement === list ? addRow : null);
+    if (firstOwnedCustomRow && firstOwnedCustomRow !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== firstOwnedCustomRow) {
+        list.insertBefore(row, firstOwnedCustomRow);
+      }
+      return;
+    }
+    const boundary = findSidebarInsertBoundary(list, row);
+    if (boundary && boundary !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== boundary) {
+        list.insertBefore(row, boundary);
+      }
+    } else if (row.parentElement !== list || row !== list.lastElementChild) {
+      list.append(row);
+    }
+  }
+
+  function mountGameEventsSidebarRow() {
+    if (
+      !isFeatureEnabled("gameEvents") ||
+      !isFeatureEnabled("sidebarShortcuts") ||
+      !isFeatureEnabled("sidebarGameEvents")
+    ) {
+      document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
+      return null;
+    }
+    const native = findNativeRow();
+    if (!native) return null;
+    const duplicates = Array.from(document.querySelectorAll(`#${GAME_EVENTS_ROW_ID}`));
+    let row = duplicates.shift() || null;
+    duplicates.forEach((duplicate) => duplicate.remove());
+    if (!row || row._rslGameEventsRowBound !== true) {
+      row?.remove();
+      row = makeGameEventsSidebarRow(native.row);
+      row._rslGameEventsRowBound = true;
+    }
+    placeGameEventsSidebarRow(native.list, row);
     return row;
   }
 
@@ -5643,6 +5788,7 @@
     image.className = "width-full height-full";
     image.alt = "";
     image.decoding = "async";
+    image.loading = "lazy";
     image.referrerPolicy = "no-referrer";
     iconContainer.append(image);
     iconClip.append(iconContainer);
@@ -10584,18 +10730,6 @@
       svg.append(isolated);
     }
     overlay.setAttribute("data-latest-trend", latestTrend.trend);
-    if (latest) {
-      const latestDot = makeGameTileCcuGraphSvgElement("circle");
-      latestDot.classList.add(
-        "rsl-game-ccu-graph__latest-point",
-        `rsl-game-ccu-graph__latest-point--${latestTrend.trend}`
-      );
-      latestDot.setAttribute("data-trend", latestTrend.trend);
-      latestDot.setAttribute("cx", xFor(latest.timestamp).toFixed(2));
-      latestDot.setAttribute("cy", yFor(latest.playing).toFixed(2));
-      latestDot.setAttribute("r", "1.8");
-      svg.append(latestDot);
-    }
 
     const yAxis = makeGameTileCcuGraphElement(
       "div",
@@ -12730,14 +12864,43 @@
     delete button.dataset.rslQuickPlayState;
   }
 
+  function restoreGameEventJoinButton(button) {
+    clearQuickPlayFeedback(button);
+    button.textContent = "Join Game";
+    button.setAttribute(
+      "aria-label",
+      button.dataset.rslGameEventsDefaultLabel || "Join Game"
+    );
+  }
+
+  function handleGameEventJoinResult(button, code) {
+    const timer = quickPlayFeedbackTimers.get(button);
+    if (timer) {
+      window.clearTimeout(timer);
+      quickPlayFeedbackTimers.delete(button);
+    }
+    button.dataset.rslQuickPlayState = code === "started" ? "launching" : "error";
+    button.textContent = code === "started" ? "Launching…" : "Try Again";
+    button.setAttribute(
+      "aria-label",
+      code === "started" ? "Launching game" : "Game launch unavailable. Try again"
+    );
+    if (code === "started") {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    const feedbackTimer = window.setTimeout(() => {
+      quickPlayFeedbackTimers.delete(button);
+      if (button.isConnected) restoreGameEventJoinButton(button);
+    }, QUICK_PLAY_FEEDBACK_MS);
+    quickPlayFeedbackTimers.set(button, feedbackTimer);
+  }
+
   function handleQuickPlayResult(event) {
-    if (!isFeatureEnabled("quickPlay")) {
-      return;
-    }
     const button = event.target?.closest?.(`[${QUICK_PLAY_ACTION_ATTRIBUTE}]`);
-    if (!button || !button.closest(`[${QUICK_PLAY_SURFACE_ATTRIBUTE}]`)) {
-      return;
-    }
+    const gameEventSurface = button?.closest?.(`[${GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE}]`);
+    const quickPlaySurface = button?.closest?.(`[${QUICK_PLAY_SURFACE_ATTRIBUTE}]`);
+    if (!button || (!gameEventSurface && !quickPlaySurface)) return;
     let result;
     try {
       result = JSON.parse(typeof event.detail === "string" ? event.detail : "");
@@ -12745,7 +12908,21 @@
       return;
     }
     const action = button.getAttribute(QUICK_PLAY_ACTION_ATTRIBUTE);
+    if (gameEventSurface) {
+      if (
+        !isFeatureEnabled("gameEvents") ||
+        action !== "play" ||
+        result?.v !== 1 ||
+        result?.action !== "play" ||
+        !["started", "invalid", "unavailable", "failed"].includes(result?.code)
+      ) {
+        return;
+      }
+      handleGameEventJoinResult(button, result.code);
+      return;
+    }
     if (
+      !isFeatureEnabled("quickPlay") ||
       !isQuickPlayActionEnabled(action) ||
       result?.v !== 1 ||
       result?.action !== action ||
@@ -15058,6 +15235,1888 @@
     dialog.querySelector("[data-rsl-feature-key]")?.focus();
   }
 
+  function normalizeGameEventId(rawValue) {
+    const value = typeof rawValue === "string" || typeof rawValue === "number"
+      ? String(rawValue).trim()
+      : "";
+    return /^(?:\d{1,40}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(
+      value
+    )
+      ? (/^[0-9a-f-]{36}$/i.test(value) ? value.toLowerCase() : value)
+      : null;
+  }
+
+  function normalizeGameEventTimestamp(rawValue) {
+    if (typeof rawValue === "string" && rawValue.trim()) {
+      const parsed = Date.parse(rawValue);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    const value = Number(rawValue);
+    return Number.isFinite(value) && value > 0 && value < 9e15
+      ? Math.round(value)
+      : null;
+  }
+
+  function normalizeGameEventText(rawValue, fallback = "", maxLength = 180) {
+    const value = typeof rawValue === "string"
+      ? rawValue.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
+      : "";
+    return (value || fallback).slice(0, maxLength);
+  }
+
+  function normalizeGameEventFavorite(rawValue) {
+    if (!rawValue || typeof rawValue !== "object") return null;
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const placeId = normalizeQuickPlayPlaceId(rawValue.placeId);
+    if (!universeId || !placeId) return null;
+    return Object.freeze({
+      universeId,
+      placeId,
+      name: normalizeGameEventText(rawValue.name, "Roblox experience", 150),
+      addedAt: normalizeGameEventTimestamp(rawValue.addedAt) || 0
+    });
+  }
+
+  function normalizeGameEvent(rawValue, now = Date.now()) {
+    if (!rawValue || typeof rawValue !== "object") return null;
+    const id = normalizeGameEventId(rawValue.id);
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const placeId = normalizeQuickPlayPlaceId(rawValue.placeId);
+    const startAt = normalizeGameEventTimestamp(rawValue.startAt ?? rawValue.startUtc);
+    const endAt = normalizeGameEventTimestamp(rawValue.endAt ?? rawValue.endUtc);
+    if (!id || !universeId || !placeId || !startAt || !endAt || endAt <= startAt) {
+      return null;
+    }
+    const currentTime = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (endAt <= currentTime) return null;
+    const title = normalizeGameEventText(rawValue.title, "Roblox event", 180);
+    const subtitle = normalizeGameEventText(rawValue.subtitle, "", 240);
+    const mediaId = normalizeQuickPlayPlaceId(rawValue.mediaId);
+    return Object.freeze({
+      id,
+      universeId,
+      placeId,
+      gameName: normalizeGameEventText(rawValue.gameName, "Roblox experience", 150),
+      title,
+      subtitle,
+      startAt,
+      endAt,
+      status: startAt <= currentTime ? "live" : "upcoming",
+      eventUrl: `https://www.roblox.com/events/${encodeURIComponent(id)}`,
+      mediaId
+    });
+  }
+
+  function normalizeGameEventsResponse(rawValue, now = Date.now()) {
+    if (!rawValue || typeof rawValue !== "object" || rawValue.ok !== true) return null;
+    const viewerUserId = normalizeQuickPlayPlaceId(rawValue.viewerUserId);
+    if (!viewerUserId || rawValue.enabled === false) return null;
+    const favorites = [];
+    const seenUniverseIds = new Set();
+    for (const rawFavorite of Array.isArray(rawValue.games) ? rawValue.games : []) {
+      const favorite = normalizeGameEventFavorite(rawFavorite);
+      if (!favorite || seenUniverseIds.has(favorite.universeId)) continue;
+      seenUniverseIds.add(favorite.universeId);
+      favorites.push(favorite);
+      if (favorites.length >= GAME_EVENTS_MAX_FAVORITES) break;
+    }
+    const events = [];
+    const seenEventIds = new Set();
+    for (const rawEvent of Array.isArray(rawValue.events) ? rawValue.events : []) {
+      const event = normalizeGameEvent(rawEvent, now);
+      if (
+        !event ||
+        !seenUniverseIds.has(event.universeId) ||
+        seenEventIds.has(event.id)
+      ) continue;
+      seenEventIds.add(event.id);
+      events.push(event);
+    }
+    events.sort((left, right) => {
+      if (left.status !== right.status) return left.status === "live" ? -1 : 1;
+      return left.startAt - right.startAt || left.title.localeCompare(right.title);
+    });
+    const failures = Array.isArray(rawValue.failures)
+      ? rawValue.failures.slice(0, favorites.length)
+      : [];
+    return Object.freeze({
+      viewerUserId,
+      favorites,
+      events,
+      partial: rawValue.partial === true,
+      failures,
+      usedCachedData: failures.some((failure) => failure?.usedCachedData === true)
+    });
+  }
+
+  function getGameEventLocalDayOrdinal(timestamp) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return null;
+    return Math.floor(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+    );
+  }
+
+  function formatGameEventDateGroupLabel(
+    timestamp,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    let displayLocale = "en-US";
+    try {
+      displayLocale = Intl.getCanonicalLocales(locale)[0] || "en-US";
+    } catch {
+      // Use the safe fallback.
+    }
+    const date = new Date(timestamp);
+    const dayOrdinal = getGameEventLocalDayOrdinal(timestamp);
+    const todayOrdinal = getGameEventLocalDayOrdinal(now);
+    if (!Number.isFinite(date.getTime()) || dayOrdinal === null || todayOrdinal === null) {
+      return "Unknown date";
+    }
+    const offset = dayOrdinal - todayOrdinal;
+    if (offset === 0 || offset === 1) {
+      const relative = new Intl.RelativeTimeFormat(displayLocale, { numeric: "auto" }).format(
+        offset,
+        "day"
+      );
+      return relative.charAt(0).toLocaleUpperCase(displayLocale) + relative.slice(1);
+    }
+    if (offset > 1 && offset <= 6) {
+      return new Intl.DateTimeFormat(displayLocale, { weekday: "long" }).format(date);
+    }
+    return new Intl.DateTimeFormat(displayLocale, {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }).format(date);
+  }
+
+  function getGameEventStatus(event, now = Date.now()) {
+    if (!event || !Number.isFinite(event.startAt) || !Number.isFinite(event.endAt)) {
+      return "ended";
+    }
+    if (event.endAt <= now) return "ended";
+    return event.startAt <= now ? "live" : "upcoming";
+  }
+
+  function filterGameEvents(
+    events,
+    status = "all",
+    now = Date.now()
+  ) {
+    const requestedStatus = ["all", "live", "upcoming"].includes(status) ? status : "all";
+    return (Array.isArray(events) ? events : []).filter((event) => {
+      const currentStatus = getGameEventStatus(event, now);
+      if (currentStatus === "ended") return false;
+      return requestedStatus === "all" || currentStatus === requestedStatus;
+    });
+  }
+
+  function compareGameEventTimelineOrder(left, right) {
+    return left.startAt - right.startAt ||
+      String(left.title || "").localeCompare(String(right.title || "")) ||
+      String(left.id || "").localeCompare(String(right.id || ""));
+  }
+
+  function groupGameEventsByDate(
+    events,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    const groups = [];
+    const groupsByKey = new Map();
+    const sorted = [...(Array.isArray(events) ? events : [])]
+      .sort(compareGameEventTimelineOrder);
+    for (const event of sorted) {
+      const live = getGameEventStatus(event, now) === "live";
+      const dayOrdinal = getGameEventLocalDayOrdinal(event.startAt);
+      const key = live ? "live" : String(dayOrdinal ?? "unknown");
+      let group = groupsByKey.get(key);
+      if (!group) {
+        group = {
+          key,
+          dayOrdinal,
+          label: live
+            ? "Live Now"
+            : formatGameEventDateGroupLabel(event.startAt, now, locale),
+          events: []
+        };
+        groupsByKey.set(key, group);
+        groups.push(group);
+      }
+      group.events.push(event);
+    }
+    groups.sort((left, right) => {
+      if (left.key === "live") return -1;
+      if (right.key === "live") return 1;
+      return (left.dayOrdinal ?? Number.MAX_SAFE_INTEGER) -
+        (right.dayOrdinal ?? Number.MAX_SAFE_INTEGER);
+    });
+    return groups;
+  }
+
+  function formatGameEventCountdown(milliseconds) {
+    const elapsed = Math.max(0, milliseconds);
+    if (elapsed < 60_000) return "<1m";
+    const minutes = Math.ceil(elapsed / 60_000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (hours < 48) return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    return `${Math.ceil(hours / 24)}d`;
+  }
+
+  function formatGameEventTiming(
+    event,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    const start = new Date(event?.startAt);
+    const end = new Date(event?.endAt);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+      return Object.freeze({ status: "unknown", text: "Time unavailable", fullText: "Time unavailable" });
+    }
+    const timeFormatter = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    const shortDateFormatter = new Intl.DateTimeFormat(locale, {
+      ...(end.getFullYear() !== new Date(now).getFullYear() ? { year: "numeric" } : {}),
+      month: "short",
+      day: "numeric"
+    });
+    const status = getGameEventStatus(event, now);
+    const endsToday = getGameEventLocalDayOrdinal(end) === getGameEventLocalDayOrdinal(now);
+    const range = status === "live"
+      ? `Ends ${endsToday ? timeFormatter.format(end) : shortDateFormatter.format(end)}`
+      : status === "upcoming"
+        ? `Starts ${timeFormatter.format(start)}`
+        : `Ended ${shortDateFormatter.format(end)}`;
+    const countdown = status === "live"
+      ? `${formatGameEventCountdown(event.endAt - now)} left`
+      : status === "upcoming"
+        ? `Starts in ${formatGameEventCountdown(event.startAt - now)}`
+        : "Ended";
+    const text = status === "upcoming"
+      ? countdown
+      : status === "live"
+        ? `${range} · ${countdown}`
+        : range;
+    const fullText = status === "live"
+      ? `Live now. Started ${start.toLocaleString(locale)} and ends ${end.toLocaleString(locale)}.`
+      : status === "upcoming"
+        ? `Starts ${start.toLocaleString(locale)} and ends ${end.toLocaleString(locale)}.`
+        : `Ended ${end.toLocaleString(locale)}.`;
+    return Object.freeze({ status, range, countdown, text, fullText });
+  }
+
+  function sendGameEventsRuntimeMessage(message) {
+    if (typeof gameEventsMessageSenderForTests === "function") {
+      return Promise.resolve().then(() => gameEventsMessageSenderForTests(message));
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const error = new Error("Game Events request timed out");
+        error.code = "TIMEOUT";
+        reject(error);
+      }, GAME_EVENTS_REQUEST_TIMEOUT_MS);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) finish(reject, new Error(runtimeError.message));
+          else finish(resolve, response);
+        });
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  function getGameEventsErrorText(code) {
+    switch (String(code || "").toUpperCase()) {
+      case "UNAUTHENTICATED":
+      case "AUTH":
+        return "Sign in to Roblox to view Game Events.";
+      case "DISABLED":
+        return "Game Events is currently disabled in RoTool Settings.";
+      case "ACCOUNT_CHANGED":
+        return "Your Roblox account changed. Close and reopen Game Events.";
+      case "RATE_LIMITED":
+        return "Roblox is limiting event requests. Try again in a moment.";
+      default:
+        return "Game Events could not be loaded. Try again.";
+    }
+  }
+
+  function requestGameEventThumbnail(image, event, epoch) {
+    if (!image || !event?.universeId) return;
+    const key = event.mediaId ? `event:${event.mediaId}` : `game:${event.universeId}`;
+    const cachedUrl = gameEventsThumbnailByUniverseId.get(key);
+    const frame = image.closest(".rsl-owned-thumbnail-frame");
+    if (isSafeThumbnailImageUrl(cachedUrl)) {
+      image.src = cachedUrl;
+      setOwnedThumbnailState(frame, "loaded");
+      return;
+    }
+    setOwnedThumbnailState(frame, "loading");
+    let request = gameEventsThumbnailRequestByUniverseId.get(key);
+    if (!request) {
+      const requestOne = (kind, id) => new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(
+            { type: "rsl:get-thumbnail", kind, id },
+            (response) => {
+              if (chrome.runtime.lastError || !isSafeThumbnailImageUrl(response?.url)) {
+                resolve(null);
+              } else {
+                resolve(response.url);
+              }
+            }
+          );
+        } catch {
+          resolve(null);
+        }
+      });
+      request = (async () => {
+        const eventUrl = event.mediaId
+          ? await requestOne("eventAsset", event.mediaId)
+          : null;
+        const url = eventUrl || await requestOne("gameUniverse", event.universeId);
+        if (url) gameEventsThumbnailByUniverseId.set(key, url);
+        return url;
+      })().finally(() => gameEventsThumbnailRequestByUniverseId.delete(key));
+      gameEventsThumbnailRequestByUniverseId.set(key, request);
+    }
+    void request.then((url) => {
+      if (
+        epoch !== gameEventsLifecycleEpoch ||
+        !image.isConnected ||
+        !document.getElementById(GAME_EVENTS_DIALOG_ID)?.open
+      ) return;
+      if (url) image.src = url;
+      setOwnedThumbnailState(frame, url ? "loaded" : "fallback");
+    });
+  }
+
+  function observeGameEventThumbnail(image, event, epoch) {
+    if (!image || !event) return;
+    if (typeof IntersectionObserver !== "function") {
+      requestGameEventThumbnail(image, event, epoch);
+      return;
+    }
+    if (!gameEventsThumbnailObserver) {
+      gameEventsThumbnailObserver = new IntersectionObserver(
+        (entries, observer) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            observer.unobserve(entry.target);
+            const targetEvent = entry.target._rslGameEventThumbnailEvent;
+            const targetEpoch = entry.target._rslGameEventThumbnailEpoch;
+            delete entry.target._rslGameEventThumbnailEvent;
+            delete entry.target._rslGameEventThumbnailEpoch;
+            requestGameEventThumbnail(entry.target, targetEvent, targetEpoch);
+          });
+        },
+        { rootMargin: "160px 0px" }
+      );
+    }
+    image._rslGameEventThumbnailEvent = event;
+    image._rslGameEventThumbnailEpoch = epoch;
+    gameEventsThumbnailObserver.observe(image);
+  }
+
+  function getGameEventTimelineGap(
+    previousTimestamp,
+    currentTimestamp,
+    maxGap = 144
+  ) {
+    const previous = Number(previousTimestamp);
+    const current = Number(currentTimestamp);
+    const safeMax = Math.max(0, Math.min(240, Number(maxGap) || 0));
+    if (!Number.isFinite(previous) || !Number.isFinite(current) || current <= previous) {
+      return 0;
+    }
+    const hours = (current - previous) / 3_600_000;
+    return Math.min(safeMax, Math.round(18 * Math.log2(1 + hours)));
+  }
+
+  function getGameEventTimelineGapBefore(previousEvent, event, now = Date.now()) {
+    if (!event || getGameEventStatus(event, now) === "ended") return 0;
+    const origin = previousEvent?.startAt ?? now;
+    return getGameEventTimelineGap(origin, event.startAt);
+  }
+
+  function getGameEventTimelineTailSpace(events, now = Date.now()) {
+    const visible = (Array.isArray(events) ? events : [])
+      .filter((event) => (
+        Number.isFinite(event?.startAt) &&
+        getGameEventStatus(event, now) !== "ended"
+      ))
+      .sort(compareGameEventTimelineOrder);
+    if (visible.length === 0 || visible.some((event) => event.startAt > now)) return 36;
+    const last = visible[visible.length - 1];
+    return Math.max(36, Math.min(168,
+      24 + getGameEventTimelineGap(last.startAt, now)
+    ));
+  }
+
+  function formatGameEventAgendaMarker(
+    event,
+    now = Date.now(),
+    locale = getRobloxPageLocale()
+  ) {
+    const start = new Date(event?.startAt);
+    if (!Number.isFinite(start.getTime())) return "--:--";
+    if (
+      getGameEventStatus(event, now) === "live" &&
+      getGameEventLocalDayOrdinal(event.startAt) !== getGameEventLocalDayOrdinal(now)
+    ) {
+      return new Intl.DateTimeFormat(locale, {
+        ...(start.getFullYear() !== new Date(now).getFullYear()
+          ? { year: "numeric" }
+          : {}),
+        month: "short",
+        day: "numeric"
+      }).format(start);
+    }
+    return new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(start);
+  }
+
+  function getGameEventsTimelineNowPosition(
+    events,
+    now = Date.now()
+  ) {
+    const ordered = (Array.isArray(events) ? events : [])
+      .filter((event) => (
+        Number.isFinite(event?.startAt) &&
+        event?.id &&
+        getGameEventStatus(event, now) !== "ended"
+      ))
+      .sort(compareGameEventTimelineOrder);
+    const clusters = [];
+    ordered.forEach((event) => {
+      const cluster = clusters.at(-1);
+      if (cluster?.startAt === event.startAt) {
+        cluster.last = event;
+      } else {
+        clusters.push({ startAt: event.startAt, first: event, last: event });
+      }
+    });
+    if (clusters.length === 0) return Object.freeze({ visible: false });
+    const nextIndex = clusters.findIndex((cluster) => cluster.startAt > now);
+    if (nextIndex < 0) {
+      const previous = clusters[clusters.length - 1].last;
+      return Object.freeze({
+        visible: true,
+        beforeEventId: previous.id,
+        afterEventId: null,
+        progress: 1,
+        nextEventId: null,
+        nextInMs: 0
+      });
+    }
+    const previousIndex = nextIndex - 1;
+    const nextCluster = clusters[nextIndex];
+    const next = nextCluster.first;
+    if (previousIndex < 0) {
+      return Object.freeze({
+        visible: true,
+        beforeEventId: null,
+        afterEventId: next.id,
+        progress: 0,
+        nextEventId: next.id,
+        nextInMs: Math.max(0, next.startAt - now)
+      });
+    }
+    const previousCluster = clusters[previousIndex];
+    const previous = previousCluster.last;
+    let progress = 0;
+    if (nextCluster.startAt > previousCluster.startAt) {
+      progress = Math.max(0, Math.min(1,
+        (now - previousCluster.startAt) /
+          (nextCluster.startAt - previousCluster.startAt)
+      ));
+    }
+    return Object.freeze({
+      visible: true,
+      beforeEventId: previous.id,
+      afterEventId: next.id,
+      progress,
+      nextEventId: next.id,
+      nextInMs: Math.max(0, next.startAt - now)
+    });
+  }
+
+  function renderGameEventItem(
+    event,
+    now = Date.now(),
+    { gapBefore = 0, groupLabel = "", groupHeadingId = "", variant = "timeline" } = {}
+  ) {
+    const livePanel = variant === "live-panel";
+    const item = document.createElement("li");
+    item.className = livePanel
+      ? "rsl-game-events__live-item"
+      : "rsl-game-events__item";
+    item.setAttribute(
+      livePanel ? "data-rsl-game-events-live-event-id" : "data-rsl-game-event-id",
+      event.id
+    );
+    if (!livePanel) {
+      item.style.setProperty(
+        "--rsl-game-events-gap-before",
+        `${Math.max(0, Math.min(144, Number(gapBefore) || 0))}px`
+      );
+    }
+    const status = getGameEventStatus(event, now);
+    item.classList.add(livePanel
+      ? "rsl-game-events__live-item--active"
+      : `rsl-game-events__item--${status}`);
+
+    if (!livePanel && groupLabel) {
+      const heading = document.createElement("h3");
+      heading.className = "rsl-game-events__date-heading";
+      if (status === "live") heading.classList.add("rsl-game-events__date-heading--live");
+      heading.id = groupHeadingId;
+      const headingLabel = document.createElement("span");
+      headingLabel.className = "rsl-game-events__date-heading-label";
+      headingLabel.textContent = groupLabel;
+      heading.append(headingLabel);
+      item.append(heading);
+    }
+
+    const row = document.createElement("div");
+    row.className = "rsl-game-events__event-row";
+    if (livePanel) row.classList.add("rsl-game-events__event-row--live-panel");
+
+    let timeRail = null;
+    if (!livePanel) {
+      timeRail = document.createElement("div");
+      timeRail.className = "rsl-game-events__time-rail";
+      const marker = document.createElement("time");
+      marker.className = "rsl-game-events__time-marker";
+      marker.dateTime = new Date(event.startAt).toISOString();
+      marker.textContent = formatGameEventAgendaMarker(
+        event,
+        now,
+        getRobloxPageLocale()
+      );
+      marker.setAttribute("aria-hidden", "true");
+      const markerDot = document.createElement("span");
+      markerDot.className = "rsl-game-events__time-dot";
+      markerDot.setAttribute("aria-hidden", "true");
+      timeRail.append(marker, markerDot);
+    }
+
+    const thumbnail = document.createElement("span");
+    thumbnail.className = "rsl-game-events__thumbnail rsl-owned-thumbnail-frame";
+    thumbnail.dataset.rslThumbnailState = "fallback";
+    thumbnail.setAttribute("aria-hidden", "true");
+    const image = document.createElement("img");
+    image.alt = "";
+    image.decoding = "async";
+    image.loading = "lazy";
+    image.referrerPolicy = "no-referrer";
+    thumbnail.append(image);
+
+    const main = document.createElement("div");
+    main.className = "rsl-game-events__main";
+    const titleRow = document.createElement("div");
+    titleRow.className = "rsl-game-events__title-row";
+    const title = document.createElement("span");
+    title.className = "rsl-game-events__title";
+    title.textContent = event.title;
+    title.title = event.subtitle ? `${event.title}\n${event.subtitle}` : event.title;
+    titleRow.append(title);
+    const context = document.createElement("div");
+    context.className = "rsl-game-events__context";
+    context.textContent = event.gameName;
+    context.title = context.textContent;
+    const accessibleSubtitle = document.createElement("span");
+    accessibleSubtitle.className = "rsl-sr-only";
+    accessibleSubtitle.textContent = event.subtitle
+      ? `Event details: ${event.subtitle}`
+      : "";
+    const timing = document.createElement("time");
+    timing.className = "rsl-game-events__timing";
+    timing.dateTime = new Date(status === "live" ? event.endAt : event.startAt).toISOString();
+    timing.setAttribute("data-rsl-game-events-timing", event.id);
+    timing.setAttribute("aria-hidden", "true");
+    const timingValue = formatGameEventTiming(event, now);
+    timing.textContent = timingValue.text;
+    timing.title = timingValue.fullText;
+    const accessibleTiming = document.createElement("span");
+    accessibleTiming.className = "rsl-sr-only";
+    accessibleTiming.setAttribute("data-rsl-game-events-accessible-timing", event.id);
+    accessibleTiming.textContent = timingValue.fullText;
+    main.append(titleRow, context, accessibleSubtitle, accessibleTiming);
+
+    const actions = document.createElement("div");
+    actions.className = "rsl-game-events__actions";
+    actions.setAttribute(GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE, "");
+
+    const join = document.createElement("button");
+    join.type = "button";
+    join.className = "rsl-button rsl-button--primary rsl-game-events__join";
+    join.textContent = "Join Game";
+    join.setAttribute(QUICK_PLAY_ACTION_ATTRIBUTE, "play");
+    join.setAttribute(QUICK_PLAY_PLACE_ID_ATTRIBUTE, event.placeId);
+    join.setAttribute("data-rsl-game-events-join", event.id);
+    join.dataset.rslGameEventsDefaultLabel = `Join Game: ${event.gameName}`;
+    join.setAttribute("aria-label", join.dataset.rslGameEventsDefaultLabel);
+    join.title = join.dataset.rslGameEventsDefaultLabel;
+
+    const link = document.createElement("a");
+    link.className = "rsl-button rsl-button--secondary rsl-game-events__view";
+    link.href = event.eventUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "View Event";
+    link.setAttribute("data-rsl-game-events-view", event.id);
+    link.setAttribute("aria-label", `View Event: ${event.title}`);
+    link.title = `View Event: ${event.title}`;
+    link.addEventListener("click", (clickEvent) => {
+      if (clickEvent.isTrusted !== true) clickEvent.preventDefault();
+    });
+    actions.append(join, link);
+
+    if (livePanel) row.append(thumbnail, main, timing, actions);
+    else row.append(timeRail, thumbnail, main, timing, actions);
+    item.append(row);
+    observeGameEventThumbnail(image, event, gameEventsLifecycleEpoch);
+    return item;
+  }
+
+  function renderGameEventsFilters(dialog) {
+    dialog.querySelectorAll("[data-rsl-game-events-status-filter]").forEach((button) => {
+      const selected = button.getAttribute("data-rsl-game-events-status-filter") ===
+        gameEventsStatusFilter;
+      button.setAttribute("aria-pressed", String(selected));
+      button.classList.toggle("rsl-game-events__chip--selected", selected);
+    });
+  }
+
+  function normalizeGameEventSearchResult(rawValue) {
+    if (!rawValue || typeof rawValue !== "object") return null;
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const placeId = normalizeQuickPlayPlaceId(rawValue.placeId);
+    const name = normalizeGameEventText(rawValue.name, "", 150);
+    if (!universeId || !name) return null;
+    const playerCountValue = Number(rawValue.playerCount);
+    return Object.freeze({
+      universeId,
+      placeId,
+      name,
+      creatorName: normalizeGameEventText(rawValue.creatorName, "", 100),
+      playerCount: Number.isSafeInteger(playerCountValue) && playerCountValue >= 0
+        ? playerCountValue
+        : null
+    });
+  }
+
+  function isGameEventsSearchableQuery(rawValue) {
+    const query = normalizeGameEventText(rawValue, "", 300);
+    return query.length >= 2 && query.length <= 100 &&
+      !/^\d+$/.test(query) &&
+      !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(query);
+  }
+
+  function clearGameEventsSearch(invalidate = true) {
+    if (gameEventsSearchTimer !== null) {
+      window.clearTimeout(gameEventsSearchTimer);
+      gameEventsSearchTimer = null;
+    }
+    if (invalidate) gameEventsSearchSequence += 1;
+    gameEventsSearchState = "idle";
+    gameEventsSearchErrorCode = "";
+    gameEventsSearchResults = [];
+    gameEventsSearchActiveIndex = -1;
+    gameEventsSelectedSearchResult = null;
+  }
+
+  function renderGameEventsSearch(dialog) {
+    if (!dialog) return;
+    const input = dialog.querySelector("[data-rsl-game-events-add-input]");
+    const list = dialog.querySelector("[data-rsl-game-events-search-results]");
+    const status = dialog.querySelector("[data-rsl-game-events-search-status]");
+    if (!input || !list || !status) return;
+    list.querySelectorAll("img").forEach((image) => {
+      gameEventsThumbnailObserver?.unobserve?.(image);
+    });
+    list.replaceChildren();
+    let statusText = "";
+    if (gameEventsSearchState === "loading") {
+      statusText = "Searching Roblox experiences…";
+    } else if (gameEventsSearchState === "error") {
+      statusText = gameEventsSearchErrorCode === "ACCOUNT_CHANGED"
+        ? getGameEventsErrorText("ACCOUNT_CHANGED")
+        : "Suggestions are unavailable. You can still use a game link or ID.";
+    } else if (gameEventsSearchState === "ready" && gameEventsSearchResults.length === 0) {
+      statusText = "No matching experiences found. You can still use a game link or ID.";
+    }
+    status.textContent = statusText;
+    gameEventsSearchResults.forEach((result, index) => {
+      const option = document.createElement("li");
+      option.className = "rsl-game-events__search-result";
+      option.setAttribute("role", "presentation");
+      option.id = `rsl-game-events-search-option-${index}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "rsl-game-events__search-option";
+      button.setAttribute("role", "option");
+      button.id = `rsl-game-events-search-choice-${index}`;
+      button.setAttribute("aria-selected", String(index === gameEventsSearchActiveIndex));
+      button.setAttribute("data-rsl-game-events-search-option", String(index));
+      const thumbnail = document.createElement("span");
+      thumbnail.className = "rsl-game-events__search-thumbnail rsl-owned-thumbnail-frame";
+      thumbnail.dataset.rslThumbnailState = "fallback";
+      thumbnail.setAttribute("aria-hidden", "true");
+      const image = document.createElement("img");
+      image.alt = "";
+      image.decoding = "async";
+      image.loading = "lazy";
+      image.referrerPolicy = "no-referrer";
+      thumbnail.append(image);
+      const copy = document.createElement("span");
+      copy.className = "rsl-game-events__search-copy";
+      const name = document.createElement("strong");
+      name.textContent = result.name;
+      const detail = document.createElement("span");
+      const parts = [];
+      if (result.creatorName) parts.push(`By ${result.creatorName}`);
+      if (result.playerCount !== null) {
+        parts.push(`${new Intl.NumberFormat(getRobloxPageLocale()).format(result.playerCount)} playing`);
+      }
+      detail.textContent = parts.join(" · ") || "Roblox experience";
+      copy.append(name, detail);
+      button.append(thumbnail, copy);
+      option.append(button);
+      list.append(option);
+      observeGameEventThumbnail(image, result, gameEventsLifecycleEpoch);
+    });
+    const expanded = gameEventsAddPanelOpen &&
+      (gameEventsSearchState !== "idle" || gameEventsSearchResults.length > 0);
+    list.hidden = !expanded || gameEventsSearchResults.length === 0;
+    status.hidden = !expanded || !statusText;
+    input.setAttribute("aria-expanded", String(expanded && gameEventsSearchResults.length > 0));
+    if (gameEventsSearchActiveIndex >= 0 && gameEventsSearchResults[gameEventsSearchActiveIndex]) {
+      input.setAttribute("aria-activedescendant", `rsl-game-events-search-choice-${gameEventsSearchActiveIndex}`);
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  async function searchGameEventFavorites(query, sequence, epoch) {
+    const requestId = ++gameEventsRequestSequence;
+    const viewerUserId = gameEventsViewerUserId;
+    try {
+      const response = await sendGameEventsRuntimeMessage({
+        type: GAME_EVENTS_SEARCH_MESSAGE_TYPE,
+        requestId,
+        query,
+        ...(viewerUserId ? { viewerUserId } : {}),
+        locale: getRobloxPageLocale()
+      });
+      const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+      const input = dialog?.querySelector?.("[data-rsl-game-events-add-input]");
+      if (
+        epoch !== gameEventsLifecycleEpoch ||
+        sequence !== gameEventsSearchSequence ||
+        !dialog?.open ||
+        !gameEventsAddPanelOpen ||
+        normalizeGameEventText(input?.value, "", 300) !== query ||
+        response?.requestId !== requestId
+      ) return false;
+      if (response?.ok !== true) {
+        const error = new Error("Game Events search failed");
+        error.code = response?.code || "INVALID";
+        throw error;
+      }
+      const responseViewer = normalizeQuickPlayPlaceId(response.viewerUserId);
+      if (!responseViewer || (viewerUserId && responseViewer !== viewerUserId)) {
+        const error = new Error("Game Events account changed");
+        error.code = "ACCOUNT_CHANGED";
+        throw error;
+      }
+      gameEventsViewerUserId = responseViewer;
+      const seen = new Set();
+      gameEventsSearchResults = (Array.isArray(response.results) ? response.results : [])
+        .map(normalizeGameEventSearchResult)
+        .filter((result) => {
+          if (!result || seen.has(result.universeId)) return false;
+          seen.add(result.universeId);
+          return true;
+        })
+        .slice(0, 8);
+      gameEventsSearchState = "ready";
+      gameEventsSearchErrorCode = "";
+      gameEventsSearchActiveIndex = gameEventsSearchResults.length ? 0 : -1;
+      renderGameEventsSearch(dialog);
+      return true;
+    } catch (error) {
+      if (epoch !== gameEventsLifecycleEpoch || sequence !== gameEventsSearchSequence) {
+        return false;
+      }
+      gameEventsSearchResults = [];
+      gameEventsSearchActiveIndex = -1;
+      gameEventsSearchState = "error";
+      gameEventsSearchErrorCode = String(error?.code || "NETWORK").toUpperCase();
+      if (gameEventsSearchErrorCode === "ACCOUNT_CHANGED") {
+        gameEventsFavorites = [];
+        gameEventsItems = [];
+        gameEventsViewerUserId = null;
+        gameEventsPartial = false;
+        gameEventsLoadState = "error";
+        gameEventsErrorCode = "ACCOUNT_CHANGED";
+      }
+      if (gameEventsSearchErrorCode === "ACCOUNT_CHANGED") {
+        renderGameEventsDialog();
+      } else {
+        renderGameEventsSearch(document.getElementById(GAME_EVENTS_DIALOG_ID));
+      }
+      return false;
+    }
+  }
+
+  function queueGameEventsSearch(rawValue) {
+    const query = normalizeGameEventText(rawValue, "", 300);
+    clearGameEventsSearch();
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog?.open || !gameEventsAddPanelOpen || !isGameEventsSearchableQuery(query)) {
+      renderGameEventsSearch(dialog);
+      return false;
+    }
+    const sequence = gameEventsSearchSequence;
+    const epoch = gameEventsLifecycleEpoch;
+    gameEventsSearchState = "loading";
+    renderGameEventsSearch(dialog);
+    gameEventsSearchTimer = window.setTimeout(() => {
+      gameEventsSearchTimer = null;
+      void searchGameEventFavorites(query, sequence, epoch);
+    }, GAME_EVENTS_SEARCH_DEBOUNCE_MS);
+    return true;
+  }
+
+  function selectGameEventsSearchResult(index, dialog) {
+    const result = gameEventsSearchResults[Number(index)];
+    const input = dialog?.querySelector?.("[data-rsl-game-events-add-input]");
+    if (!result || !input) return false;
+    gameEventsSelectedSearchResult = result;
+    input.value = result.name;
+    if (gameEventsSearchTimer !== null) window.clearTimeout(gameEventsSearchTimer);
+    gameEventsSearchTimer = null;
+    gameEventsSearchSequence += 1;
+    gameEventsSearchState = "idle";
+    gameEventsSearchResults = [];
+    gameEventsSearchActiveIndex = -1;
+    renderGameEventsSearch(dialog);
+    input.focus({ preventScroll: true });
+    return true;
+  }
+
+  function renderGameEventsFavorites(dialog) {
+    const panel = dialog.querySelector("[data-rsl-game-events-manage-panel]");
+    const addPanel = dialog.querySelector("[data-rsl-game-events-add-panel]");
+    if (panel) panel.hidden = !gameEventsManagePanelOpen;
+    if (addPanel) addPanel.hidden = !gameEventsAddPanelOpen;
+    dialog.querySelector("[data-rsl-game-events-add-toggle]")?.setAttribute(
+      "aria-expanded",
+      String(gameEventsAddPanelOpen)
+    );
+    dialog.querySelector("[data-rsl-game-events-manage-toggle]")?.setAttribute(
+      "aria-expanded",
+      String(gameEventsManagePanelOpen)
+    );
+    renderGameEventsSearch(dialog);
+    const list = dialog.querySelector("[data-rsl-game-events-favorites]");
+    if (!list) return;
+    const focusedRemoveUniverseId = document.activeElement?.getAttribute?.(
+      "data-rsl-game-events-remove"
+    );
+    const previousScrollTop = list.scrollTop;
+    list.replaceChildren();
+    if (gameEventsFavorites.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "rsl-game-events__favorite-empty";
+      empty.textContent = "No tracked games yet.";
+      list.append(empty);
+    } else {
+      gameEventsFavorites.forEach((favorite) => {
+        const item = document.createElement("li");
+        item.className = "rsl-game-events__favorite";
+        const name = document.createElement("span");
+        name.textContent = favorite.name;
+        name.title = favorite.name;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "rsl-button rsl-button--secondary rsl-game-events__remove";
+        remove.textContent = gameEventsPendingAction === `remove:${favorite.universeId}`
+          ? "Removing…"
+          : "Remove";
+        remove.disabled = gameEventsPendingAction !== null || gameEventsLoadState === "loading";
+        remove.setAttribute("data-rsl-game-events-remove", favorite.universeId);
+        remove.setAttribute("aria-label", `Remove ${favorite.name} from tracked games`);
+        item.append(name, remove);
+        list.append(item);
+      });
+    }
+    list.scrollTop = previousScrollTop;
+    if (focusedRemoveUniverseId && dialog.open && gameEventsManagePanelOpen) {
+      list.querySelector(
+        `[data-rsl-game-events-remove="${CSS.escape(focusedRemoveUniverseId)}"]`
+      )?.focus?.({ preventScroll: true });
+    }
+    const input = dialog.querySelector("[data-rsl-game-events-add-input]");
+    const submit = dialog.querySelector("[data-rsl-game-events-add-submit]");
+    if (input) {
+      input.disabled = gameEventsPendingAction !== null || gameEventsLoadState === "loading";
+    }
+    if (submit) {
+      submit.disabled = gameEventsPendingAction !== null ||
+        gameEventsLoadState === "loading" ||
+        gameEventsFavorites.length >= GAME_EVENTS_MAX_FAVORITES;
+      submit.textContent = gameEventsPendingAction === "add" ? "Adding…" : "Track Game";
+    }
+  }
+
+  function renderGameEventsLiveSection(events, now = Date.now()) {
+    const section = document.createElement("section");
+    section.className = "rsl-game-events__live-section";
+    section.setAttribute("aria-labelledby", "rsl-game-events-live-heading");
+    section.classList.toggle(
+      "rsl-game-events__live-section--collapsed",
+      gameEventsLiveSectionCollapsed
+    );
+    const headingRow = document.createElement("div");
+    headingRow.className = "rsl-game-events__section-heading";
+    const heading = document.createElement("h3");
+    heading.id = "rsl-game-events-live-heading";
+    heading.textContent = "Live Now";
+    const count = document.createElement("span");
+    count.className = "rsl-game-events__live-count";
+    count.textContent = `${events.length} active`;
+    count.setAttribute(
+      "aria-label",
+      `${events.length} active ${events.length === 1 ? "event" : "events"}`
+    );
+    headingRow.append(heading, count);
+    if (events.length > 0) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "rsl-game-events__live-toggle";
+      toggle.textContent = gameEventsLiveSectionCollapsed ? "Show" : "Hide";
+      toggle.setAttribute("data-rsl-game-events-live-toggle", "");
+      toggle.setAttribute("aria-controls", "rsl-game-events-live-list");
+      toggle.setAttribute("aria-expanded", String(!gameEventsLiveSectionCollapsed));
+      toggle.setAttribute(
+        "aria-label",
+        gameEventsLiveSectionCollapsed ? "Show active events" : "Hide active events"
+      );
+      headingRow.append(toggle);
+    }
+    section.append(headingRow);
+    if (events.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "rsl-game-events__section-empty";
+      empty.textContent = "No events are live right now.";
+      section.append(empty);
+      return section;
+    }
+    const liveList = document.createElement("ul");
+    liveList.id = "rsl-game-events-live-list";
+    liveList.className = "rsl-game-events__live-list";
+    liveList.setAttribute("data-rsl-game-events-live-list", "");
+    liveList.setAttribute("aria-labelledby", heading.id);
+    liveList.hidden = gameEventsLiveSectionCollapsed;
+    [...events].sort(compareGameEventTimelineOrder).forEach((event) => {
+      liveList.append(renderGameEventItem(event, now, { variant: "live-panel" }));
+    });
+    section.append(liveList);
+    return section;
+  }
+
+  function syncGameEventsLiveSectionCollapse(dialog) {
+    const targetDialog = dialog || document.getElementById(GAME_EVENTS_DIALOG_ID);
+    const section = targetDialog?.querySelector?.(".rsl-game-events__live-section");
+    const liveList = section?.querySelector?.("[data-rsl-game-events-live-list]");
+    const toggle = section?.querySelector?.("[data-rsl-game-events-live-toggle]");
+    if (!section || !liveList || !toggle) return false;
+    section.classList.toggle(
+      "rsl-game-events__live-section--collapsed",
+      gameEventsLiveSectionCollapsed
+    );
+    liveList.hidden = gameEventsLiveSectionCollapsed;
+    toggle.textContent = gameEventsLiveSectionCollapsed ? "Show" : "Hide";
+    toggle.setAttribute("aria-expanded", String(!gameEventsLiveSectionCollapsed));
+    toggle.setAttribute(
+      "aria-label",
+      gameEventsLiveSectionCollapsed ? "Show active events" : "Hide active events"
+    );
+    return true;
+  }
+
+  function renderGameEventsTimelineSection(events, now = Date.now()) {
+    const section = document.createElement("section");
+    section.className = "rsl-game-events__timeline-section";
+    section.setAttribute("aria-labelledby", "rsl-game-events-timeline-heading");
+    const heading = document.createElement("h3");
+    heading.id = "rsl-game-events-timeline-heading";
+    heading.className = "rsl-game-events__timeline-heading";
+    heading.textContent = "Upcoming";
+    section.append(heading);
+    if (events.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "rsl-game-events__section-empty";
+      empty.textContent = "No upcoming events are scheduled.";
+      section.append(empty);
+      return section;
+    }
+    const timeline = document.createElement("ol");
+    timeline.className = "rsl-game-events__timeline";
+    timeline.setAttribute("data-rsl-game-events-timeline", "");
+    timeline.setAttribute("aria-labelledby", heading.id);
+    timeline.style.setProperty(
+      "--rsl-game-events-tail-space",
+      `${getGameEventTimelineTailSpace(events, now)}px`
+    );
+    let previousEvent = null;
+    groupGameEventsByDate(
+      events,
+      now,
+      getRobloxPageLocale()
+    ).forEach((group) => {
+      group.events.forEach((event, index) => {
+        timeline.append(renderGameEventItem(event, now, {
+          gapBefore: getGameEventTimelineGapBefore(previousEvent, event, now),
+          groupLabel: index === 0 ? group.label : "",
+          groupHeadingId: index === 0 ? `rsl-game-events-date-${group.key}` : ""
+        }));
+        previousEvent = event;
+      });
+    });
+    const nowMarker = document.createElement("li");
+    nowMarker.className = "rsl-game-events__now-marker";
+    nowMarker.setAttribute("data-rsl-game-events-now-marker", "");
+    nowMarker.setAttribute("role", "presentation");
+    nowMarker.setAttribute("aria-hidden", "true");
+    nowMarker.hidden = true;
+    const nowDot = document.createElement("span");
+    nowDot.className = "rsl-game-events__now-dot";
+    const nowLabel = document.createElement("span");
+    nowLabel.className = "rsl-game-events__now-label";
+    nowLabel.setAttribute("data-rsl-game-events-now-label", "");
+    nowLabel.textContent = "NOW";
+    nowMarker.append(nowDot, nowLabel);
+    timeline.append(nowMarker);
+    section.append(timeline);
+    return section;
+  }
+
+  function renderGameEventsDialog() {
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog) return;
+    const list = dialog.querySelector("[data-rsl-game-events-list]");
+    const liveStatus = dialog.querySelector("[data-rsl-game-events-live-status]");
+    if (!list || !liveStatus) return;
+    const focusedEventAction = document.activeElement?.hasAttribute?.("data-rsl-game-events-join")
+      ? "join"
+      : document.activeElement?.hasAttribute?.("data-rsl-game-events-view")
+        ? "view"
+        : null;
+    const focusedEventId = focusedEventAction
+      ? document.activeElement.getAttribute(`data-rsl-game-events-${focusedEventAction}`)
+      : null;
+    const scrollTop = list.scrollTop;
+    gameEventsThumbnailObserver?.disconnect();
+    gameEventsThumbnailObserver = null;
+    renderGameEventsFilters(dialog);
+    renderGameEventsFavorites(dialog);
+    liveStatus.classList.toggle("rsl-game-events__live-status--error", gameEventsLoadState === "error");
+    if (gameEventsLoadState === "loading") {
+      liveStatus.textContent = gameEventsItems.length ? "Refreshing events…" : "Loading events…";
+    } else if (gameEventsLoadState === "error") {
+      liveStatus.textContent = getGameEventsErrorText(gameEventsErrorCode);
+    } else if (gameEventsNotice) {
+      liveStatus.textContent = gameEventsNotice;
+    } else if (gameEventsPartial) {
+      liveStatus.textContent =
+        "Some tracked games could not be refreshed. Available events are shown.";
+    } else {
+      liveStatus.textContent = "";
+    }
+
+    list.replaceChildren();
+    if (gameEventsLoadState === "loading" && gameEventsItems.length === 0) {
+      const loading = document.createElement("div");
+      loading.className = "rsl-game-events__empty";
+      loading.textContent = "Loading official Roblox events…";
+      list.append(loading);
+    } else if (gameEventsLoadState === "error" && gameEventsItems.length === 0) {
+      const error = document.createElement("div");
+      error.className = "rsl-game-events__empty rsl-game-events__empty--error";
+      error.textContent = getGameEventsErrorText(gameEventsErrorCode);
+      list.append(error);
+    } else if (gameEventsFavorites.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "rsl-game-events__empty";
+      const heading = document.createElement("strong");
+      heading.textContent = "No tracked games yet";
+      const detail = document.createElement("span");
+      detail.textContent = "Add a game to see its official live and upcoming events here.";
+      empty.append(heading, detail);
+      list.append(empty);
+    } else {
+      const now = Date.now();
+      const filtered = filterGameEvents(
+        gameEventsItems,
+        gameEventsStatusFilter,
+        now
+      );
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "rsl-game-events__empty";
+        const heading = document.createElement("strong");
+        const detail = document.createElement("span");
+        if (gameEventsItems.length === 0) {
+          heading.textContent = "No live or upcoming events";
+          detail.textContent =
+            "Your tracked games have not published any official Roblox events right now.";
+        } else {
+          heading.textContent = gameEventsStatusFilter === "live"
+            ? "No live events"
+            : gameEventsStatusFilter === "upcoming"
+              ? "No upcoming events"
+              : "No events available";
+          detail.textContent = "Try another status filter.";
+        }
+        empty.append(heading, detail);
+        list.append(empty);
+      } else {
+        const feed = document.createElement("div");
+        feed.className = "rsl-game-events__feed";
+        const liveEvents = filterGameEvents(gameEventsItems, "live", now);
+        const upcomingEvents = filterGameEvents(gameEventsItems, "upcoming", now);
+        if (gameEventsStatusFilter !== "upcoming") {
+          feed.append(renderGameEventsLiveSection(liveEvents, now));
+        }
+        if (gameEventsStatusFilter !== "live") {
+          feed.append(renderGameEventsTimelineSection(upcomingEvents, now));
+        }
+        list.append(feed);
+      }
+    }
+    list.setAttribute("aria-busy", String(gameEventsLoadState === "loading"));
+    list.scrollTop = scrollTop;
+    dialog.querySelectorAll("[data-rsl-game-events-refresh]").forEach((button) => {
+      button.disabled = gameEventsLoadState === "loading" || gameEventsPendingAction !== null;
+    });
+    if (focusedEventAction && focusedEventId && dialog.open) {
+      list.querySelector(
+        `[data-rsl-game-events-${focusedEventAction}="${CSS.escape(focusedEventId)}"]`
+      )?.focus?.({ preventScroll: true });
+    }
+    window.requestAnimationFrame?.(() => {
+      if (dialog.open) refreshGameEventsTimelineNowMarker(dialog);
+    });
+  }
+
+  function refreshGameEventsTimelineNowMarker(dialog, now = Date.now()) {
+    const targetDialog = dialog || document.getElementById(GAME_EVENTS_DIALOG_ID);
+    const list = targetDialog?.querySelector?.("[data-rsl-game-events-list]");
+    const timeline = list?.querySelector?.("[data-rsl-game-events-timeline]");
+    const marker = timeline?.querySelector?.("[data-rsl-game-events-now-marker]");
+    if (!list || !timeline || !marker) return Object.freeze({ visible: false });
+    const visibleEvents = [...timeline.querySelectorAll("[data-rsl-game-event-id]")]
+      .map((item) => gameEventsItems.find(
+        (event) => event.id === item.getAttribute("data-rsl-game-event-id")
+      ))
+      .filter(Boolean);
+    const model = getGameEventsTimelineNowPosition(
+      visibleEvents,
+      now
+    );
+    if (!model.visible) {
+      marker.hidden = true;
+      marker.removeAttribute("data-rsl-game-events-now-positioned");
+      return model;
+    }
+    timeline.style.setProperty(
+      "--rsl-game-events-tail-space",
+      `${getGameEventTimelineTailSpace(visibleEvents, now)}px`
+    );
+    const beforeDot = model.beforeEventId
+      ? timeline.querySelector(
+        `[data-rsl-game-event-id="${CSS.escape(model.beforeEventId)}"] .rsl-game-events__time-dot`
+      )
+      : null;
+    const afterDot = model.afterEventId
+      ? timeline.querySelector(
+        `[data-rsl-game-event-id="${CSS.escape(model.afterEventId)}"] .rsl-game-events__time-dot`
+      )
+      : null;
+    if ((model.beforeEventId && !beforeDot) || (model.afterEventId && !afterDot)) {
+      marker.hidden = true;
+      marker.removeAttribute("data-rsl-game-events-now-positioned");
+      return Object.freeze({ visible: false });
+    }
+    const timelineRect = timeline.getBoundingClientRect();
+    const dotY = (dot) => {
+      const rect = dot.getBoundingClientRect();
+      return rect.top + rect.height / 2 - timelineRect.top;
+    };
+    const beforeY = beforeDot ? dotY(beforeDot) : 12;
+    const previousEvent = model.beforeEventId
+      ? visibleEvents.find((event) => event.id === model.beforeEventId)
+      : null;
+    const nextEvent = model.afterEventId
+      ? visibleEvents.find((event) => event.id === model.afterEventId)
+      : null;
+    let y;
+    if (!beforeDot && afterDot) {
+      y = Math.max(12,
+        dotY(afterDot) - Math.max(18,
+          12 + getGameEventTimelineGap(now, nextEvent?.startAt)
+        )
+      );
+    } else if (beforeDot && !afterDot) {
+      y = beforeY + Math.max(18,
+        12 + getGameEventTimelineGap(previousEvent?.startAt, now)
+      );
+    } else {
+      const afterY = dotY(afterDot);
+      const progress = Math.max(0, Math.min(1, Number(model.progress) || 0));
+      y = beforeY + (afterY - beforeY) * progress;
+    }
+    const firstPlacement = marker.hidden ||
+      marker.getAttribute("data-rsl-game-events-now-positioned") !== "true";
+    marker.style.setProperty("--rsl-game-events-now-y", `${Math.round(y * 10) / 10}px`);
+    marker.hidden = false;
+    if (firstPlacement) {
+      marker.getBoundingClientRect();
+      marker.setAttribute("data-rsl-game-events-now-positioned", "true");
+    }
+    return Object.freeze({ ...model, y });
+  }
+
+  function clearGameEventsTimers() {
+    if (gameEventsMinuteTimer !== null) {
+      window.clearTimeout(gameEventsMinuteTimer);
+      gameEventsMinuteTimer = null;
+    }
+    if (gameEventsBoundaryTimer !== null) {
+      window.clearTimeout(gameEventsBoundaryTimer);
+      gameEventsBoundaryTimer = null;
+    }
+    gameEventsResizeObserver?.disconnect?.();
+    gameEventsResizeObserver = null;
+    window.removeEventListener("resize", refreshGameEventsTimelineAfterResize);
+  }
+
+  function refreshGameEventsTimelineAfterResize() {
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog?.open) return;
+    window.requestAnimationFrame?.(() => {
+      if (dialog.open) refreshGameEventsTimelineNowMarker(dialog);
+    });
+  }
+
+  function observeGameEventsTimelineResize() {
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    const list = dialog?.querySelector?.("[data-rsl-game-events-list]");
+    gameEventsResizeObserver?.disconnect?.();
+    gameEventsResizeObserver = null;
+    window.removeEventListener("resize", refreshGameEventsTimelineAfterResize);
+    if (!dialog?.open || !list) return;
+    if (typeof ResizeObserver === "function") {
+      gameEventsResizeObserver = new ResizeObserver(refreshGameEventsTimelineAfterResize);
+      gameEventsResizeObserver.observe(list);
+    } else {
+      window.addEventListener("resize", refreshGameEventsTimelineAfterResize, {
+        passive: true
+      });
+    }
+  }
+
+  function refreshGameEventTimes() {
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog?.open) return;
+    const now = Date.now();
+    const byId = new Map(gameEventsItems.map((event) => [event.id, event]));
+    dialog.querySelectorAll("[data-rsl-game-events-timing]").forEach((node) => {
+      const id = node.getAttribute("data-rsl-game-events-timing");
+      const event = byId.get(id);
+      if (!event) return;
+      const timing = formatGameEventTiming(event, now);
+      node.textContent = timing.text;
+      node.title = timing.fullText;
+      dialog.querySelector(
+        `[data-rsl-game-events-accessible-timing="${CSS.escape(id)}"]`
+      )?.replaceChildren(document.createTextNode(timing.fullText));
+    });
+    refreshGameEventsTimelineNowMarker(dialog, now);
+  }
+
+  function scheduleGameEventsMinuteRefresh() {
+    if (gameEventsMinuteTimer !== null) window.clearTimeout(gameEventsMinuteTimer);
+    if (!document.getElementById(GAME_EVENTS_DIALOG_ID)?.open) return;
+    const delay = Math.max(250, 60_000 - (Date.now() % 60_000) + 50);
+    gameEventsMinuteTimer = window.setTimeout(() => {
+      gameEventsMinuteTimer = null;
+      if (!document.getElementById(GAME_EVENTS_DIALOG_ID)?.open) return;
+      refreshGameEventTimes();
+      scheduleGameEventsMinuteRefresh();
+    }, delay);
+  }
+
+  function scheduleGameEventsBoundaryRefresh() {
+    if (gameEventsBoundaryTimer !== null) window.clearTimeout(gameEventsBoundaryTimer);
+    if (!document.getElementById(GAME_EVENTS_DIALOG_ID)?.open) return;
+    const now = Date.now();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    const boundaries = [nextMidnight.getTime()];
+    gameEventsItems.forEach((event) => {
+      if (event.startAt > now) boundaries.push(event.startAt);
+      if (event.endAt > now) boundaries.push(event.endAt);
+    });
+    const nextBoundary = Math.min(...boundaries);
+    const delay = Math.min(2_147_000_000, Math.max(250, nextBoundary - now + 100));
+    gameEventsBoundaryTimer = window.setTimeout(() => {
+      gameEventsBoundaryTimer = null;
+      if (!document.getElementById(GAME_EVENTS_DIALOG_ID)?.open) return;
+      gameEventsItems = gameEventsItems.filter((event) => event.endAt > Date.now());
+      renderGameEventsDialog();
+      scheduleGameEventsBoundaryRefresh();
+    }, delay);
+  }
+
+  async function loadGameEvents(forceRefresh = false) {
+    if (!isFeatureEnabled("gameEvents") || gameEventsPendingAction !== null) return false;
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog?.open) return false;
+    const epoch = gameEventsLifecycleEpoch;
+    const requestId = ++gameEventsRequestSequence;
+    const expectedViewerUserId = gameEventsViewerUserId;
+    const hadSnapshot = gameEventsFavorites.length > 0 || gameEventsItems.length > 0;
+    gameEventsLoadState = "loading";
+    gameEventsErrorCode = "";
+    gameEventsNotice = "";
+    renderGameEventsDialog();
+    try {
+      const response = await sendGameEventsRuntimeMessage({
+        type: GAME_EVENTS_GET_MESSAGE_TYPE,
+        requestId,
+        ...(expectedViewerUserId ? { viewerUserId: expectedViewerUserId } : {}),
+        locale: getRobloxPageLocale(),
+        forceRefresh: forceRefresh === true
+      });
+      if (
+        epoch !== gameEventsLifecycleEpoch ||
+        !document.getElementById(GAME_EVENTS_DIALOG_ID)?.open ||
+        response?.requestId !== requestId
+      ) return false;
+      if (response?.ok !== true) {
+        const error = new Error("Game Events request failed");
+        error.code = response?.code || "INVALID";
+        throw error;
+      }
+      const normalized = normalizeGameEventsResponse(response);
+      if (
+        !normalized ||
+        (expectedViewerUserId && normalized.viewerUserId !== expectedViewerUserId)
+      ) {
+        const error = new Error("Game Events account changed");
+        error.code = expectedViewerUserId ? "ACCOUNT_CHANGED" : "INVALID";
+        throw error;
+      }
+      gameEventsViewerUserId = normalized.viewerUserId;
+      gameEventsFavorites = normalized.favorites;
+      gameEventsItems = normalized.events;
+      gameEventsPartial = normalized.partial;
+      gameEventsLoadState = "ready";
+      renderGameEventsDialog();
+      scheduleGameEventsBoundaryRefresh();
+      return true;
+    } catch (error) {
+      if (epoch !== gameEventsLifecycleEpoch) return false;
+      gameEventsErrorCode = error?.code || "NETWORK";
+      if (gameEventsErrorCode === "ACCOUNT_CHANGED") {
+        gameEventsFavorites = [];
+        gameEventsItems = [];
+        gameEventsViewerUserId = null;
+        gameEventsPartial = false;
+        gameEventsLoadState = "error";
+      } else if (hadSnapshot) {
+        gameEventsLoadState = "ready";
+        gameEventsPartial = true;
+        gameEventsNotice = "Roblox could not refresh events. Showing the previous results.";
+      } else {
+        gameEventsLoadState = "error";
+      }
+      renderGameEventsDialog();
+      return false;
+    }
+  }
+
+  function validateGameEventsActionResponse(response, requestId, viewerUserId) {
+    if (response?.requestId !== requestId || response?.ok !== true) {
+      const error = new Error("Game Events action failed");
+      error.code = response?.code || "INVALID";
+      throw error;
+    }
+    const responseViewer = normalizeQuickPlayPlaceId(response.viewerUserId);
+    if (!responseViewer || (viewerUserId && responseViewer !== viewerUserId)) {
+      const error = new Error("Game Events account changed");
+      error.code = "ACCOUNT_CHANGED";
+      throw error;
+    }
+    return responseViewer;
+  }
+
+  async function addGameEventFavorite(inputValue, selectedUniverseId = null) {
+    const input = normalizeGameEventText(inputValue, "", 300);
+    if (
+      !input ||
+      gameEventsPendingAction !== null ||
+      gameEventsLoadState === "loading" ||
+      gameEventsFavorites.length >= GAME_EVENTS_MAX_FAVORITES ||
+      !document.getElementById(GAME_EVENTS_DIALOG_ID)?.open
+    ) return false;
+    const epoch = gameEventsLifecycleEpoch;
+    const requestId = ++gameEventsRequestSequence;
+    const viewerUserId = gameEventsViewerUserId;
+    gameEventsPendingAction = "add";
+    gameEventsNotice = "";
+    renderGameEventsDialog();
+    let added = false;
+    let accountChanged = false;
+    try {
+      const response = await sendGameEventsRuntimeMessage({
+        type: GAME_EVENTS_ADD_MESSAGE_TYPE,
+        requestId,
+        ...(viewerUserId ? { viewerUserId } : {}),
+        locale: getRobloxPageLocale(),
+        input,
+        ...(normalizeQuickPlayPlaceId(selectedUniverseId)
+          ? { universeId: normalizeQuickPlayPlaceId(selectedUniverseId) }
+          : {})
+      });
+      if (epoch !== gameEventsLifecycleEpoch) return false;
+      gameEventsViewerUserId = validateGameEventsActionResponse(
+        response,
+        requestId,
+        viewerUserId
+      );
+      const favorite = normalizeGameEventFavorite(response.game);
+      if (!favorite) {
+        const error = new Error("Invalid tracked game");
+        error.code = "INVALID";
+        throw error;
+      }
+      if (!gameEventsFavorites.some((game) => game.universeId === favorite.universeId)) {
+        gameEventsFavorites = [...gameEventsFavorites, favorite];
+      }
+      const inputNode = document.querySelector("[data-rsl-game-events-add-input]");
+      if (inputNode) inputNode.value = "";
+      clearGameEventsSearch();
+      gameEventsNotice = response.alreadyTracked
+        ? `${favorite.name} is already tracked.`
+        : `${favorite.name} was added.`;
+      added = true;
+      return true;
+    } catch (error) {
+      if (epoch !== gameEventsLifecycleEpoch) return false;
+      const code = String(error?.code || "NETWORK").toUpperCase();
+      if (code === "ACCOUNT_CHANGED") {
+        accountChanged = true;
+        gameEventsFavorites = [];
+        gameEventsItems = [];
+        gameEventsViewerUserId = null;
+        gameEventsPartial = false;
+        gameEventsLoadState = "error";
+        gameEventsErrorCode = "ACCOUNT_CHANGED";
+      }
+      gameEventsNotice = code === "NOT_FOUND"
+        ? "That game could not be found. Try its Roblox URL or ID."
+        : code === "LIMIT_REACHED"
+          ? `You can track up to ${GAME_EVENTS_MAX_FAVORITES} games.`
+          : code === "ACCOUNT_CHANGED"
+            ? getGameEventsErrorText(code)
+            : "That game could not be added. Try again.";
+      return false;
+    } finally {
+      if (epoch === gameEventsLifecycleEpoch) {
+        gameEventsPendingAction = null;
+        renderGameEventsDialog();
+        if (!accountChanged && added && gameEventsFavorites.length > 0) {
+          void loadGameEvents(true);
+        }
+      }
+    }
+  }
+
+  async function removeGameEventFavorite(universeIdValue) {
+    const universeId = normalizeQuickPlayPlaceId(universeIdValue);
+    const favoriteIndex = gameEventsFavorites.findIndex(
+      (game) => game.universeId === universeId
+    );
+    const favorite = favoriteIndex >= 0 ? gameEventsFavorites[favoriteIndex] : null;
+    if (
+      !favorite ||
+      gameEventsPendingAction !== null ||
+      gameEventsLoadState === "loading" ||
+      !document.getElementById(GAME_EVENTS_DIALOG_ID)?.open
+    ) return false;
+    const epoch = gameEventsLifecycleEpoch;
+    const requestId = ++gameEventsRequestSequence;
+    const viewerUserId = gameEventsViewerUserId;
+    gameEventsPendingAction = `remove:${universeId}`;
+    gameEventsNotice = "";
+    renderGameEventsDialog();
+    let accountChanged = false;
+    let removed = false;
+    try {
+      const response = await sendGameEventsRuntimeMessage({
+        type: GAME_EVENTS_REMOVE_MESSAGE_TYPE,
+        requestId,
+        ...(viewerUserId ? { viewerUserId } : {}),
+        locale: getRobloxPageLocale(),
+        universeId
+      });
+      if (epoch !== gameEventsLifecycleEpoch) return false;
+      gameEventsViewerUserId = validateGameEventsActionResponse(
+        response,
+        requestId,
+        viewerUserId
+      );
+      gameEventsFavorites = gameEventsFavorites.filter(
+        (game) => game.universeId !== universeId
+      );
+      gameEventsItems = gameEventsItems.filter((event) => event.universeId !== universeId);
+      gameEventsNotice = `${favorite.name} was removed.`;
+      removed = true;
+      scheduleGameEventsBoundaryRefresh();
+      return true;
+    } catch (error) {
+      if (epoch !== gameEventsLifecycleEpoch) return false;
+      const code = String(error?.code || "").toUpperCase();
+      if (code === "ACCOUNT_CHANGED") {
+        accountChanged = true;
+        gameEventsFavorites = [];
+        gameEventsItems = [];
+        gameEventsViewerUserId = null;
+        gameEventsPartial = false;
+        gameEventsLoadState = "error";
+        gameEventsErrorCode = "ACCOUNT_CHANGED";
+      }
+      gameEventsNotice = code === "ACCOUNT_CHANGED"
+        ? getGameEventsErrorText("ACCOUNT_CHANGED")
+        : "That game could not be removed. Try again.";
+      return false;
+    } finally {
+      if (epoch === gameEventsLifecycleEpoch) {
+        gameEventsPendingAction = null;
+        if (accountChanged) gameEventsManagePanelOpen = false;
+        renderGameEventsDialog();
+        if (!accountChanged && document.getElementById(GAME_EVENTS_DIALOG_ID)?.open) {
+          const focusUniverseId = removed
+            ? gameEventsFavorites[favoriteIndex]?.universeId ||
+              gameEventsFavorites[favoriteIndex - 1]?.universeId ||
+              null
+            : universeId;
+          const focusTarget = focusUniverseId
+            ? document.querySelector(
+                `[data-rsl-game-events-remove="${CSS.escape(focusUniverseId)}"]`
+              )
+            : document.querySelector("[data-rsl-game-events-manage-toggle]");
+          focusTarget?.focus?.({ preventScroll: true });
+        }
+      }
+    }
+  }
+
+  function resetGameEventsDialogState() {
+    clearGameEventsTimers();
+    gameEventsThumbnailObserver?.disconnect();
+    gameEventsThumbnailObserver = null;
+    gameEventsLifecycleEpoch += 1;
+    gameEventsLoadState = "idle";
+    gameEventsErrorCode = "";
+    gameEventsFavorites = [];
+    gameEventsItems = [];
+    gameEventsViewerUserId = null;
+    gameEventsPartial = false;
+    gameEventsStatusFilter = "all";
+    gameEventsLiveSectionCollapsed = false;
+    gameEventsAddPanelOpen = false;
+    gameEventsManagePanelOpen = false;
+    gameEventsPendingAction = null;
+    gameEventsNotice = "";
+    clearGameEventsSearch();
+  }
+
+  function closeGameEventsDialog(restoreFocus = true) {
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (dialog?.open) {
+      dialog.dataset.rslRestoreGameEventsFocus = restoreFocus ? "true" : "false";
+      dialog.close();
+      return;
+    }
+    const opener = gameEventsDialogOpener;
+    gameEventsDialogOpener = null;
+    resetGameEventsDialogState();
+    if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
+  }
+
+  function createGameEventsDialog() {
+    const dialog = document.createElement("dialog");
+    dialog.id = GAME_EVENTS_DIALOG_ID;
+    dialog.className =
+      "rsl-dialog rsl-game-events-dialog foundation-web-dialog-overlay " +
+      "padding-medium foundation-web-portal-zindex bg-common-backdrop";
+    dialog.setAttribute("aria-labelledby", "rsl-game-events-title");
+    dialog.innerHTML = `
+      <div class="rsl-dialog__surface rsl-game-events__surface relative radius-large bg-surface-100 stroke-muted stroke-standard foundation-web-dialog-content shadow-transient-high" data-size="Large">
+        <div class="rsl-dialog__close-container absolute foundation-web-dialog-close-container">
+          <button type="button" class="rsl-icon-button foundation-web-close-affordance" aria-label="Close Game Events" data-rsl-game-events-close><span aria-hidden="true" class="rsl-dialog__close-icon"></span></button>
+        </div>
+        <div class="rsl-dialog__body rsl-game-events__body">
+          <header class="rsl-game-events__header">
+            <div class="rsl-game-events__heading-row">
+              <h2 id="rsl-game-events-title" class="content-emphasis text-title-large">Game Events</h2>
+              <div class="rsl-game-events__heading-actions">
+                <button type="button" class="rsl-button rsl-button--secondary" aria-expanded="false" aria-controls="rsl-game-events-add-panel" data-rsl-game-events-add-toggle>Add Game</button>
+                <button type="button" class="rsl-button rsl-button--secondary" data-rsl-game-events-refresh>Refresh</button>
+              </div>
+            </div>
+            <div class="rsl-game-events__live-status content-default text-body-medium" role="status" aria-live="polite" aria-atomic="true" data-rsl-game-events-live-status></div>
+          </header>
+          <section id="rsl-game-events-add-panel" class="rsl-game-events__panel" data-rsl-game-events-add-panel hidden>
+            <form class="rsl-game-events__add-form" data-rsl-game-events-add-form>
+              <label for="rsl-game-events-add-input">Add a game</label>
+              <div class="rsl-game-events__add-row">
+                <div class="rsl-game-events__search-box">
+                  <input id="rsl-game-events-add-input" class="rsl-input" type="text" maxlength="300" autocomplete="off" spellcheck="false" required placeholder="Search games or paste a URL or ID" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="rsl-game-events-search-results" aria-describedby="rsl-game-events-add-help rsl-game-events-search-status" data-rsl-game-events-add-input>
+                  <ul id="rsl-game-events-search-results" class="rsl-game-events__search-results" role="listbox" aria-label="Matching Roblox experiences" data-rsl-game-events-search-results hidden></ul>
+                </div>
+                <button type="submit" class="rsl-button rsl-button--primary" data-rsl-game-events-add-submit>Track Game</button>
+              </div>
+              <span id="rsl-game-events-add-help">Use a Roblox game URL, Place or Universe ID, or its name.</span>
+              <span id="rsl-game-events-search-status" class="rsl-game-events__search-status" role="status" aria-live="polite" data-rsl-game-events-search-status hidden></span>
+            </form>
+          </section>
+          <section id="rsl-game-events-manage-panel" class="rsl-game-events__panel" aria-labelledby="rsl-game-events-manage-heading" tabindex="-1" data-rsl-game-events-manage-panel hidden>
+            <div class="rsl-game-events__manage-heading"><strong id="rsl-game-events-manage-heading">Tracked games</strong><span>Stored locally for this Roblox account</span></div>
+            <ul class="rsl-game-events__favorites" data-rsl-game-events-favorites></ul>
+          </section>
+          <nav class="rsl-game-events__filters" aria-label="Filter game events">
+            <div class="rsl-game-events__status-filters" role="group" aria-label="Event status">
+              <button type="button" class="rsl-game-events__chip" data-rsl-game-events-status-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="rsl-game-events__chip" data-rsl-game-events-status-filter="live" aria-pressed="false">Live</button>
+              <button type="button" class="rsl-game-events__chip" data-rsl-game-events-status-filter="upcoming" aria-pressed="false">Upcoming</button>
+            </div>
+          </nav>
+          <div class="rsl-game-events__list" role="region" aria-label="Official game events" tabindex="0" data-rsl-game-events-list></div>
+        </div>
+        <footer class="rsl-dialog__actions rsl-game-events__footer">
+          <button type="button" class="rsl-button rsl-button--secondary rsl-game-events__manage-button" aria-expanded="false" aria-controls="rsl-game-events-manage-panel" data-rsl-game-events-manage-toggle>Manage Tracked Games</button>
+        </footer>
+      </div>`;
+    dialog.querySelectorAll("[data-rsl-game-events-close]").forEach((button) => {
+      button.addEventListener("click", () => closeGameEventsDialog(true));
+    });
+    dialog.querySelector("[data-rsl-game-events-refresh]")?.addEventListener("click", (event) => {
+      if (event.isTrusted !== true) return;
+      void loadGameEvents(true);
+    });
+    dialog.querySelector("[data-rsl-game-events-add-toggle]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true) return;
+        gameEventsAddPanelOpen = !gameEventsAddPanelOpen;
+        if (gameEventsAddPanelOpen) gameEventsManagePanelOpen = false;
+        if (!gameEventsAddPanelOpen) clearGameEventsSearch();
+        renderGameEventsFavorites(dialog);
+        if (gameEventsAddPanelOpen) {
+          dialog.querySelector("[data-rsl-game-events-add-input]")?.focus();
+        }
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-manage-toggle]")?.addEventListener(
+      "click",
+      (event) => {
+        if (event.isTrusted !== true) return;
+        gameEventsManagePanelOpen = !gameEventsManagePanelOpen;
+        if (gameEventsManagePanelOpen) {
+          gameEventsAddPanelOpen = false;
+          clearGameEventsSearch();
+        }
+        renderGameEventsFavorites(dialog);
+        if (gameEventsManagePanelOpen) {
+          dialog.querySelector("[data-rsl-game-events-manage-panel]")
+            ?.focus?.({ preventScroll: true });
+        }
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-list]")?.addEventListener(
+      "click",
+      (event) => {
+        const toggle = event.target.closest?.("[data-rsl-game-events-live-toggle]");
+        if (!toggle || event.isTrusted !== true) return;
+        gameEventsLiveSectionCollapsed = !gameEventsLiveSectionCollapsed;
+        syncGameEventsLiveSectionCollapse(dialog);
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-add-form]")?.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+        if (event.isTrusted !== true) return;
+        const input = dialog.querySelector("[data-rsl-game-events-add-input]");
+        if (!input?.value.trim()) {
+          input?.setCustomValidity?.("Enter a Roblox game URL, ID, or name.");
+          input?.reportValidity?.();
+          input?.focus?.();
+          return;
+        }
+        input.setCustomValidity?.("");
+        void addGameEventFavorite(
+          input?.value || "",
+          gameEventsSelectedSearchResult?.universeId || null
+        );
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-add-input]")?.addEventListener(
+      "input",
+      (event) => {
+        event.currentTarget?.setCustomValidity?.("");
+        gameEventsSelectedSearchResult = null;
+        queueGameEventsSearch(event.currentTarget?.value || "");
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-add-input]")?.addEventListener(
+      "keydown",
+      (event) => {
+        if (!gameEventsSearchResults.length) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const delta = event.key === "ArrowDown" ? 1 : -1;
+          gameEventsSearchActiveIndex =
+            (gameEventsSearchActiveIndex + delta + gameEventsSearchResults.length) %
+            gameEventsSearchResults.length;
+          renderGameEventsSearch(dialog);
+          return;
+        }
+        if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          gameEventsSearchActiveIndex = event.key === "Home"
+            ? 0
+            : gameEventsSearchResults.length - 1;
+          renderGameEventsSearch(dialog);
+          return;
+        }
+        if (event.key === "Enter" && gameEventsSearchActiveIndex >= 0) {
+          event.preventDefault();
+          selectGameEventsSearchResult(gameEventsSearchActiveIndex, dialog);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          clearGameEventsSearch();
+          renderGameEventsSearch(dialog);
+          return;
+        }
+        if (event.key === "Tab") {
+          clearGameEventsSearch();
+          renderGameEventsSearch(dialog);
+        }
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-search-results]")?.addEventListener(
+      "click",
+      (event) => {
+        const option = event.target.closest?.("[data-rsl-game-events-search-option]");
+        if (!option || event.isTrusted !== true) return;
+        selectGameEventsSearchResult(
+          option.getAttribute("data-rsl-game-events-search-option"),
+          dialog
+        );
+      }
+    );
+    dialog.querySelector("[data-rsl-game-events-status-filter='all']")
+      ?.parentElement?.addEventListener("click", (event) => {
+        const button = event.target.closest?.("[data-rsl-game-events-status-filter]");
+        if (!button || event.isTrusted !== true) return;
+        gameEventsStatusFilter = button.getAttribute("data-rsl-game-events-status-filter");
+        const list = dialog.querySelector("[data-rsl-game-events-list]");
+        if (list) list.scrollTop = 0;
+        renderGameEventsDialog();
+      });
+    dialog.querySelector("[data-rsl-game-events-favorites]")?.addEventListener(
+      "click",
+      (event) => {
+        const button = event.target.closest?.("[data-rsl-game-events-remove]");
+        if (!button || event.isTrusted !== true) return;
+        void removeGameEventFavorite(button.getAttribute("data-rsl-game-events-remove"));
+      }
+    );
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) closeGameEventsDialog(true);
+    });
+    dialog.addEventListener("close", () => {
+      const restoreFocus = dialog.dataset.rslRestoreGameEventsFocus !== "false";
+      delete dialog.dataset.rslRestoreGameEventsFocus;
+      const opener = gameEventsDialogOpener;
+      gameEventsDialogOpener = null;
+      resetGameEventsDialogState();
+      if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
+      queueMount();
+    });
+    document.body.append(dialog);
+    renderGameEventsDialog();
+    return dialog;
+  }
+
+  function openGameEventsDialog(opener = null) {
+    if (!isFeatureEnabled("gameEvents")) return null;
+    let dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (!dialog) dialog = createGameEventsDialog();
+    if (dialog.open) {
+      dialog.querySelector("[data-rsl-game-events-close]")?.focus();
+      return dialog;
+    }
+    resetGameEventsDialogState();
+    gameEventsDialogOpener = opener || document.activeElement;
+    gameEventsLoadState = "loading";
+    renderGameEventsDialog();
+    dialog.showModal();
+    scheduleGameEventsMinuteRefresh();
+    scheduleGameEventsBoundaryRefresh();
+    observeGameEventsTimelineResize();
+    dialog.querySelector("[data-rsl-game-events-add-toggle]")?.focus();
+    void loadGameEvents(false);
+    return dialog;
+  }
+
+  function cleanupGameEventsFeature() {
+    document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
+    closeGameEventsDialog(false);
+    const dialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+    if (dialog && !dialog.open) dialog.remove();
+  }
+
   function normalizeServerHistoryOpaqueId(rawValue) {
     const value = typeof rawValue === "string" ? rawValue : "";
     return value === value.trim() && /^[A-Za-z0-9_-]{1,128}$/.test(value)
@@ -15946,6 +18005,7 @@
     }
     if (isFeatureEnabled("sidebarShortcuts")) {
       syncNativeSidebarVisibility();
+      mountGameEventsSidebarRow();
       mountServerHistorySidebarRow();
       if (isFeatureEnabled("sidebarCustomShortcuts")) {
         mountSidebar();
@@ -15954,11 +18014,15 @@
       }
     } else {
       cleanupSidebarFeature();
+      document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
       document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
       cleanupNativeSidebarVisibility();
     }
     if (!isFeatureEnabled("serverHistory")) {
       cleanupServerHistoryFeature();
+    }
+    if (!isFeatureEnabled("gameEvents")) {
+      cleanupGameEventsFeature();
     }
     mountOnlineFriendsFilter();
     mountBestFriendsCarousel();
@@ -16113,6 +18177,12 @@
     ) {
       document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
     }
+    if (
+      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
+      previousSettings.sidebarGameEvents !== nextSettings.sidebarGameEvents
+    ) {
+      document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
+    }
     const sidebarVisibilityKeys = [
       "sidebarShortcuts",
       "sidebarHome",
@@ -16214,24 +18284,33 @@
     ) {
       cleanupServerHistoryFeature();
     }
+    if (
+      previousSettings.gameEvents !== nextSettings.gameEvents &&
+      nextSettings.gameEvents === false
+    ) {
+      cleanupGameEventsFeature();
+    }
 
     const onlySidebarChanged = sidebarVisibilityChanged ||
       previousSettings.sidebarCustomShortcuts !==
         nextSettings.sidebarCustomShortcuts ||
       previousSettings.sidebarServerHistory !==
-        nextSettings.sidebarServerHistory;
+        nextSettings.sidebarServerHistory ||
+      previousSettings.sidebarGameEvents !== nextSettings.sidebarGameEvents;
     const anyNonSidebarChange = FEATURE_SETTING_DEFINITIONS.some(
       ({ key }) =>
         ![
           ...sidebarVisibilityKeys,
           "sidebarCustomShortcuts",
-          "sidebarServerHistory"
+          "sidebarServerHistory",
+          "sidebarGameEvents"
         ].includes(key) &&
         previousSettings[key] !== nextSettings[key]
     );
     if (onlySidebarChanged && !anyNonSidebarChange) {
       if (isFeatureEnabled("sidebarShortcuts")) {
         syncNativeSidebarVisibility();
+        mountGameEventsSidebarRow();
         mountServerHistorySidebarRow();
         if (isFeatureEnabled("sidebarCustomShortcuts")) {
           mountSidebar();
@@ -16999,6 +19078,88 @@
     contentTestHooks.featureDefinitions = FEATURE_DEFINITIONS;
     contentTestHooks.featureSettingDefinitions = FEATURE_SETTING_DEFINITIONS;
     contentTestHooks.defaultFeatureSettings = DEFAULT_FEATURE_SETTINGS;
+    contentTestHooks.gameEventsConstants = Object.freeze({
+      dialogId: GAME_EVENTS_DIALOG_ID,
+      rowId: GAME_EVENTS_ROW_ID,
+      maxFavorites: GAME_EVENTS_MAX_FAVORITES,
+      searchDebounceMs: GAME_EVENTS_SEARCH_DEBOUNCE_MS,
+      messageTypes: Object.freeze({
+        get: GAME_EVENTS_GET_MESSAGE_TYPE,
+        search: GAME_EVENTS_SEARCH_MESSAGE_TYPE,
+        add: GAME_EVENTS_ADD_MESSAGE_TYPE,
+        remove: GAME_EVENTS_REMOVE_MESSAGE_TYPE
+      })
+    });
+    contentTestHooks.normalizeGameEventId = normalizeGameEventId;
+    contentTestHooks.normalizeGameEventTimestamp = normalizeGameEventTimestamp;
+    contentTestHooks.normalizeGameEventFavorite = normalizeGameEventFavorite;
+    contentTestHooks.normalizeGameEvent = normalizeGameEvent;
+    contentTestHooks.normalizeGameEventsResponse = normalizeGameEventsResponse;
+    contentTestHooks.getGameEventLocalDayOrdinal = getGameEventLocalDayOrdinal;
+    contentTestHooks.formatGameEventDateGroupLabel = formatGameEventDateGroupLabel;
+    contentTestHooks.getGameEventStatus = getGameEventStatus;
+    contentTestHooks.filterGameEvents = filterGameEvents;
+    contentTestHooks.compareGameEventTimelineOrder = compareGameEventTimelineOrder;
+    contentTestHooks.groupGameEventsByDate = groupGameEventsByDate;
+    contentTestHooks.formatGameEventTiming = formatGameEventTiming;
+    contentTestHooks.formatGameEventAgendaMarker = formatGameEventAgendaMarker;
+    contentTestHooks.getGameEventTimelineGap = getGameEventTimelineGap;
+    contentTestHooks.getGameEventTimelineGapBefore = getGameEventTimelineGapBefore;
+    contentTestHooks.getGameEventTimelineTailSpace = getGameEventTimelineTailSpace;
+    contentTestHooks.getGameEventsTimelineNowPosition = getGameEventsTimelineNowPosition;
+    contentTestHooks.refreshGameEventsTimelineNowMarker = refreshGameEventsTimelineNowMarker;
+    contentTestHooks.renderGameEventsLiveSection = renderGameEventsLiveSection;
+    contentTestHooks.syncGameEventsLiveSectionCollapse = syncGameEventsLiveSectionCollapse;
+    contentTestHooks.normalizeGameEventSearchResult = normalizeGameEventSearchResult;
+    contentTestHooks.isGameEventsSearchableQuery = isGameEventsSearchableQuery;
+    contentTestHooks.queueGameEventsSearch = queueGameEventsSearch;
+    contentTestHooks.searchGameEventFavorites = searchGameEventFavorites;
+    contentTestHooks.clearGameEventsSearch = clearGameEventsSearch;
+    contentTestHooks.selectGameEventsSearchResult = selectGameEventsSearchResult;
+    contentTestHooks.makeGameEventsSidebarRow = makeGameEventsSidebarRow;
+    contentTestHooks.placeGameEventsSidebarRow = placeGameEventsSidebarRow;
+    contentTestHooks.mountGameEventsSidebarRow = mountGameEventsSidebarRow;
+    contentTestHooks.createGameEventsDialog = createGameEventsDialog;
+    contentTestHooks.openGameEventsDialog = openGameEventsDialog;
+    contentTestHooks.closeGameEventsDialog = closeGameEventsDialog;
+    contentTestHooks.renderGameEventsDialog = renderGameEventsDialog;
+    contentTestHooks.loadGameEvents = loadGameEvents;
+    contentTestHooks.addGameEventFavorite = addGameEventFavorite;
+    contentTestHooks.removeGameEventFavorite = removeGameEventFavorite;
+    contentTestHooks.refreshGameEventTimes = refreshGameEventTimes;
+    contentTestHooks.cleanupGameEventsFeature = cleanupGameEventsFeature;
+    contentTestHooks.setGameEventsMessageSenderForTests = (sender) => {
+      gameEventsMessageSenderForTests = typeof sender === "function" ? sender : null;
+    };
+    contentTestHooks.getGameEventsStateForTests = () => ({
+      lifecycleEpoch: gameEventsLifecycleEpoch,
+      requestSequence: gameEventsRequestSequence,
+      loadState: gameEventsLoadState,
+      errorCode: gameEventsErrorCode,
+      favorites: gameEventsFavorites.slice(),
+      events: gameEventsItems.slice(),
+      viewerUserId: gameEventsViewerUserId,
+      partial: gameEventsPartial,
+      statusFilter: gameEventsStatusFilter,
+      liveSectionCollapsed: gameEventsLiveSectionCollapsed,
+      pendingAction: gameEventsPendingAction,
+      notice: gameEventsNotice,
+      searchSequence: gameEventsSearchSequence,
+      searchState: gameEventsSearchState,
+      searchErrorCode: gameEventsSearchErrorCode,
+      searchResults: gameEventsSearchResults.slice(),
+      searchActiveIndex: gameEventsSearchActiveIndex,
+      selectedSearchResult: gameEventsSelectedSearchResult
+    });
+    contentTestHooks.resetGameEventsStateForTests = () => {
+      cleanupGameEventsFeature();
+      gameEventsRequestSequence = 0;
+      gameEventsMessageSenderForTests = null;
+      gameEventsThumbnailByUniverseId.clear();
+      gameEventsThumbnailRequestByUniverseId.clear();
+      gameEventsThumbnailObserver?.disconnect();
+      gameEventsThumbnailObserver = null;
+    };
     contentTestHooks.serverHistoryConstants = Object.freeze({
       dialogId: SERVER_HISTORY_DIALOG_ID,
       rowId: SERVER_HISTORY_ROW_ID,

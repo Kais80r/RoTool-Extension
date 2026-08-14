@@ -20,7 +20,7 @@ const privateServerDialogVisualFixtureSource = fs.readFileSync(
 );
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.17.6");
+assert.equal(manifest.version, "0.18.0");
 assert.match(manifest.description, /Quick Play/);
 assert.match(manifest.description, /Private Servers/);
 assert.match(manifest.description, /Random Server/);
@@ -814,9 +814,10 @@ assert.doesNotMatch(
   "MAIN-world page bridge must not contain private-server events, codes, or launch logic"
 );
 
+const quickPlayStylesStart = stylesSource.indexOf("/* Quick Play is mounted");
 const quickPlayStyles = stylesSource.slice(
-  stylesSource.indexOf("/* Quick Play is mounted"),
-  stylesSource.indexOf("@media (forced-colors: active)")
+  quickPlayStylesStart,
+  stylesSource.indexOf("@media (forced-colors: active)", quickPlayStylesStart)
 );
 
 assert.match(quickPlayStyles, /\[data-rsl-quick-play-host\]:is\(:hover, :focus-within\)/);

@@ -7,6 +7,7 @@ const vm = require("node:vm");
 
 const RESULT_EVENT = "rotool:best-friend-action-result:v1";
 const QUICK_PLAY_RESULT_EVENT = "rotool:quick-play-result:v1";
+const GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE = "data-rsl-game-events-launch-surface";
 const RANDOM_SERVER_REQUEST_EVENT = "rotool:random-server-request:v1";
 const RANDOM_SERVER_RESPONSE_EVENT = "rotool:random-server-response:v1";
 const RESULT_CODES = new Set(["started", "unavailable", "invalid", "failed", "empty"]);
@@ -464,7 +465,8 @@ function loadBridge({
     iconChild = false,
     nestedAnchor = false,
     disabled = false,
-    existingSurface = null
+    existingSurface = null,
+    surfaceAttribute = "data-rsl-quick-play-surface"
   } = {}) {
     const host = existingSurface
       ? existingSurface.parentNode
@@ -474,7 +476,7 @@ function loadBridge({
     }
     const surface = existingSurface || document.createElement("div");
     if (!existingSurface && insideSurface) {
-      surface.setAttribute("data-rsl-quick-play-surface", "");
+      surface.setAttribute(surfaceAttribute, "");
     }
     const button = document.createElement(tagName);
     button.setAttribute("data-rsl-quick-play-action", action);
@@ -753,6 +755,104 @@ async function main() {
     assert.deepEqual(fixture.protocolLaunches, []);
     assert.deepEqual(action.results, [expectedResult("play", "started")]);
     assert.equal(event.defaultPrevented, true, "Quick Play must suppress the card's normal navigation");
+  }
+
+  {
+    const fixture = loadBridge({ quickPlayNative: "enabled" });
+    const action = fixture.createQuickPlayAction({
+      surfaceAttribute: GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE
+    });
+    const event = action.click();
+    await flushMicrotasks();
+
+    assert.deepEqual(
+      fixture.quickPlayCalls,
+      [Number(VALID_PLACE_ID)],
+      "a trusted Game Events Join Game click must reuse the native Quick Play launcher"
+    );
+    assert.equal(fixture.quickPlayReceiver, fixture.gameLauncher);
+    assert.deepEqual(fixture.protocolLaunches, []);
+    assert.deepEqual(action.results, [expectedResult("play", "started")]);
+    assert.equal(event.defaultPrevented, true);
+  }
+
+  {
+    const fixture = loadBridge({ quickPlayNative: "enabled" });
+    const action = fixture.createQuickPlayAction({
+      surfaceAttribute: GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE
+    });
+    const event = action.click({ trusted: false });
+    await flushMicrotasks();
+
+    assert.deepEqual(fixture.quickPlayCalls, [], "a synthetic Game Events click reached native launch");
+    assert.deepEqual(fixture.protocolLaunches, []);
+    assert.deepEqual(action.results, []);
+    assert.equal(event.defaultPrevented, false);
+  }
+
+  for (const clickOptions of [
+    { mouseButton: 1 },
+    { altKey: true },
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true }
+  ]) {
+    const fixture = loadBridge({ quickPlayNative: "enabled" });
+    const action = fixture.createQuickPlayAction({
+      surfaceAttribute: GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE
+    });
+    const event = action.click(clickOptions);
+    await flushMicrotasks();
+
+    assert.deepEqual(
+      fixture.quickPlayCalls,
+      [],
+      `a modified Game Events click reached native launch: ${JSON.stringify(clickOptions)}`
+    );
+    assert.deepEqual(action.results, []);
+    assert.equal(event.defaultPrevented, false);
+  }
+
+  for (const placeId of [null, "", "0", "0001", "1e3", "9007199254740992"]) {
+    const fixture = loadBridge({ quickPlayNative: "enabled" });
+    const action = fixture.createQuickPlayAction({
+      placeId,
+      surfaceAttribute: GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE
+    });
+    const event = action.click();
+    await flushMicrotasks();
+
+    assert.deepEqual(
+      fixture.quickPlayCalls,
+      [],
+      `an invalid Game Events Place ID reached native launch: ${placeId}`
+    );
+    assert.deepEqual(fixture.protocolLaunches, []);
+    assert.deepEqual(action.results, [expectedResult("play", "invalid")]);
+    assert.equal(event.defaultPrevented, true);
+  }
+
+  {
+    const fixture = loadBridge({
+      quickPlayNative: "enabled",
+      randomServerNative: "enabled"
+    });
+    const action = fixture.createQuickPlayAction({
+      action: "random",
+      surfaceAttribute: GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE
+    });
+    const event = action.click();
+    await flushMicrotasks();
+
+    assert.deepEqual(fixture.quickPlayCalls, []);
+    assert.deepEqual(
+      fixture.randomServerCalls,
+      [],
+      "a Game Events launch surface must authorize only Join Game, never Random Server"
+    );
+    assert.deepEqual(action.randomServerRequests, []);
+    assert.deepEqual(action.results, []);
+    assert.equal(event.defaultPrevented, false);
   }
 
   {
