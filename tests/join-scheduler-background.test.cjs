@@ -385,6 +385,11 @@ test("constants, strict official Roblox URLs, and bounded normalized storage", (
   assert.equal(constants.featureKey, "joinScheduler");
   assert.equal(constants.showMessageType, "rsl:show-join-scheduler");
   assert.equal(
+    constants.nativeEventScheduleDataMessageType,
+    "rsl:get-native-event-schedule-data"
+  );
+  assert.equal(constants.nativeEventScheduleMaxEventIds, 50);
+  assert.equal(
     constants.messageTypes.requestNotificationPermission,
     "rsl:join-scheduler:request-notification-permission"
   );
@@ -1886,6 +1891,316 @@ test("notification actions are scoped to the exact schedule revision", async () 
   assert.equal(stored.status, "pending");
   assert.equal(stored.revision, edited.schedule.revision);
   assert.equal(stored.title, "Updated Reminder");
+});
+
+test("native Event scheduling trusts only exact localized game pages and official future IDs", () => {
+  resetFixture();
+  backgroundHooks.resetGameEventsStateForTests();
+
+  for (const url of [
+    "https://www.roblox.com/games/1001",
+    "https://www.roblox.com/games/1001/fixture-game/",
+    "https://www.roblox.com/de/games/1001/fixture-game",
+    "https://www.roblox.com/en-us/games/1001/fixture-game?tab=about#events",
+    "https://www.roblox.com/PT-BR/games/1001/fixture-game"
+  ]) {
+    assert.equal(
+      hooks.parseNativeEventScheduleGamePagePlaceId(url),
+      "1001",
+      `accepted exact localized game route: ${url}`
+    );
+  }
+  for (const url of [
+    "http://www.roblox.com/games/1001/fixture",
+    "https://roblox.com/games/1001/fixture",
+    "https://www.roblox.com.evil.test/games/1001/fixture",
+    "https://user:pass@www.roblox.com/games/1001/fixture",
+    "https://www.roblox.com:444/games/1001/fixture",
+    "https://www.roblox.com/xx/games/1001/fixture",
+    "https://www.roblox.com/de-de/games/1001/fixture",
+    "https://www.roblox.com/de/games/1001/fixture/extra",
+    "https://www.roblox.com/games/0/fixture",
+    "https://www.roblox.com/games/01/fixture",
+    "https://www.roblox.com/games/1001//",
+    "https://www.roblox.com/catalog/1001"
+  ]) {
+    assert.equal(
+      hooks.parseNativeEventScheduleGamePagePlaceId(url),
+      null,
+      `rejected game-route lookalike: ${url}`
+    );
+  }
+
+  const pageUrl = "https://www.roblox.com/de/games/1001/fixture-game";
+  const trustedSender = {
+    id: chrome.runtime.id,
+    frameId: 0,
+    url: pageUrl,
+    tab: { id: 77, incognito: false, url: pageUrl }
+  };
+  assert.equal(hooks.getTrustedNativeEventSchedulePagePlaceId(trustedSender), "1001");
+  for (const sender of [
+    { ...trustedSender, id: "another-extension" },
+    { ...trustedSender, frameId: 1 },
+    { ...trustedSender, tab: { ...trustedSender.tab, incognito: true } },
+    { ...trustedSender, url: "https://www.roblox.com/de/games/9999/other" },
+    { ...trustedSender, tab: { ...trustedSender.tab, url: "https://www.roblox.com/home" } },
+    { ...trustedSender, tab: { ...trustedSender.tab, id: -1 } }
+  ]) {
+    assert.equal(hooks.getTrustedNativeEventSchedulePagePlaceId(sender), null);
+  }
+
+  const numericId = "1234567890123456789012345678901234567890";
+  const uuidId = "123e4567-e89b-42d3-a456-426614174000";
+  const normalizedIds = hooks.normalizeNativeEventScheduleEventIds([
+    numericId,
+    uuidId.toUpperCase()
+  ]);
+  assert.deepEqual(plain(normalizedIds), [numericId, uuidId]);
+  assert.equal(Object.isFrozen(normalizedIds), true);
+  assert.equal(
+    hooks.normalizeNativeEventScheduleEventIds(
+      Array.from({ length: constants.nativeEventScheduleMaxEventIds }, (_, index) =>
+        String(index + 1)
+      )
+    ).length,
+    constants.nativeEventScheduleMaxEventIds
+  );
+  for (const ids of [
+    [],
+    [numericId, numericId],
+    [uuidId, uuidId.toUpperCase()],
+    ["not-an-event"],
+    ["1".repeat(41)],
+    Array.from({ length: constants.nativeEventScheduleMaxEventIds + 1 }, (_, index) =>
+      String(index + 1)
+    )
+  ]) {
+    assert.equal(hooks.normalizeNativeEventScheduleEventIds(ids), null);
+  }
+
+  const fixtureNow = Date.parse("2026-08-15T10:00:00.000Z");
+  const event = (id, startOffset, overrides = {}) => ({
+    id,
+    universeId: "2001",
+    placeId: "1001",
+    title: `Event ${id}`,
+    subtitle: "Official fixture",
+    eventVisibility: "public",
+    eventStatus: "active",
+    eventTime: {
+      startUtc: new Date(fixtureNow + startOffset).toISOString(),
+      endUtc: new Date(fixtureNow + startOffset + 60_000).toISOString()
+    },
+    thumbnails: [],
+    ...overrides
+  });
+  const matches = hooks.normalizeNativeEventScheduleMatches({
+    data: [
+      event(numericId, 120_000, { privateServerLinkCode: "must-not-survive" }),
+      event(uuidId.toUpperCase(), 60_000),
+      event(numericId, 180_000, { title: "Duplicate" }),
+      event("777", -30_000),
+      event("778", 60_000, {
+        eventTime: { startUtc: "not-a-time", endUtc: "still-not-a-time" }
+      }),
+      event("779", 60_000, { universeId: "9999" }),
+      event("780", 60_000, { eventVisibility: "private" }),
+      event("781", 60_000, { eventStatus: "cancelled" }),
+      event("999", 60_000)
+    ]
+  }, "2001", [numericId, uuidId, "777", "778", "779", "780", "781"],
+  "  Fixture\n Game  ", fixtureNow);
+  assert.deepEqual(plain(matches), [
+    {
+      id: uuidId,
+      universeId: "2001",
+      placeId: "1001",
+      gameName: "Fixture Game",
+      title: `Event ${uuidId.toUpperCase()}`,
+      startAt: fixtureNow + 60_000,
+      endAt: fixtureNow + 120_000,
+      status: "upcoming"
+    },
+    {
+      id: numericId,
+      universeId: "2001",
+      placeId: "1001",
+      gameName: "Fixture Game",
+      title: `Event ${numericId}`,
+      startAt: fixtureNow + 120_000,
+      endAt: fixtureNow + 180_000,
+      status: "upcoming"
+    }
+  ]);
+  assert.equal(Object.isFrozen(matches), true);
+  assert.ok(matches.every((match) => Object.isFrozen(match)));
+  assert.deepEqual(Object.keys(plain(matches[0])).sort(), [
+    "endAt", "gameName", "id", "placeId", "startAt", "status", "title", "universeId"
+  ]);
+});
+
+test("native Event scheduling handler is bounded, Scheduler-gated, and independent of Game Events", async () => {
+  resetFixture();
+  backgroundHooks.resetGameEventsStateForTests();
+  backgroundHooks.setGameEventsFeatureStateForTests(false, true);
+  featureSettings.rslFeatureSettingsV1.flags.joinScheduler = true;
+
+  const numericId = "1234567890123456789012345678901234567890";
+  const uuidId = "123e4567-e89b-42d3-a456-426614174000";
+  const startAt = Date.now() + 60 * 60_000;
+  const pageUrl = "https://www.roblox.com/de/games/1001/fixture-game";
+  const sender = {
+    id: chrome.runtime.id,
+    frameId: 0,
+    url: pageUrl,
+    tab: { id: 77, incognito: false, url: pageUrl }
+  };
+  const message = {
+    type: constants.nativeEventScheduleDataMessageType,
+    requestId: 91,
+    placeId: "1001",
+    eventIds: [numericId, uuidId],
+    locale: "de-DE"
+  };
+  const rawEvent = (id, offset = 0) => ({
+    id,
+    universeId: 2001,
+    placeId: 1001,
+    title: `Official ${id}`,
+    subtitle: "Fixture",
+    eventVisibility: "public",
+    eventStatus: "active",
+    eventTime: {
+      startUtc: new Date(startAt + offset).toISOString(),
+      endUtc: new Date(startAt + offset + 60_000).toISOString()
+    },
+    thumbnails: []
+  });
+
+  const fetchCalls = [];
+  fetchHandler = async (input, options = {}) => {
+    const url = new URL(String(input));
+    fetchCalls.push({
+      url: url.href,
+      credentials: options.credentials,
+      cache: options.cache,
+      acceptLanguage: options.headers?.["Accept-Language"] || null
+    });
+    let body;
+    if (
+      url.hostname === "apis.roblox.com" &&
+      url.pathname === "/universes/v1/places/1001/universe"
+    ) {
+      body = { universeId: 2001 };
+    } else if (
+      url.hostname === "games.roblox.com" &&
+      url.pathname === "/v1/games" &&
+      url.searchParams.get("universeIds") === "2001"
+    ) {
+      body = { data: [{ id: 2001, rootPlaceId: 1001, name: "Fixture Game" }] };
+    } else if (
+      url.hostname === "apis.roblox.com" &&
+      url.pathname === "/virtual-events/v1/universes/2001/virtual-events"
+    ) {
+      body = {
+        data: [
+          rawEvent(numericId, 60_000),
+          rawEvent(uuidId.toUpperCase()),
+          rawEvent("999")
+        ]
+      };
+    } else {
+      throw new Error(`Unexpected native Event request: ${url.href}`);
+    }
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+
+  const invokeNative = (value, source = sender) => new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Native Event schedule response timed out")),
+      1_000
+    );
+    const keptOpen = hooks.handleNativeEventScheduleDataMessage(
+      value,
+      source,
+      (response) => {
+        clearTimeout(timeout);
+        resolve(plain(response));
+      }
+    );
+    if (!keptOpen) {
+      clearTimeout(timeout);
+      reject(new Error("Valid native Event request was rejected synchronously"));
+    }
+  });
+
+  const response = await invokeNative(message);
+  assert.equal(response.ok, true);
+  assert.equal(response.requestId, 91);
+  assert.equal(response.enabled, true);
+  assert.equal(response.placeId, "1001");
+  assert.equal(response.universeId, "2001");
+  assert.ok(Number.isSafeInteger(response.checkedAt) && response.checkedAt > 0);
+  assert.deepEqual(response.events.map(({ id }) => id), [uuidId, numericId]);
+  assert.ok(response.events.every((item) =>
+    item.status === "upcoming" && item.startAt > response.checkedAt
+  ));
+  assert.deepEqual(Object.keys(response).sort(), [
+    "checkedAt", "enabled", "events", "ok", "placeId", "requestId", "universeId"
+  ]);
+  assert.deepEqual(
+    fetchCalls.map(({ url }) => new URL(url).hostname).sort(),
+    ["apis.roblox.com", "apis.roblox.com", "games.roblox.com"]
+  );
+  assert.ok(fetchCalls.every((call) => call.credentials === "omit"));
+  assert.ok(fetchCalls.every((call) => !call.url.includes("users/authenticated")));
+  assert.ok(fetchCalls.slice(1).every((call) => call.acceptLanguage === "de-DE"));
+
+  const requestsBeforeInvalid = fetchCalls.length;
+  for (const [invalidMessage, invalidSender] of [
+    [{ ...message, extra: true }, sender],
+    [Object.fromEntries(Object.entries(message).filter(([key]) => key !== "locale")), sender],
+    [{ ...message, placeId: "9999" }, sender],
+    [{ ...message, eventIds: [numericId, numericId] }, sender],
+    [message, { ...sender, frameId: 1 }],
+    [message, { ...sender, tab: { ...sender.tab, incognito: true } }],
+    [message, { ...sender, url: "https://www.roblox.com/home" }]
+  ]) {
+    let invalidResponse = null;
+    const keptOpen = hooks.handleNativeEventScheduleDataMessage(
+      invalidMessage,
+      invalidSender,
+      (value) => { invalidResponse = plain(value); }
+    );
+    assert.equal(keptOpen, false);
+    assert.equal(invalidResponse?.ok, false);
+    assert.equal(invalidResponse?.code, "INVALID");
+  }
+  assert.equal(fetchCalls.length, requestsBeforeInvalid);
+
+  featureSettings.rslFeatureSettingsV1.flags.joinScheduler = false;
+  hooks.setFeatureState(false, true);
+  backgroundHooks.resetGameEventsStateForTests();
+  const fetchesBeforeDisabled = fetchCalls.length;
+  try {
+    const disabledResponse = await invokeNative({ ...message, requestId: 92 });
+    assert.deepEqual(disabledResponse, {
+      ok: false,
+      requestId: 92,
+      enabled: false,
+      code: "DISABLED",
+      placeId: "1001"
+    });
+    assert.equal(fetchCalls.length, fetchesBeforeDisabled);
+  } finally {
+    featureSettings.rslFeatureSettingsV1.flags.joinScheduler = true;
+    hooks.setFeatureState(true, true);
+    backgroundHooks.resetGameEventsStateForTests();
+  }
 });
 
 (async () => {

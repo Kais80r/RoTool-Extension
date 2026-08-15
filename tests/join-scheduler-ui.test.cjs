@@ -1310,6 +1310,158 @@ assert.doesNotMatch(eventItemSource, /privateServerLinkCode|accessCode|shareCode
 assert.match(contentSource, /function cleanupJoinSchedulerFeature\([\s\S]*?modalApi\.destroy\(\)/);
 assert.doesNotMatch(contentSource, /rsl:open-join-scheduler/);
 
+// Native Roblox game-detail Events get one independent RoTool action. Card
+// identity comes from exact structural selectors and an official Event URL;
+// localized action text is never used as data or status.
+const nativeEventIntegration = sourceBetween(
+  contentSource,
+  "function parseNativeEventScheduleGamePagePlaceId",
+  "function placeJoinSchedulerSidebarRow"
+);
+const nativeEventMetadataSource = sourceBetween(
+  contentSource,
+  "function getNativeEventSchedulePageMetadata",
+  "function parseNativeEventScheduleLinkId"
+);
+assert.match(nativeEventMetadataSource, /querySelector\("#game-detail-page"\)/);
+assert.match(nativeEventMetadataSource, /page\?\.dataset\?\.placeId/);
+assert.match(nativeEventMetadataSource, /querySelector\("#game-detail-meta-data"\)/);
+for (const field of ["placeId", "rootPlaceId", "universeId", "placeName"]) {
+  assert.match(nativeEventMetadataSource, new RegExp(`metadata\\.dataset\\?\\.${field}`));
+}
+assert.match(
+  nativeEventIntegration,
+  /#game-details-about-tab-container \.virtual-event-game-details-container/
+);
+assert.match(
+  nativeEventIntegration,
+  /li\.experience-events-tile\.contained-tile\[data-testid="wide-game-tile"\]\[id\]/
+);
+const nativeCardIdentitySource = sourceBetween(
+  contentSource,
+  "function getNativeEventScheduleCardIdentity",
+  "function collectNativeEventScheduleCardIdentities"
+);
+assert.match(nativeCardIdentitySource, /featured\.querySelectorAll\("a\.game-card-link\[href\]"\)/);
+assert.match(nativeCardIdentitySource, /links\.length !== 1/);
+assert.match(nativeCardIdentitySource, /link\.parentElement !== featured/);
+assert.match(nativeCardIdentitySource, /linkId !== cardId/);
+assert.match(nativeCardIdentitySource, /\.event-follow-button, \.event-unfollow-button/);
+assert.doesNotMatch(nativeEventIntegration, /Notify Me|Join Event/i,
+  "native Event eligibility cannot depend on localized Roblox labels");
+
+const nativePlacementSource = sourceBetween(
+  contentSource,
+  "function placeNativeEventScheduleButton",
+  "function makeNativeEventScheduleButton"
+);
+assert.match(
+  nativePlacementSource,
+  /identity\.link\.insertAdjacentElement\("afterend", button\)/,
+  "the RoTool action must be a direct sibling after the native card link"
+);
+assert.doesNotMatch(
+  nativePlacementSource,
+  /nativeAction\.(?:remove|replaceWith|replaceChildren|append|prepend|before|after)|link\.(?:remove|replaceWith|replaceChildren|append|prepend)/,
+  "RoTool must not move, replace, or rewrite Roblox's link/action subtree"
+);
+const nativeButtonSource = sourceBetween(
+  contentSource,
+  "function makeNativeEventScheduleButton",
+  "function reconcileNativeEventScheduleButtons"
+);
+assert.match(nativeButtonSource, /document\.createElement\("button"\)/);
+assert.match(nativeButtonSource, /button\.type = "button"/);
+assert.match(nativeButtonSource, /button\.textContent = "Schedule with RoTool"/);
+assert.match(nativeButtonSource, /setAttribute\("aria-haspopup", "dialog"\)/);
+assert.match(nativeButtonSource, /setAttribute\("aria-label", `Schedule \$\{event\.title\} with RoTool`\)/);
+const trustedClickIndex = nativeButtonSource.indexOf("clickEvent.isTrusted !== true");
+const preventClickIndex = nativeButtonSource.indexOf("clickEvent.preventDefault()", trustedClickIndex);
+const stopClickIndex = nativeButtonSource.indexOf("clickEvent.stopPropagation()", preventClickIndex);
+const currentClickIndex = nativeButtonSource.indexOf(
+  "isNativeEventScheduleButtonCurrent(button, event)",
+  stopClickIndex
+);
+const openClickIndex = nativeButtonSource.indexOf("openJoinScheduler(draft, button)", currentClickIndex);
+assert.ok(
+  trustedClickIndex >= 0 &&
+    preventClickIndex > trustedClickIndex &&
+    stopClickIndex > preventClickIndex &&
+    currentClickIndex > stopClickIndex &&
+    openClickIndex > currentClickIndex,
+  "only a trusted, still-current future Event click may open Join Scheduler"
+);
+
+const nativeReconcileSource = sourceBetween(
+  contentSource,
+  "function reconcileNativeEventScheduleButtons",
+  "async function loadNativeEventScheduleData"
+);
+assert.match(nativeReconcileSource, /querySelectorAll\(`\[\$\{NATIVE_EVENT_SCHEDULE_ATTRIBUTE\}\]`\)/);
+assert.match(nativeReconcileSource, /button\.remove\(\)/);
+assert.match(nativeReconcileSource, /existing\.shift\(\) \|\| makeNativeEventScheduleButton/);
+assert.match(nativeReconcileSource, /existing\.forEach\(\(duplicate\) => duplicate\.remove\(\)\)/);
+const nativeLoadSource = sourceBetween(
+  contentSource,
+  "async function loadNativeEventScheduleData",
+  "function cleanupNativeEventScheduleFeature"
+);
+assert.match(
+  nativeLoadSource,
+  /type: NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE,[\s\S]*?requestId,[\s\S]*?placeId,[\s\S]*?eventIds,[\s\S]*?locale: getRobloxPageLocale\(\)/
+);
+assert.match(
+  nativeLoadSource,
+  /lifecycleEpoch !== nativeEventScheduleLifecycleEpoch[\s\S]*?placeId !== nativeEventScheduleRoutePlaceId[\s\S]*?cardFingerprint !== nativeEventScheduleCardFingerprint[\s\S]*?response\?\.requestId !== requestId/,
+  "a late response cannot cross a React remount or SPA route identity"
+);
+assert.match(
+  nativeLoadSource,
+  /getNativeEventSchedulePageMetadata\(placeId\)[\s\S]*?currentMetadata\.universeId !== expectedUniverseId/
+);
+const nativeMountSource = sourceBetween(
+  contentSource,
+  "function mountNativeEventScheduleButtons",
+  "function placeJoinSchedulerSidebarRow"
+);
+assert.match(nativeMountSource, /!isFeatureEnabled\("joinScheduler"\)/);
+assert.doesNotMatch(nativeMountSource, /isFeatureEnabled\("gameEvents"\)/,
+  "the Scheduler integration remains independent from the optional Events dashboard");
+assert.match(nativeMountSource, /getNativeEventSchedulePageMetadata\(placeId\)/);
+assert.match(nativeMountSource, /`\$\{placeId\}:\$\{metadata\.universeId\}:\$\{eventIds\.join\(","\)\}`/);
+assert.match(nativeMountSource, /nativeEventScheduleLifecycleEpoch \+= 1/);
+assert.match(nativeMountSource, /removeNativeEventScheduleButtons\(\)/);
+assert.match(nativeMountSource, /Date\.now\(\) >= nativeEventScheduleNextRefreshAt/);
+const nativeCleanupSource = sourceBetween(
+  contentSource,
+  "function cleanupNativeEventScheduleFeature",
+  "function mountNativeEventScheduleButtons"
+);
+assert.match(nativeCleanupSource, /nativeEventScheduleItemsById = new Map\(\)/);
+assert.match(nativeCleanupSource, /clearNativeEventScheduleBoundaryTimer\(\)/);
+assert.match(nativeCleanupSource, /clearNativeEventScheduleRefreshTimer\(\)/);
+assert.match(nativeCleanupSource, /removeNativeEventScheduleButtons\(\)/);
+assert.match(contentSource, /function cleanupJoinSchedulerFeature\([\s\S]*?cleanupNativeEventScheduleFeature\(\)/);
+assert.match(contentSource, /function mountExtensionFeatures\(\)[\s\S]*?mountNativeEventScheduleButtons\(\)/);
+
+const nativeEventStylesStart = siteStyles.indexOf(
+  "/* An official Roblox event stays the source of truth."
+);
+const nativeEventStylesEnd = siteStyles.indexOf(
+  "/* The sidebar rows themselves inherit Roblox's cloned classes and styles. */",
+  nativeEventStylesStart
+);
+assert.ok(nativeEventStylesStart >= 0 && nativeEventStylesEnd > nativeEventStylesStart);
+const nativeEventStyles = siteStyles.slice(nativeEventStylesStart, nativeEventStylesEnd);
+assert.match(nativeEventStyles, /\.game-details-page-events-grid:has\(\[data-rsl-native-event-schedule\]\)[\s\S]*?grid-auto-rows:\s*auto\s*!important/);
+assert.match(nativeEventStyles, /experience-events-tile[\s\S]*?:has\([\s\S]*?data-rsl-native-event-schedule[\s\S]*?height:\s*auto\s*!important[\s\S]*?max-height:\s*none\s*!important[\s\S]*?overflow:\s*visible\s*!important/);
+assert.match(nativeEventStyles, /\[data-rsl-native-event-schedule\][\s\S]*?width:\s*calc\(100% - 24px\)\s*!important/);
+assert.match(nativeEventStyles, /button\[data-rsl-native-event-schedule\]:focus-visible[\s\S]*?outline:/);
+assert.match(nativeEventStyles, /@media\s*\(max-width:\s*480px\)[\s\S]*?min-height:\s*44px\s*!important/);
+assert.match(nativeEventStyles, /@media\s*\(forced-colors:\s*active\)[\s\S]*?ButtonText/);
+assert.doesNotMatch(nativeEventStyles, /grid-template-columns|\.event-(?:follow|unfollow)-button/,
+  "full-width RoTool layout must not resize or restyle the native action");
+
 // Exported hooks make the pure input boundary and stable content API testable.
 globalThis.__rslJoinSchedulerTestHooks = { skipInitialize: true };
 require(path.join(projectRoot, "join-scheduler.js"));
@@ -1421,6 +1573,284 @@ assert.ok(
     sidebarKeys.indexOf("sidebarJoinScheduler") < sidebarKeys.indexOf("sidebarServerHistory"),
   "the sidebar order is Events, Join Scheduler, then History"
 );
+
+const nativeConstants = contentHooks.nativeEventScheduleConstants;
+assert.deepEqual(nativeConstants, {
+  attribute: "data-rsl-native-event-schedule",
+  dataMessageType: "rsl:get-native-event-schedule-data",
+  cardSelector:
+    '#game-details-about-tab-container .virtual-event-game-details-container ' +
+    'li.experience-events-tile.contained-tile[data-testid="wide-game-tile"][id]',
+  featuredSelector: ".featured-game-container.game-card-container",
+  maxEventIds: 50,
+  localeSegments: [
+    "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+    "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+  ],
+  refreshMs: 10 * 60_000,
+  failureRetryMs: 60_000
+});
+
+for (const url of [
+  "https://www.roblox.com/games/1001",
+  "https://www.roblox.com/games/1001/fixture-game/",
+  "https://www.roblox.com/de/games/1001/fixture-game",
+  "https://www.roblox.com/en-us/games/1001/fixture-game?tab=about#events",
+  "https://www.roblox.com/PT-BR/games/1001/fixture-game"
+]) {
+  assert.equal(
+    contentHooks.parseNativeEventScheduleGamePagePlaceId(url),
+    "1001",
+    `expected a strict Roblox game route: ${url}`
+  );
+}
+for (const url of [
+  "http://www.roblox.com/games/1001/fixture",
+  "https://roblox.com/games/1001/fixture",
+  "https://www.roblox.com.evil.test/games/1001/fixture",
+  "https://user:pass@www.roblox.com/games/1001/fixture",
+  "https://www.roblox.com:444/games/1001/fixture",
+  "https://www.roblox.com/xx/games/1001/fixture",
+  "https://www.roblox.com/de-de/games/1001/fixture",
+  "https://www.roblox.com/de/games/1001/fixture/extra",
+  "https://www.roblox.com/games/0/fixture",
+  "https://www.roblox.com/games/01/fixture",
+  "https://www.roblox.com/games/1001//",
+  "https://www.roblox.com/catalog/1001"
+]) {
+  assert.equal(
+    contentHooks.parseNativeEventScheduleGamePagePlaceId(url),
+    null,
+    `rejected lookalike game route: ${url}`
+  );
+}
+
+const previousDocument = globalThis.document;
+try {
+  const page = { dataset: { placeId: "1001" } };
+  const metadata = {
+    dataset: {
+      placeId: "1001",
+      rootPlaceId: "1001",
+      universeId: "2001",
+      placeName: "  Fixture\n Game  "
+    }
+  };
+  globalThis.document = {
+    querySelector(selector) {
+      if (selector === "#game-detail-page") return page;
+      if (selector === "#game-detail-meta-data") return metadata;
+      return null;
+    }
+  };
+  const normalizedMetadata = contentHooks.getNativeEventSchedulePageMetadata("1001");
+  assert.deepEqual(normalizedMetadata, {
+    placeId: "1001",
+    rootPlaceId: "1001",
+    universeId: "2001",
+    gameName: "Fixture Game"
+  });
+  assert.equal(Object.isFrozen(normalizedMetadata), true);
+  page.dataset.placeId = "9999";
+  assert.equal(contentHooks.getNativeEventSchedulePageMetadata("1001"), null,
+    "the visible game shell must agree with the URL place");
+  page.dataset.placeId = "1001";
+  metadata.dataset.universeId = "0";
+  assert.equal(contentHooks.getNativeEventSchedulePageMetadata("1001"), null,
+    "malformed metadata cannot authorize an Event request");
+} finally {
+  if (previousDocument === undefined) delete globalThis.document;
+  else globalThis.document = previousDocument;
+}
+
+function hrefFixture(href) {
+  return { getAttribute(name) { return name === "href" ? href : null; } };
+}
+const UUID_EVENT_ID = "123e4567-e89b-42d3-a456-426614174000";
+const NUMERIC_EVENT_ID = "1234567890123456789012345678901234567890";
+assert.equal(
+  contentHooks.parseNativeEventScheduleLinkId(hrefFixture(`/events/${NUMERIC_EVENT_ID}`)),
+  NUMERIC_EVENT_ID
+);
+assert.equal(
+  contentHooks.parseNativeEventScheduleLinkId(
+    hrefFixture(`https://www.roblox.com/events/${UUID_EVENT_ID.toUpperCase()}/`)
+  ),
+  UUID_EVENT_ID
+);
+for (const href of [
+  `/de/events/${NUMERIC_EVENT_ID}`,
+  `/PT-BR/events/${UUID_EVENT_ID.toUpperCase()}/`,
+  `https://www.roblox.com/de/events/${NUMERIC_EVENT_ID}`,
+  `https://www.roblox.com/EN-US/events/${UUID_EVENT_ID}`
+]) {
+  assert.equal(
+    contentHooks.parseNativeEventScheduleLinkId(hrefFixture(href)),
+    href.includes(NUMERIC_EVENT_ID) ? NUMERIC_EVENT_ID : UUID_EVENT_ID,
+    `accepted localized Event link: ${href}`
+  );
+}
+for (const href of [
+  "/events/",
+  "/events/not-an-id",
+  `/events/${"1".repeat(41)}`,
+  `/events/${NUMERIC_EVENT_ID}/extra`,
+  `/events/${NUMERIC_EVENT_ID}?from=game`,
+  `/events/${NUMERIC_EVENT_ID}#details`,
+  `/xx/events/${NUMERIC_EVENT_ID}`,
+  `/de-de/events/${NUMERIC_EVENT_ID}`,
+  `/de/en/events/${NUMERIC_EVENT_ID}`,
+  `/de/events/${NUMERIC_EVENT_ID}/extra`,
+  `/de/events/${NUMERIC_EVENT_ID}?from=game`,
+  `/de/events/${NUMERIC_EVENT_ID}#details`,
+  `https://roblox.com/events/${NUMERIC_EVENT_ID}`,
+  `https://www.roblox.com.evil.test/events/${NUMERIC_EVENT_ID}`,
+  `https://www.roblox.com:444/events/${NUMERIC_EVENT_ID}`
+]) {
+  assert.equal(contentHooks.parseNativeEventScheduleLinkId(hrefFixture(href)), null,
+    `rejected Event-link lookalike: ${href}`);
+}
+
+function makeNativeCardFixture({
+  cardId = NUMERIC_EVENT_ID,
+  href = `/events/${cardId}`,
+  linkCount = 1,
+  directLink = true,
+  hasNativeFollowAction = true,
+  insideRegion = true,
+  matchesCard = true
+} = {}) {
+  const card = {};
+  const featured = {};
+  const region = {};
+  const makeLink = () => ({
+    ...hrefFixture(href),
+    parentElement: directLink ? featured : {},
+    closest(selector) { return selector === "li" ? card : null; }
+  });
+  const links = Array.from({ length: linkCount }, makeLink);
+  const nativeAction = hasNativeFollowAction
+    ? { closest(selector) { return selector === "li" ? card : null; } }
+    : null;
+  card.id = cardId;
+  card.matches = () => matchesCard;
+  card.closest = () => insideRegion ? region : null;
+  card.querySelector = (selector) =>
+    selector === nativeConstants.featuredSelector ? featured : null;
+  featured.closest = (selector) => selector === "li" ? card : null;
+  featured.querySelectorAll = (selector) =>
+    selector === "a.game-card-link[href]" ? links : [];
+  featured.querySelector = () => nativeAction;
+  return { card, featured, links, nativeAction };
+}
+
+const numericCard = makeNativeCardFixture();
+const numericIdentity = contentHooks.getNativeEventScheduleCardIdentity(numericCard.card);
+assert.equal(numericIdentity.id, NUMERIC_EVENT_ID);
+assert.equal(numericIdentity.card, numericCard.card);
+assert.equal(numericIdentity.link, numericCard.links[0]);
+assert.equal(Object.isFrozen(numericIdentity), true);
+const uuidCard = makeNativeCardFixture({
+  cardId: UUID_EVENT_ID.toUpperCase(),
+  href: `/events/${UUID_EVENT_ID}`
+});
+assert.equal(contentHooks.getNativeEventScheduleCardIdentity(uuidCard.card).id, UUID_EVENT_ID);
+for (const fixture of [
+  makeNativeCardFixture({ href: "/events/999" }),
+  makeNativeCardFixture({ linkCount: 2 }),
+  makeNativeCardFixture({ directLink: false }),
+  makeNativeCardFixture({ insideRegion: false }),
+  makeNativeCardFixture({ matchesCard: false }),
+  makeNativeCardFixture({ hasNativeFollowAction: false }),
+  makeNativeCardFixture({ href: "/events" })
+]) {
+  assert.equal(contentHooks.getNativeEventScheduleCardIdentity(fixture.card), null);
+}
+
+const nativeNow = Date.now();
+const rawNativeEvent = (id, overrides = {}) => ({
+  id,
+  universeId: "2001",
+  placeId: "1001",
+  gameName: "Fixture Game",
+  title: `Event ${id}`,
+  startAt: nativeNow + 60_000,
+  endAt: nativeNow + 120_000,
+  status: "upcoming",
+  ...overrides
+});
+const requestedNativeIds = Object.freeze([
+  NUMERIC_EVENT_ID,
+  UUID_EVENT_ID,
+  "777",
+  "778",
+  "779",
+  "780",
+  "781"
+]);
+const normalizedNativeResponse = contentHooks.normalizeNativeEventScheduleResponse({
+  ok: true,
+  enabled: true,
+  placeId: "1001",
+  universeId: "2001",
+  checkedAt: nativeNow,
+  events: [
+    rawNativeEvent(NUMERIC_EVENT_ID, { privateServerLinkCode: "must-not-survive" }),
+    rawNativeEvent(UUID_EVENT_ID, { startAt: nativeNow + 90_000, endAt: nativeNow + 180_000 }),
+    rawNativeEvent(NUMERIC_EVENT_ID, { title: "Duplicate" }),
+    rawNativeEvent("777", { startAt: nativeNow - 1, endAt: nativeNow + 60_000 }),
+    rawNativeEvent("778", { endAt: nativeNow + 60_000 }),
+    rawNativeEvent("779", { universeId: "9999" }),
+    rawNativeEvent("781", { status: "live" }),
+    rawNativeEvent("999")
+  ]
+}, "1001", "2001", requestedNativeIds, nativeNow);
+assert.ok(normalizedNativeResponse);
+assert.equal(Object.isFrozen(normalizedNativeResponse), true);
+assert.equal(Object.isFrozen(normalizedNativeResponse.events), true);
+assert.deepEqual(
+  normalizedNativeResponse.events.map(({ id }) => id),
+  [NUMERIC_EVENT_ID, UUID_EVENT_ID],
+  "only requested, uniquely matched, still-future official Events survive"
+);
+assert.ok(normalizedNativeResponse.events.every((event) =>
+  event.status === "upcoming" && event.startAt > nativeNow
+));
+for (const invalidResponse of [
+  { ...normalizedNativeResponse, ok: false },
+  { ...normalizedNativeResponse, enabled: false },
+  { ...normalizedNativeResponse, placeId: "9999" },
+  { ...normalizedNativeResponse, universeId: "9999" },
+  { ...normalizedNativeResponse, checkedAt: 0 }
+]) {
+  assert.equal(
+    contentHooks.normalizeNativeEventScheduleResponse(
+      invalidResponse,
+      "1001",
+      "2001",
+      requestedNativeIds,
+      nativeNow
+    ),
+    null
+  );
+}
+const nativeDraft = contentHooks.makeNativeEventScheduleDraft(
+  normalizedNativeResponse.events[0]
+);
+assert.deepEqual(nativeDraft, {
+  universeId: "2001",
+  placeId: "1001",
+  gameName: "Fixture Game",
+  title: `Event ${NUMERIC_EVENT_ID}`,
+  startAt: nativeNow + 60_000,
+  endAt: nativeNow + 120_000,
+  eventId: NUMERIC_EVENT_ID
+});
+assert.deepEqual(Object.keys(nativeDraft).sort(), [
+  "endAt", "eventId", "gameName", "placeId", "startAt", "title", "universeId"
+]);
+assert.equal(Object.isFrozen(nativeDraft), true);
+assert.equal(Object.hasOwn(nativeDraft, "privateServerLinkCode"), false);
 delete globalThis.__rslContentTestHooks;
 
 // The Scheduler is a closed-shadow component, but its visual language is the

@@ -7,6 +7,14 @@
   const HOME_FRIENDS_COLLAPSED_STORAGE_KEY = "rslHomeFriendsCollapsedV1";
   const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
   const QUICK_SETTINGS_COLLAPSED_STORAGE_KEY = "rslQuickSettingsCollapsedV1";
+  const EXTENSION_UPDATE_FEEDBACK_ID = "rsl-extension-update-feedback";
+  const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
+    "rsl:get-extension-update-status";
+  const EXTENSION_UPDATE_HOW_TO_URL =
+    "https://github.com/Kais80r/RoTool-Extension#updating-an-unpacked-copy-from-github";
+  const EXTENSION_UPDATE_STATUS_RETRY_MS = 60 * 60_000;
+  const EXTENSION_UPDATE_STATUS_MIN_TIMER_MS = 60_000;
+  const EXTENSION_UPDATE_STATUS_MAX_TIMER_MS = 24 * 60 * 60_000;
   const FEATURE_SETTINGS_VERSION = 1;
   const ADD_ROW_ID = "rsl-add-shortcut-row";
   const DIALOG_ID = "rsl-shortcut-dialog";
@@ -23,6 +31,21 @@
   const JOIN_SCHEDULER_ROW_ID = "rsl-join-scheduler-row";
   const JOIN_SCHEDULER_MODAL_GLOBAL = "__rslJoinSchedulerModal";
   const GAME_EVENTS_SCHEDULE_ATTRIBUTE = "data-rsl-game-events-schedule";
+  const NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE =
+    "rsl:get-native-event-schedule-data";
+  const NATIVE_EVENT_SCHEDULE_ATTRIBUTE = "data-rsl-native-event-schedule";
+  const NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS = 50;
+  const NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS = new Set([
+    "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+    "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+  ]);
+  const NATIVE_EVENT_SCHEDULE_CARD_SELECTOR =
+    '#game-details-about-tab-container .virtual-event-game-details-container ' +
+    'li.experience-events-tile.contained-tile[data-testid="wide-game-tile"][id]';
+  const NATIVE_EVENT_SCHEDULE_FEATURED_SELECTOR =
+    ".featured-game-container.game-card-container";
+  const NATIVE_EVENT_SCHEDULE_REFRESH_MS = 10 * 60_000;
+  const NATIVE_EVENT_SCHEDULE_FAILURE_RETRY_MS = 60_000;
   const SERVER_HISTORY_DIALOG_ID = "rsl-server-history-dialog";
   const SERVER_HISTORY_ROW_ID = "rsl-server-history-row";
   const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
@@ -828,6 +851,16 @@
   const gameEventsThumbnailByUniverseId = new Map();
   const gameEventsThumbnailRequestByUniverseId = new Map();
   let gameEventsThumbnailObserver = null;
+  let nativeEventScheduleLifecycleEpoch = 0;
+  let nativeEventScheduleRequestSequence = 0;
+  let nativeEventScheduleRoutePlaceId = null;
+  let nativeEventScheduleCardFingerprint = "";
+  let nativeEventScheduleRequestPending = false;
+  let nativeEventScheduleItemsById = new Map();
+  let nativeEventScheduleBoundaryTimer = null;
+  let nativeEventScheduleRefreshTimer = null;
+  let nativeEventScheduleNextRefreshAt = 0;
+  let nativeEventScheduleMessageSenderForTests = null;
   let serverHistoryDialogOpener = null;
   let serverHistoryLifecycleEpoch = 0;
   let serverHistoryRequestSequence = 0;
@@ -2277,6 +2310,539 @@
   }
 
   function makeJoinSchedulerSidebarRow(templateRow) {
+    return buildJoinSchedulerSidebarRow(templateRow);
+  }
+
+  function parseNativeEventScheduleGamePagePlaceId(rawUrl = location.href) {
+    try {
+      const url = new URL(rawUrl);
+      if (
+        url.protocol !== "https:" ||
+        url.hostname !== "www.roblox.com" ||
+        url.port !== "" ||
+        url.username !== "" ||
+        url.password !== ""
+      ) {
+        return null;
+      }
+      const segments = url.pathname.split("/").slice(1);
+      if (segments.at(-1) === "") segments.pop();
+      if (NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has(segments[0]?.toLowerCase())) {
+        segments.shift();
+      }
+      if (
+        segments.length < 2 ||
+        segments.length > 3 ||
+        segments[0] !== "games" ||
+        (segments.length === 3 && !segments[2])
+      ) {
+        return null;
+      }
+      return normalizeQuickPlayPlaceId(segments[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  function getNativeEventSchedulePageMetadata(expectedPlaceId) {
+    const page = document.querySelector("#game-detail-page");
+    const pagePlaceId = normalizeQuickPlayPlaceId(page?.dataset?.placeId);
+    if (!page || pagePlaceId !== expectedPlaceId) return null;
+    const metadata = document.querySelector("#game-detail-meta-data");
+    if (!metadata) return null;
+    const placeId = normalizeQuickPlayPlaceId(metadata.dataset?.placeId);
+    const rootPlaceId = normalizeQuickPlayPlaceId(metadata.dataset?.rootPlaceId);
+    const universeId = normalizeQuickPlayPlaceId(metadata.dataset?.universeId);
+    const gameName = normalizeGameEventText(metadata.dataset?.placeName, "", 150);
+    if (!placeId || placeId !== expectedPlaceId || !rootPlaceId || !universeId) {
+      return null;
+    }
+    return Object.freeze({ placeId, rootPlaceId, universeId, gameName });
+  }
+
+  function parseNativeEventScheduleLinkId(link) {
+    if (!link || typeof link.getAttribute !== "function") return null;
+    const rawHref = link.getAttribute("href");
+    if (typeof rawHref !== "string" || !rawHref.trim()) return null;
+    try {
+      const url = new URL(rawHref, "https://www.roblox.com");
+      if (
+        url.protocol !== "https:" ||
+        url.hostname !== "www.roblox.com" ||
+        url.port !== "" ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.search !== "" ||
+        url.hash !== ""
+      ) {
+        return null;
+      }
+      const segments = url.pathname.split("/").slice(1);
+      if (segments.at(-1) === "") segments.pop();
+      if (NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has(segments[0]?.toLowerCase())) {
+        segments.shift();
+      }
+      if (segments.length !== 2 || segments[0] !== "events") return null;
+      return normalizeGameEventId(segments[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  function getNativeEventScheduleCardIdentity(card) {
+    if (
+      !card?.matches?.(
+        'li.experience-events-tile.contained-tile[data-testid="wide-game-tile"][id]'
+      ) ||
+      !card.closest?.(
+        "#game-details-about-tab-container .virtual-event-game-details-container"
+      )
+    ) {
+      return null;
+    }
+    const cardId = normalizeGameEventId(card.id);
+    const featured = card.querySelector(NATIVE_EVENT_SCHEDULE_FEATURED_SELECTOR);
+    if (!cardId || !featured || featured.closest("li") !== card) return null;
+    const links = Array.from(
+      featured.querySelectorAll("a.game-card-link[href]")
+    ).filter((link) => link.closest("li") === card);
+    if (links.length !== 1) return null;
+    const link = links[0];
+    if (link.parentElement !== featured) return null;
+    const linkId = parseNativeEventScheduleLinkId(link);
+    if (!linkId || linkId !== cardId) return null;
+    const nativeAction = featured.querySelector(
+      ".event-follow-button, .event-unfollow-button"
+    );
+    if (!nativeAction || nativeAction.closest("li") !== card) return null;
+    return Object.freeze({ id: cardId, card, featured, link, nativeAction });
+  }
+
+  function collectNativeEventScheduleCardIdentities() {
+    const identities = [];
+    const seen = new Set();
+    for (const card of document.querySelectorAll(NATIVE_EVENT_SCHEDULE_CARD_SELECTOR)) {
+      const identity = getNativeEventScheduleCardIdentity(card);
+      if (!identity || seen.has(identity.id)) continue;
+      seen.add(identity.id);
+      identities.push(identity);
+      if (identities.length >= NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS) break;
+    }
+    return identities;
+  }
+
+  function sendNativeEventScheduleRuntimeMessage(message) {
+    if (typeof nativeEventScheduleMessageSenderForTests === "function") {
+      return Promise.resolve().then(() =>
+        nativeEventScheduleMessageSenderForTests(message)
+      );
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Native event schedule request timed out"));
+      }, GAME_EVENTS_REQUEST_TIMEOUT_MS);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        const returned = chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) finish(reject, new Error(runtimeError.message));
+          else finish(resolve, response);
+        });
+        if (returned?.then) {
+          returned.then(
+            (response) => finish(resolve, response),
+            (error) => finish(reject, error)
+          );
+        }
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  function normalizeNativeEventScheduleResponse(
+    rawValue,
+    requestedPlaceId,
+    expectedUniverseId,
+    requestedEventIds,
+    now = Date.now()
+  ) {
+    if (
+      !rawValue ||
+      typeof rawValue !== "object" ||
+      rawValue.ok !== true ||
+      rawValue.enabled === false ||
+      normalizeQuickPlayPlaceId(rawValue.placeId) !== requestedPlaceId
+    ) {
+      return null;
+    }
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const checkedAt = normalizeGameEventTimestamp(rawValue.checkedAt);
+    if (!universeId || universeId !== expectedUniverseId || !checkedAt) return null;
+    const requested = new Set(requestedEventIds);
+    const seen = new Set();
+    const events = [];
+    for (const rawEvent of Array.isArray(rawValue.events) ? rawValue.events : []) {
+      const event = normalizeGameEvent(rawEvent, now);
+      if (
+        !event ||
+        rawEvent?.status !== "upcoming" ||
+        event.status !== "upcoming" ||
+        event.startAt <= now ||
+        event.universeId !== universeId ||
+        !requested.has(event.id) ||
+        seen.has(event.id)
+      ) {
+        continue;
+      }
+      seen.add(event.id);
+      events.push(event);
+    }
+    return Object.freeze({
+      placeId: requestedPlaceId,
+      universeId,
+      checkedAt,
+      events: Object.freeze(events)
+    });
+  }
+
+  function removeNativeEventScheduleButtons() {
+    document.querySelectorAll(`[${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}]`).forEach(
+      (button) => button.remove()
+    );
+  }
+
+  function clearNativeEventScheduleBoundaryTimer() {
+    if (nativeEventScheduleBoundaryTimer !== null) {
+      window.clearTimeout(nativeEventScheduleBoundaryTimer);
+      nativeEventScheduleBoundaryTimer = null;
+    }
+  }
+
+  function clearNativeEventScheduleRefreshTimer() {
+    if (nativeEventScheduleRefreshTimer !== null) {
+      window.clearTimeout(nativeEventScheduleRefreshTimer);
+      nativeEventScheduleRefreshTimer = null;
+    }
+  }
+
+  function scheduleNativeEventScheduleDataRefresh() {
+    clearNativeEventScheduleRefreshTimer();
+    if (
+      !nativeEventScheduleRoutePlaceId ||
+      !nativeEventScheduleCardFingerprint ||
+      nativeEventScheduleNextRefreshAt <= 0
+    ) {
+      return;
+    }
+    const delay = Math.min(
+      2_147_000_000,
+      Math.max(100, nativeEventScheduleNextRefreshAt - Date.now())
+    );
+    nativeEventScheduleRefreshTimer = window.setTimeout(() => {
+      nativeEventScheduleRefreshTimer = null;
+      queueMount();
+    }, delay);
+  }
+
+  function scheduleNativeEventScheduleBoundaryRefresh() {
+    clearNativeEventScheduleBoundaryTimer();
+    const now = Date.now();
+    const nextStartAt = Math.min(
+      ...Array.from(nativeEventScheduleItemsById.values())
+        .map((event) => event.startAt)
+        .filter((startAt) => startAt > now)
+    );
+    if (!Number.isFinite(nextStartAt)) return;
+    nativeEventScheduleBoundaryTimer = window.setTimeout(() => {
+      nativeEventScheduleBoundaryTimer = null;
+      const boundaryNow = Date.now();
+      nativeEventScheduleItemsById = new Map(
+        Array.from(nativeEventScheduleItemsById.entries()).filter(
+          ([, event]) => event.startAt > boundaryNow
+        )
+      );
+      reconcileNativeEventScheduleButtons();
+      scheduleNativeEventScheduleBoundaryRefresh();
+    }, Math.min(2_147_000_000, Math.max(50, nextStartAt - now + 50)));
+  }
+
+  function makeNativeEventScheduleDraft(event) {
+    return Object.freeze({
+      universeId: event.universeId,
+      placeId: event.placeId,
+      gameName: event.gameName,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      eventId: event.id
+    });
+  }
+
+  function isNativeEventScheduleButtonCurrent(button, event, now = Date.now()) {
+    if (
+      !button?.isConnected ||
+      !event ||
+      event.startAt <= now ||
+      !isFeatureEnabled("joinScheduler") ||
+      parseNativeEventScheduleGamePagePlaceId() !== nativeEventScheduleRoutePlaceId ||
+      button.getAttribute(NATIVE_EVENT_SCHEDULE_ATTRIBUTE) !== event.id ||
+      nativeEventScheduleItemsById.get(event.id) !== event
+    ) {
+      return false;
+    }
+    const card = button.closest(
+      'li.experience-events-tile.contained-tile[data-testid="wide-game-tile"][id]'
+    );
+    const identity = getNativeEventScheduleCardIdentity(card);
+    return Boolean(identity && identity.id === event.id && identity.featured.contains(button));
+  }
+
+  function placeNativeEventScheduleButton(identity, button) {
+    // Keep RoTool outside the native link/action subtree. Appending one owned
+    // sibling preserves Roblox's native button node, order, handlers, and role.
+    identity.link.insertAdjacentElement("afterend", button);
+  }
+
+  function makeNativeEventScheduleButton(identity, event) {
+    const button = document.createElement("button");
+    const draft = makeNativeEventScheduleDraft(event);
+    button.type = "button";
+    button.className = "rsl-native-event-schedule";
+    button.textContent = "Schedule with RoTool";
+    button.setAttribute(NATIVE_EVENT_SCHEDULE_ATTRIBUTE, event.id);
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-label", `Schedule ${event.title} with RoTool`);
+    button.title = "Set a RoTool reminder or automatic join for this event.";
+    button.addEventListener("click", (clickEvent) => {
+      if (clickEvent.isTrusted !== true) return;
+      clickEvent.preventDefault();
+      clickEvent.stopPropagation();
+      if (!isNativeEventScheduleButtonCurrent(button, event)) {
+        button.remove();
+        queueMount();
+        return;
+      }
+      void openJoinScheduler(draft, button);
+    });
+    placeNativeEventScheduleButton(identity, button);
+    return button;
+  }
+
+  function reconcileNativeEventScheduleButtons() {
+    const placeId = parseNativeEventScheduleGamePagePlaceId();
+    const identities = collectNativeEventScheduleCardIdentities();
+    const identityById = new Map(identities.map((identity) => [identity.id, identity]));
+    const now = Date.now();
+    document.querySelectorAll(`[${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}]`).forEach(
+      (button) => {
+        const id = normalizeGameEventId(
+          button.getAttribute(NATIVE_EVENT_SCHEDULE_ATTRIBUTE)
+        );
+        const event = id ? nativeEventScheduleItemsById.get(id) : null;
+        const identity = id ? identityById.get(id) : null;
+        if (
+          placeId !== nativeEventScheduleRoutePlaceId ||
+          !event ||
+          event.startAt <= now ||
+          !identity ||
+          !identity.featured.contains(button)
+        ) {
+          button.remove();
+        }
+      }
+    );
+    if (
+      !featureSettingsLoaded ||
+      !isFeatureEnabled("joinScheduler") ||
+      !placeId ||
+      placeId !== nativeEventScheduleRoutePlaceId
+    ) {
+      return;
+    }
+    for (const identity of identities) {
+      const event = nativeEventScheduleItemsById.get(identity.id);
+      if (!event || event.startAt <= now) continue;
+      const existing = Array.from(
+        identity.featured.querySelectorAll(`[${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}]`)
+      );
+      const button = existing.shift() || makeNativeEventScheduleButton(identity, event);
+      existing.forEach((duplicate) => duplicate.remove());
+      if (button.getAttribute(NATIVE_EVENT_SCHEDULE_ATTRIBUTE) !== event.id) {
+        button.remove();
+        makeNativeEventScheduleButton(identity, event);
+      }
+    }
+  }
+
+  async function loadNativeEventScheduleData(
+    placeId,
+    expectedUniverseId,
+    eventIds,
+    lifecycleEpoch,
+    cardFingerprint
+  ) {
+    const requestId = ++nativeEventScheduleRequestSequence;
+    nativeEventScheduleRequestPending = true;
+    try {
+      const response = await sendNativeEventScheduleRuntimeMessage({
+        type: NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE,
+        requestId,
+        placeId,
+        eventIds,
+        locale: getRobloxPageLocale()
+      });
+      if (
+        lifecycleEpoch !== nativeEventScheduleLifecycleEpoch ||
+        placeId !== nativeEventScheduleRoutePlaceId ||
+        cardFingerprint !== nativeEventScheduleCardFingerprint ||
+        response?.requestId !== requestId
+      ) {
+        return false;
+      }
+      const currentMetadata = getNativeEventSchedulePageMetadata(placeId);
+      if (!currentMetadata || currentMetadata.universeId !== expectedUniverseId) {
+        nativeEventScheduleItemsById = new Map();
+        nativeEventScheduleNextRefreshAt =
+          Date.now() + NATIVE_EVENT_SCHEDULE_FAILURE_RETRY_MS;
+        removeNativeEventScheduleButtons();
+        return false;
+      }
+      const normalized = normalizeNativeEventScheduleResponse(
+        response,
+        placeId,
+        expectedUniverseId,
+        eventIds
+      );
+      removeNativeEventScheduleButtons();
+      nativeEventScheduleItemsById = new Map(
+        (normalized?.events || []).map((event) => [event.id, event])
+      );
+      nativeEventScheduleNextRefreshAt = Date.now() + (
+        normalized
+          ? NATIVE_EVENT_SCHEDULE_REFRESH_MS
+          : NATIVE_EVENT_SCHEDULE_FAILURE_RETRY_MS
+      );
+      reconcileNativeEventScheduleButtons();
+      scheduleNativeEventScheduleBoundaryRefresh();
+      return Boolean(normalized);
+    } catch {
+      if (
+        lifecycleEpoch === nativeEventScheduleLifecycleEpoch &&
+        placeId === nativeEventScheduleRoutePlaceId &&
+        cardFingerprint === nativeEventScheduleCardFingerprint
+      ) {
+        nativeEventScheduleItemsById = new Map();
+        nativeEventScheduleNextRefreshAt =
+          Date.now() + NATIVE_EVENT_SCHEDULE_FAILURE_RETRY_MS;
+        removeNativeEventScheduleButtons();
+      }
+      return false;
+    } finally {
+      if (
+        lifecycleEpoch === nativeEventScheduleLifecycleEpoch &&
+        placeId === nativeEventScheduleRoutePlaceId &&
+        cardFingerprint === nativeEventScheduleCardFingerprint
+      ) {
+        nativeEventScheduleRequestPending = false;
+        scheduleNativeEventScheduleDataRefresh();
+      }
+    }
+  }
+
+  function cleanupNativeEventScheduleFeature() {
+    nativeEventScheduleLifecycleEpoch += 1;
+    nativeEventScheduleRoutePlaceId = null;
+    nativeEventScheduleCardFingerprint = "";
+    nativeEventScheduleRequestPending = false;
+    nativeEventScheduleItemsById = new Map();
+    nativeEventScheduleNextRefreshAt = 0;
+    clearNativeEventScheduleBoundaryTimer();
+    clearNativeEventScheduleRefreshTimer();
+    removeNativeEventScheduleButtons();
+  }
+
+  function mountNativeEventScheduleButtons() {
+    const placeId = parseNativeEventScheduleGamePagePlaceId();
+    if (
+      window.top !== window ||
+      !featureSettingsLoaded ||
+      !isFeatureEnabled("joinScheduler") ||
+      !placeId
+    ) {
+      cleanupNativeEventScheduleFeature();
+      return;
+    }
+    if (nativeEventScheduleRoutePlaceId !== placeId) {
+      cleanupNativeEventScheduleFeature();
+      nativeEventScheduleRoutePlaceId = placeId;
+    }
+    const metadata = getNativeEventSchedulePageMetadata(placeId);
+    if (!metadata) {
+      nativeEventScheduleLifecycleEpoch += 1;
+      nativeEventScheduleCardFingerprint = "";
+      nativeEventScheduleRequestPending = false;
+      nativeEventScheduleItemsById = new Map();
+      nativeEventScheduleNextRefreshAt = 0;
+      clearNativeEventScheduleBoundaryTimer();
+      clearNativeEventScheduleRefreshTimer();
+      removeNativeEventScheduleButtons();
+      return;
+    }
+    const identities = collectNativeEventScheduleCardIdentities();
+    const eventIds = identities.map((identity) => identity.id);
+    const cardFingerprint =
+      `${placeId}:${metadata.universeId}:${eventIds.join(",")}`;
+    if (cardFingerprint !== nativeEventScheduleCardFingerprint) {
+      nativeEventScheduleLifecycleEpoch += 1;
+      nativeEventScheduleCardFingerprint = cardFingerprint;
+      nativeEventScheduleRequestPending = false;
+      nativeEventScheduleItemsById = new Map();
+      nativeEventScheduleNextRefreshAt = 0;
+      clearNativeEventScheduleBoundaryTimer();
+      clearNativeEventScheduleRefreshTimer();
+      removeNativeEventScheduleButtons();
+      if (eventIds.length > 0) {
+        void loadNativeEventScheduleData(
+          placeId,
+          metadata.universeId,
+          Object.freeze(eventIds.slice()),
+          nativeEventScheduleLifecycleEpoch,
+          cardFingerprint
+        );
+      }
+      return;
+    }
+    if (
+      eventIds.length > 0 &&
+      !nativeEventScheduleRequestPending &&
+      Date.now() >= nativeEventScheduleNextRefreshAt
+    ) {
+      nativeEventScheduleItemsById = new Map();
+      removeNativeEventScheduleButtons();
+      void loadNativeEventScheduleData(
+        placeId,
+        metadata.universeId,
+        Object.freeze(eventIds.slice()),
+        nativeEventScheduleLifecycleEpoch,
+        cardFingerprint
+      );
+      return;
+    }
+    if (!nativeEventScheduleRequestPending) {
+      reconcileNativeEventScheduleButtons();
+    }
+  }
+
+  function buildJoinSchedulerSidebarRow(templateRow) {
     const { row, anchor, label, icon } = createNativeLookingRow(
       templateRow,
       "shortcut",
@@ -2359,6 +2925,7 @@
 
   function cleanupJoinSchedulerFeature() {
     document.getElementById(JOIN_SCHEDULER_ROW_ID)?.remove();
+    cleanupNativeEventScheduleFeature();
     const modalApi = globalThis[JOIN_SCHEDULER_MODAL_GLOBAL];
     if (modalApi && typeof modalApi.destroy === "function") modalApi.destroy();
   }
@@ -15084,6 +15651,7 @@
         !featureSettingsSaving && featureSettingsNoticeIsError
       );
     }
+    renderFeatureSettingsUpdateStatus(dialog);
     dialog.setAttribute(
       "aria-busy",
       String(!featureSettingsLoaded)
@@ -15174,6 +15742,13 @@
               <p id="rsl-feature-settings-description" class="content-default text-body-medium">Choose which RoTool features appear on Roblox. Changes apply immediately.</p>
             </div>
           </div>
+          <div class="rsl-feature-settings__update" data-rsl-feature-settings-update hidden>
+            <span class="rsl-feature-settings__update-copy" role="status" aria-live="polite" aria-atomic="true">
+              <strong id="rsl-feature-settings-update-title" class="content-emphasis text-label-large">Update available</strong>
+              <span class="content-default text-body-medium" data-rsl-feature-settings-update-message></span>
+            </span>
+            <a class="rsl-feature-settings__update-link" data-rsl-feature-settings-update-link>How to update</a>
+          </div>
           <div class="rsl-feature-settings__groups"></div>
         </div>
         <div class="rsl-dialog__actions rsl-feature-settings__footer padding-x-xlarge padding-bottom-xlarge flex gap-medium">
@@ -15191,6 +15766,14 @@
     `;
     dialog.setAttribute("aria-labelledby", "rsl-feature-settings-title");
     dialog.setAttribute("aria-describedby", "rsl-feature-settings-description");
+
+    const updateLink = dialog.querySelector(
+      "[data-rsl-feature-settings-update-link]"
+    );
+    updateLink.href = EXTENSION_UPDATE_HOW_TO_URL;
+    updateLink.target = "_blank";
+    updateLink.rel = "noopener noreferrer";
+    updateLink.referrerPolicy = "no-referrer";
 
     const groups = dialog.querySelector(".rsl-feature-settings__groups");
     const groupsByName = new Map();
@@ -15407,6 +15990,7 @@
     }
     opener?.setAttribute?.("aria-expanded", "true");
     dialog.querySelector("[data-rsl-feature-key]")?.focus();
+    void refreshFeatureSettingsUpdateStatus();
   }
 
   function normalizeGameEventId(rawValue) {
@@ -18207,6 +18791,7 @@
     if (!featureSettingsLoaded) {
       return;
     }
+    mountNativeEventScheduleButtons();
     if (isFeatureEnabled("sidebarShortcuts")) {
       syncNativeSidebarVisibility();
       mountGameEventsSidebarRow();
@@ -18967,6 +19552,519 @@
     dialog.querySelector("input[name='label']")?.focus();
   }
 
+  let extensionUpdateFeedbackRequestId = 0;
+  let extensionUpdateSettingsRequestId = 0;
+  let extensionUpdateFeedbackRequestPromise = null;
+  let extensionUpdateStatusTimer = null;
+  let extensionUpdateStatusTimerDueAt = 0;
+  let extensionUpdateStatusSnapshot = null;
+  let extensionUpdateFeedbackPositionFrame = null;
+  let extensionUpdateFeedbackNativeObserver = null;
+  let extensionUpdateFeedbackObservedNativeSurfaces = new WeakSet();
+
+  function normalizeExtensionUpdateVersion(value) {
+    if (
+      typeof value !== "string" ||
+      !/^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/.test(value)
+    ) {
+      return null;
+    }
+    return value;
+  }
+
+  function compareExtensionUpdateVersions(left, right) {
+    const normalizedLeft = normalizeExtensionUpdateVersion(left);
+    const normalizedRight = normalizeExtensionUpdateVersion(right);
+    if (!normalizedLeft || !normalizedRight) {
+      return 0;
+    }
+
+    const leftParts = normalizedLeft.split(".").map(Number);
+    const rightParts = normalizedRight.split(".").map(Number);
+    for (let index = 0; index < leftParts.length; index += 1) {
+      if (leftParts[index] !== rightParts[index]) {
+        return leftParts[index] > rightParts[index] ? 1 : -1;
+      }
+    }
+    return 0;
+  }
+
+  function getInstalledExtensionVersion() {
+    try {
+      return normalizeExtensionUpdateVersion(
+        chrome.runtime.getManifest?.().version
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function sendExtensionUpdateMessage(message) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+            return;
+          }
+          resolve(
+            response && typeof response === "object" ? response : null
+          );
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  function normalizeExtensionUpdateTimestamp(value, allowNull = false) {
+    if (allowNull && value === null) {
+      return null;
+    }
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
+  function normalizeExtensionUpdateStatus(status) {
+    if (!status || typeof status !== "object" || status.ok !== true) {
+      return null;
+    }
+    const current = normalizeExtensionUpdateVersion(status.current);
+    const installed = getInstalledExtensionVersion();
+    const latest = normalizeExtensionUpdateVersion(status.latest);
+    if (
+      !current ||
+      installed !== current ||
+      (status.latest !== null && !latest) ||
+      typeof status.updateAvailable !== "boolean" ||
+      typeof status.showNotice !== "boolean"
+    ) {
+      return null;
+    }
+    const updateAvailable = Boolean(
+      latest && compareExtensionUpdateVersions(latest, current) > 0
+    );
+    if (status.updateAvailable !== updateAvailable) {
+      return null;
+    }
+    const checkedAt = normalizeExtensionUpdateTimestamp(
+      status.checkedAt,
+      true
+    );
+    if (status.checkedAt !== null && checkedAt === null) {
+      return null;
+    }
+    const nextCheckAt = normalizeExtensionUpdateTimestamp(status.nextCheckAt);
+    const nextNoticeAt = normalizeExtensionUpdateTimestamp(
+      status.nextNoticeAt,
+      true
+    );
+    if (
+      nextCheckAt === null ||
+      (updateAvailable && nextNoticeAt === null) ||
+      (!updateAvailable && status.nextNoticeAt !== null)
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      ok: true,
+      current,
+      latest,
+      updateAvailable,
+      showNotice: updateAvailable && status.showNotice === true,
+      checkedAt,
+      nextNoticeAt,
+      nextCheckAt
+    });
+  }
+
+  function renderFeatureSettingsUpdateStatus(
+    dialog = document.getElementById(FEATURE_SETTINGS_DIALOG_ID)
+  ) {
+    const update = dialog?.querySelector?.(
+      "[data-rsl-feature-settings-update]"
+    );
+    const message = update?.querySelector?.(
+      "[data-rsl-feature-settings-update-message]"
+    );
+    if (!update || !message) {
+      return;
+    }
+    const latest = extensionUpdateStatusSnapshot?.updateAvailable
+      ? extensionUpdateStatusSnapshot.latest
+      : null;
+    if (!latest) {
+      update.hidden = true;
+      update.removeAttribute("data-rsl-extension-update-version");
+      if (message.textContent) {
+        message.textContent = "";
+      }
+      return;
+    }
+    if (
+      update.getAttribute("data-rsl-extension-update-version") !== latest
+    ) {
+      message.textContent = `RoTool ${latest} is available.`;
+      update.setAttribute("data-rsl-extension-update-version", latest);
+    }
+    update.hidden = false;
+  }
+
+  function applyExtensionUpdateStatus(status) {
+    const normalized = normalizeExtensionUpdateStatus(status);
+    if (!normalized) {
+      return null;
+    }
+    const previous = extensionUpdateStatusSnapshot;
+    if (
+      previous &&
+      Number.isSafeInteger(previous.checkedAt) &&
+      Number.isSafeInteger(normalized.checkedAt)
+    ) {
+      if (normalized.checkedAt < previous.checkedAt) {
+        return previous;
+      }
+      if (
+        normalized.checkedAt === previous.checkedAt &&
+        previous.latest &&
+        (
+          !normalized.latest ||
+          compareExtensionUpdateVersions(previous.latest, normalized.latest) > 0
+        )
+      ) {
+        return previous;
+      }
+    }
+    if (
+      previous?.updateAvailable &&
+      normalized.latest === null &&
+      normalized.checkedAt === null
+    ) {
+      return previous;
+    }
+    extensionUpdateStatusSnapshot = normalized;
+    renderFeatureSettingsUpdateStatus();
+    return normalized;
+  }
+
+  async function refreshFeatureSettingsUpdateStatus() {
+    if (window.top !== window) {
+      return null;
+    }
+    const requestId = ++extensionUpdateSettingsRequestId;
+    const response = await sendExtensionUpdateMessage({
+      type: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
+      pageVisible: document.visibilityState === "visible",
+      claimNotice: false
+    });
+    if (requestId !== extensionUpdateSettingsRequestId || !response) {
+      return null;
+    }
+    const normalized = applyExtensionUpdateStatus(response);
+    renderFeatureSettingsUpdateStatus();
+    return normalized;
+  }
+
+  function clearExtensionUpdateStatusTimer(resetDueAt = true) {
+    if (extensionUpdateStatusTimer !== null) {
+      window.clearTimeout(extensionUpdateStatusTimer);
+      extensionUpdateStatusTimer = null;
+    }
+    if (resetDueAt) {
+      extensionUpdateStatusTimerDueAt = 0;
+    }
+  }
+
+  function replaceExtensionUpdateStatusTimer(nextAt) {
+    const now = Date.now();
+    const requestedAt = normalizeExtensionUpdateTimestamp(nextAt) ||
+      now + EXTENSION_UPDATE_STATUS_RETRY_MS;
+    const dueAt = Math.min(
+      Math.max(requestedAt, now + EXTENSION_UPDATE_STATUS_MIN_TIMER_MS),
+      now + EXTENSION_UPDATE_STATUS_MAX_TIMER_MS
+    );
+    clearExtensionUpdateStatusTimer(false);
+    extensionUpdateStatusTimerDueAt = dueAt;
+    extensionUpdateStatusTimer = window.setTimeout(() => {
+      extensionUpdateStatusTimer = null;
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      extensionUpdateStatusTimerDueAt = 0;
+      void refreshExtensionUpdateFeedback();
+    }, dueAt - now);
+  }
+
+  function scheduleExtensionUpdateStatusTimer(status) {
+    const candidates = [status?.nextCheckAt];
+    if (status?.updateAvailable) {
+      candidates.push(status.nextNoticeAt);
+    }
+    const validCandidates = candidates.filter(
+      (value) => normalizeExtensionUpdateTimestamp(value) !== null
+    );
+    replaceExtensionUpdateStatusTimer(
+      validCandidates.length > 0
+        ? Math.min(...validCandidates)
+        : Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
+    );
+  }
+
+  function removeExtensionUpdateFeedback() {
+    document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)?.remove();
+    if (extensionUpdateFeedbackPositionFrame !== null) {
+      window.cancelAnimationFrame(extensionUpdateFeedbackPositionFrame);
+      extensionUpdateFeedbackPositionFrame = null;
+    }
+    extensionUpdateFeedbackNativeObserver?.disconnect();
+    extensionUpdateFeedbackNativeObserver = null;
+    extensionUpdateFeedbackObservedNativeSurfaces = new WeakSet();
+  }
+
+  function observeNativeSystemFeedback() {
+    if (!extensionUpdateFeedbackNativeObserver) {
+      extensionUpdateFeedbackNativeObserver = new MutationObserver(() => {
+        queueExtensionUpdateFeedbackPositionSync();
+      });
+    }
+
+    document.querySelectorAll(".sg-system-feedback").forEach((surface) => {
+      if (
+        surface.id === EXTENSION_UPDATE_FEEDBACK_ID ||
+        extensionUpdateFeedbackObservedNativeSurfaces.has(surface)
+      ) {
+        return;
+      }
+      extensionUpdateFeedbackObservedNativeSurfaces.add(surface);
+      extensionUpdateFeedbackNativeObserver.observe(surface, {
+        attributes: true,
+        attributeFilter: ["class", "hidden", "style"],
+        childList: true,
+        subtree: true
+      });
+    });
+  }
+
+  function syncExtensionUpdateFeedbackPosition() {
+    const feedback = document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID);
+    if (!feedback) {
+      return;
+    }
+
+    observeNativeSystemFeedback();
+    let nextTop = 48;
+    const pageHeader = document.querySelector(
+      "#header, .navbar-fixed-top, header[role='banner']"
+    );
+    if (pageHeader) {
+      const headerRect = pageHeader.getBoundingClientRect();
+      if (
+        headerRect.height > 0 &&
+        headerRect.bottom > 0 &&
+        headerRect.bottom < Math.min(window.innerHeight, 160)
+      ) {
+        nextTop = Math.max(nextTop, Math.ceil(headerRect.bottom + 8));
+      }
+    }
+
+    document
+      .querySelectorAll(
+        ".sg-system-feedback:not(#rsl-extension-update-feedback) .alert.on"
+      )
+      .forEach((nativeAlert) => {
+        const alertRect = nativeAlert.getBoundingClientRect();
+        if (
+          alertRect.width > 0 &&
+          alertRect.height > 0 &&
+          alertRect.bottom > 0 &&
+          alertRect.top < Math.min(window.innerHeight, 200)
+        ) {
+          nextTop = Math.max(nextTop, Math.ceil(alertRect.bottom + 8));
+        }
+      });
+
+    const maximumTop = Math.max(8, window.innerHeight - 64);
+    feedback.style.setProperty(
+      "--rsl-extension-update-feedback-top",
+      `${Math.min(nextTop, maximumTop)}px`
+    );
+  }
+
+  function queueExtensionUpdateFeedbackPositionSync() {
+    if (
+      extensionUpdateFeedbackPositionFrame !== null ||
+      !document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)
+    ) {
+      return;
+    }
+    extensionUpdateFeedbackPositionFrame = window.requestAnimationFrame(() => {
+      extensionUpdateFeedbackPositionFrame = null;
+      syncExtensionUpdateFeedbackPosition();
+    });
+  }
+
+  function renderExtensionUpdateFeedback(status) {
+    const current = normalizeExtensionUpdateVersion(status?.current);
+    const latest = normalizeExtensionUpdateVersion(status?.latest);
+    const installed = getInstalledExtensionVersion();
+    const shouldShow =
+      status?.ok === true &&
+      status?.updateAvailable === true &&
+      status?.showNotice === true &&
+      current !== null &&
+      latest !== null &&
+      compareExtensionUpdateVersions(latest, current) > 0 &&
+      installed === current &&
+      window.top === window;
+
+    if (!shouldShow) {
+      removeExtensionUpdateFeedback();
+      return null;
+    }
+
+    const existing = document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID);
+    if (existing?.dataset.rslExtensionUpdateVersion === latest) {
+      queueExtensionUpdateFeedbackPositionSync();
+      return existing;
+    }
+    if (existing) {
+      removeExtensionUpdateFeedback();
+    }
+
+    const feedback = document.createElement("div");
+    feedback.id = EXTENSION_UPDATE_FEEDBACK_ID;
+    feedback.className =
+      "sg-system-feedback rsl-extension-update-feedback";
+    feedback.dataset.rslExtensionUpdateVersion = latest;
+
+    const inner = document.createElement("div");
+    inner.className =
+      "alert-system-feedback rsl-extension-update-feedback__inner";
+
+    const alert = document.createElement("div");
+    alert.className =
+      "alert alert-success on rsl-extension-update-feedback__alert";
+    alert.setAttribute("role", "status");
+    alert.setAttribute("aria-live", "polite");
+    alert.setAttribute("aria-atomic", "true");
+
+    const content = document.createElement("span");
+    content.className =
+      "alert-content rsl-extension-update-feedback__content";
+    content.append(document.createTextNode(`RoTool ${latest} is available. `));
+
+    const howToUpdate = document.createElement("a");
+    howToUpdate.className = "rsl-extension-update-feedback__link";
+    howToUpdate.href = EXTENSION_UPDATE_HOW_TO_URL;
+    howToUpdate.target = "_blank";
+    howToUpdate.rel = "noopener noreferrer";
+    howToUpdate.referrerPolicy = "no-referrer";
+    howToUpdate.textContent = "How to update";
+    content.append(howToUpdate);
+
+    const closeButton = document.createElement("button");
+    closeButton.className =
+      "icon-close-white rsl-extension-update-feedback__close";
+    closeButton.type = "button";
+    closeButton.title = "Dismiss";
+    closeButton.setAttribute(
+      "aria-label",
+      `Dismiss RoTool ${latest} update notice`
+    );
+    closeButton.textContent = "×";
+    closeButton.addEventListener("click", (event) => {
+      if (!event.isTrusted) {
+        return;
+      }
+      removeExtensionUpdateFeedback();
+    });
+
+    alert.append(content, closeButton);
+    inner.append(alert);
+    feedback.append(inner);
+    (document.body || document.documentElement).append(feedback);
+    queueExtensionUpdateFeedbackPositionSync();
+    return feedback;
+  }
+
+  function refreshExtensionUpdateFeedback() {
+    if (window.top !== window) {
+      removeExtensionUpdateFeedback();
+      clearExtensionUpdateStatusTimer();
+      return Promise.resolve(null);
+    }
+    if (extensionUpdateFeedbackRequestPromise) {
+      return extensionUpdateFeedbackRequestPromise;
+    }
+
+    const requestId = ++extensionUpdateFeedbackRequestId;
+    const request = (async () => {
+      const response = await sendExtensionUpdateMessage({
+        type: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
+        pageVisible: document.visibilityState === "visible",
+        claimNotice: true
+      });
+      if (requestId !== extensionUpdateFeedbackRequestId) {
+        return null;
+      }
+      if (!response) {
+        replaceExtensionUpdateStatusTimer(
+          Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
+        );
+        return null;
+      }
+      const normalized = applyExtensionUpdateStatus(response);
+      if (!normalized) {
+        replaceExtensionUpdateStatusTimer(
+          Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
+        );
+        return null;
+      }
+
+      if (!normalized.updateAvailable) {
+        removeExtensionUpdateFeedback();
+      } else if (normalized.showNotice) {
+        renderExtensionUpdateFeedback(normalized);
+      } else {
+        const existing = document.getElementById(
+          EXTENSION_UPDATE_FEEDBACK_ID
+        );
+        if (
+          existing &&
+          existing.dataset.rslExtensionUpdateVersion !== normalized.latest
+        ) {
+          removeExtensionUpdateFeedback();
+        }
+      }
+      scheduleExtensionUpdateStatusTimer(normalized);
+      return normalized;
+    })();
+    const tracked = request.finally(() => {
+      if (extensionUpdateFeedbackRequestPromise === tracked) {
+        extensionUpdateFeedbackRequestPromise = null;
+      }
+    });
+    extensionUpdateFeedbackRequestPromise = tracked;
+    return tracked;
+  }
+
+  function requestExtensionUpdateStatusWhenVisible() {
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+    const now = Date.now();
+    if (extensionUpdateFeedbackRequestPromise) {
+      return;
+    }
+    if (extensionUpdateStatusTimerDueAt > now) {
+      if (extensionUpdateStatusTimer === null) {
+        replaceExtensionUpdateStatusTimer(extensionUpdateStatusTimerDueAt);
+      }
+      return;
+    }
+    clearExtensionUpdateStatusTimer();
+    void refreshExtensionUpdateFeedback();
+  }
+
   function isInsideRoToolDialog(node) {
     const element = node?.nodeType === Node.ELEMENT_NODE
       ? node
@@ -18998,7 +20096,9 @@
       ? node
       : node?.parentElement;
     return Boolean(
-      element?.closest?.("[data-rsl-best-friends-carousel]")
+      element?.closest?.(
+        `[data-rsl-best-friends-carousel], [${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}]`
+      )
     );
   }
 
@@ -19032,6 +20132,9 @@
     mountExtensionFeatures();
 
     const observer = new MutationObserver((mutations) => {
+      if (document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)) {
+        queueExtensionUpdateFeedbackPositionSync();
+      }
       if (
         privateServersDialogOpener &&
         (!privateServersDialogOpener.isConnected ||
@@ -19068,6 +20171,7 @@
       queueMount();
     });
     window.addEventListener("resize", () => {
+      queueExtensionUpdateFeedbackPositionSync();
       closeBestFriendHoverCard();
       bestFriendsScrollLockUntil = 0;
       window.clearTimeout(bestFriendsScrollSettleTimer);
@@ -19101,6 +20205,7 @@
         closeBestFriendHoverCard();
         return;
       }
+      requestExtensionUpdateStatusWhenVisible();
       refreshBestFriendsHomeIfStale();
     });
     document.addEventListener(
@@ -19112,6 +20217,8 @@
       QUICK_PLAY_RANDOM_REQUEST_EVENT,
       handleRandomServerRequest
     );
+
+    requestExtensionUpdateStatusWhenVisible();
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local") {
@@ -19299,6 +20406,47 @@
 
   const contentTestHooks = globalThis.__rslContentTestHooks;
   if (contentTestHooks && typeof contentTestHooks === "object") {
+    contentTestHooks.extensionUpdateFeedbackConstants = Object.freeze({
+      feedbackId: EXTENSION_UPDATE_FEEDBACK_ID,
+      howToUpdateUrl: EXTENSION_UPDATE_HOW_TO_URL,
+      statusRetryMs: EXTENSION_UPDATE_STATUS_RETRY_MS,
+      statusMinTimerMs: EXTENSION_UPDATE_STATUS_MIN_TIMER_MS,
+      statusMaxTimerMs: EXTENSION_UPDATE_STATUS_MAX_TIMER_MS,
+      messageTypes: Object.freeze({
+        status: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE
+      })
+    });
+    contentTestHooks.normalizeExtensionUpdateVersion =
+      normalizeExtensionUpdateVersion;
+    contentTestHooks.compareExtensionUpdateVersions =
+      compareExtensionUpdateVersions;
+    contentTestHooks.renderExtensionUpdateFeedback =
+      renderExtensionUpdateFeedback;
+    contentTestHooks.removeExtensionUpdateFeedback =
+      removeExtensionUpdateFeedback;
+    contentTestHooks.refreshExtensionUpdateFeedback =
+      refreshExtensionUpdateFeedback;
+    contentTestHooks.normalizeExtensionUpdateStatus =
+      normalizeExtensionUpdateStatus;
+    contentTestHooks.applyExtensionUpdateStatus =
+      applyExtensionUpdateStatus;
+    contentTestHooks.renderFeatureSettingsUpdateStatus =
+      renderFeatureSettingsUpdateStatus;
+    contentTestHooks.refreshFeatureSettingsUpdateStatus =
+      refreshFeatureSettingsUpdateStatus;
+    contentTestHooks.scheduleExtensionUpdateStatusTimer =
+      scheduleExtensionUpdateStatusTimer;
+    contentTestHooks.requestExtensionUpdateStatusWhenVisible =
+      requestExtensionUpdateStatusWhenVisible;
+    contentTestHooks.resetExtensionUpdateStatusForTests = () => {
+      extensionUpdateFeedbackRequestId += 1;
+      extensionUpdateSettingsRequestId += 1;
+      extensionUpdateFeedbackRequestPromise = null;
+      extensionUpdateStatusSnapshot = null;
+      clearExtensionUpdateStatusTimer();
+      removeExtensionUpdateFeedback();
+      renderFeatureSettingsUpdateStatus();
+    };
     contentTestHooks.observePrivateServerSupport = observePrivateServerSupport;
     contentTestHooks.normalizeFeatureSettings = normalizeFeatureSettings;
     contentTestHooks.serializeFeatureSettings = serializeFeatureSettings;
@@ -19321,6 +20469,18 @@
       rowId: JOIN_SCHEDULER_ROW_ID,
       modalGlobal: JOIN_SCHEDULER_MODAL_GLOBAL,
       gameEventScheduleAttribute: GAME_EVENTS_SCHEDULE_ATTRIBUTE
+    });
+    contentTestHooks.nativeEventScheduleConstants = Object.freeze({
+      attribute: NATIVE_EVENT_SCHEDULE_ATTRIBUTE,
+      dataMessageType: NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE,
+      cardSelector: NATIVE_EVENT_SCHEDULE_CARD_SELECTOR,
+      featuredSelector: NATIVE_EVENT_SCHEDULE_FEATURED_SELECTOR,
+      maxEventIds: NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS,
+      localeSegments: Object.freeze(
+        Array.from(NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS)
+      ),
+      refreshMs: NATIVE_EVENT_SCHEDULE_REFRESH_MS,
+      failureRetryMs: NATIVE_EVENT_SCHEDULE_FAILURE_RETRY_MS
     });
     contentTestHooks.normalizeGameEventId = normalizeGameEventId;
     contentTestHooks.normalizeGameEventTimestamp = normalizeGameEventTimestamp;
@@ -19355,6 +20515,48 @@
     contentTestHooks.placeJoinSchedulerSidebarRow = placeJoinSchedulerSidebarRow;
     contentTestHooks.mountJoinSchedulerSidebarRow = mountJoinSchedulerSidebarRow;
     contentTestHooks.openJoinScheduler = openJoinScheduler;
+    contentTestHooks.parseNativeEventScheduleGamePagePlaceId =
+      parseNativeEventScheduleGamePagePlaceId;
+    contentTestHooks.getNativeEventSchedulePageMetadata =
+      getNativeEventSchedulePageMetadata;
+    contentTestHooks.parseNativeEventScheduleLinkId =
+      parseNativeEventScheduleLinkId;
+    contentTestHooks.getNativeEventScheduleCardIdentity =
+      getNativeEventScheduleCardIdentity;
+    contentTestHooks.collectNativeEventScheduleCardIdentities =
+      collectNativeEventScheduleCardIdentities;
+    contentTestHooks.normalizeNativeEventScheduleResponse =
+      normalizeNativeEventScheduleResponse;
+    contentTestHooks.makeNativeEventScheduleDraft =
+      makeNativeEventScheduleDraft;
+    contentTestHooks.isNativeEventScheduleButtonCurrent =
+      isNativeEventScheduleButtonCurrent;
+    contentTestHooks.reconcileNativeEventScheduleButtons =
+      reconcileNativeEventScheduleButtons;
+    contentTestHooks.loadNativeEventScheduleData =
+      loadNativeEventScheduleData;
+    contentTestHooks.mountNativeEventScheduleButtons =
+      mountNativeEventScheduleButtons;
+    contentTestHooks.cleanupNativeEventScheduleFeature =
+      cleanupNativeEventScheduleFeature;
+    contentTestHooks.setNativeEventScheduleMessageSenderForTests = (sender) => {
+      nativeEventScheduleMessageSenderForTests =
+        typeof sender === "function" ? sender : null;
+    };
+    contentTestHooks.getNativeEventScheduleStateForTests = () => ({
+      lifecycleEpoch: nativeEventScheduleLifecycleEpoch,
+      requestSequence: nativeEventScheduleRequestSequence,
+      routePlaceId: nativeEventScheduleRoutePlaceId,
+      cardFingerprint: nativeEventScheduleCardFingerprint,
+      requestPending: nativeEventScheduleRequestPending,
+      nextRefreshAt: nativeEventScheduleNextRefreshAt,
+      events: Array.from(nativeEventScheduleItemsById.values())
+    });
+    contentTestHooks.resetNativeEventScheduleStateForTests = () => {
+      cleanupNativeEventScheduleFeature();
+      nativeEventScheduleRequestSequence = 0;
+      nativeEventScheduleMessageSenderForTests = null;
+    };
     contentTestHooks.createGameEventsDialog = createGameEventsDialog;
     contentTestHooks.openGameEventsDialog = openGameEventsDialog;
     contentTestHooks.closeGameEventsDialog = closeGameEventsDialog;

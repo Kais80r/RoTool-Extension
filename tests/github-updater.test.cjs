@@ -21,7 +21,7 @@ const exampleConfiguration = JSON.parse(
 );
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
 
-assert.equal(manifest.version, "0.19.1", "the corrected migration release must advance the extension version");
+assert.equal(manifest.version, "0.19.2", "the current release version must match its manifest");
 assert.match(
   updaterSource,
   /^\$script:UpdaterVersion\s*=\s*"1\.2\.3"\s*$/m,
@@ -113,14 +113,14 @@ assert.match(updaterReadme, /Press \*\*Reload\*\* on that same RoTool card/i);
 assert.match(updaterReadme, /never place a GitHub access token/i);
 assert.match(updaterReadme, /Kais80r\/RoTool-Extension/);
 assert.match(mainReadme, /^## Updating an unpacked copy from GitHub$/m);
-assert.match(mainReadme, /RoTool-setup\.zip/);
-assert.match(mainReadme, /keep that exact folder path/i);
-assert.match(mainReadme, /do not remove the existing extension/i);
 assert.match(mainReadme, /double-click `updater\/Update RoTool\.cmd`/i);
-assert.match(mainReadme, /Preferences.*Secure Preferences|Secure Preferences.*Preferences/i);
-assert.match(mainReadme, /extension registration metadata/i);
-assert.match(mainReadme, /never reads? cookies.*history.*passwords|never reads? cookies, history, or passwords/i);
-assert.match(mainReadme, /press \*\*Reload\*\* on the same RoTool card/i);
+assert.match(mainReadme, /existing RoTool card/i);
+assert.match(mainReadme, /\[RoTool Updater guide\]\(updater\/README\.md\)/);
+assert.match(updaterReadme, /RoTool-setup\.zip/);
+assert.match(updaterReadme, /Preferences.*Secure Preferences|Secure Preferences.*Preferences/i);
+assert.match(updaterReadme, /extension-registration metadata/i);
+assert.match(updaterReadme, /never reads? cookies.*history.*passwords|never reads? cookies, browsing history, passwords/i);
+assert.match(updaterReadme, /press \*\*Reload\*\* on that same RoTool card/i);
 assert.match(mainReadme, /GitHub workflow runs every test/i);
 assert.match(mainReadme, /Never put a GitHub token/i);
 assert.deepEqual(exampleConfiguration, {

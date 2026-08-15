@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.1");
+assert.equal(manifest.version, "0.19.2");
 assert.match(manifest.description, /Join Scheduler/i);
 assert.ok(manifest.permissions.includes("storage"));
 

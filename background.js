@@ -214,6 +214,24 @@ const DIRECT_QUICK_SETTING_ALIASES = Object.freeze([
   "inventory"
 ]);
 const RANDOM_SERVER_MESSAGE_TYPE = "rsl:get-random-public-server";
+const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
+  "rsl:get-extension-update-status";
+const EXTENSION_UPDATE_STORAGE_KEY = "rslExtensionUpdateStatusV1";
+const EXTENSION_UPDATE_STORAGE_VERSION = 1;
+const EXTENSION_UPDATE_LATEST_RELEASE_URL =
+  "https://api.github.com/repos/Kais80r/RoTool-Extension/releases/latest";
+const EXTENSION_UPDATE_HOW_TO_URL =
+  "https://github.com/Kais80r/RoTool-Extension#updating-an-unpacked-copy-from-github";
+const EXTENSION_UPDATE_CACHE_TTL_MS = 24 * 60 * 60_000;
+const EXTENSION_UPDATE_PRESENTATION_TTL_MS = 6 * 60 * 60_000;
+const EXTENSION_UPDATE_FETCH_TIMEOUT_MS = 8_000;
+const EXTENSION_UPDATE_MAX_RESPONSE_BYTES = 256 * 1_024;
+const EXTENSION_UPDATE_FAILURE_RETRY_MS = 60 * 60_000;
+let extensionUpdateCheckPromise = null;
+let extensionUpdateStateLoadPromise = null;
+let extensionUpdateStateMemory = null;
+let extensionUpdateStateMutationTail = Promise.resolve();
+let extensionUpdateStorageOverride = null;
 const RANDOM_SERVER_CACHE_TTL_MS = 20_000;
 const RANDOM_SERVER_RATE_LIMIT_FALLBACK_MS = 60_000;
 const RANDOM_SERVER_FETCH_TIMEOUT_MS = 10_000;
@@ -281,6 +299,13 @@ const GAME_EVENTS_SUBTITLE_MAX_LENGTH = 300;
 const GAME_EVENTS_FALLBACK_LOCALE = "en-US";
 const JOIN_SCHEDULER_FEATURE_KEY = "joinScheduler";
 const JOIN_SCHEDULER_SHOW_MESSAGE_TYPE = "rsl:show-join-scheduler";
+const NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE =
+  "rsl:get-native-event-schedule-data";
+const NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS = 50;
+const NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS = new Set([
+  "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+  "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+]);
 const JOIN_SCHEDULER_MESSAGE_PREFIX = "rsl:join-scheduler:";
 const JOIN_SCHEDULER_MESSAGE_TYPES = Object.freeze({
   getState: `${JOIN_SCHEDULER_MESSAGE_PREFIX}get-state`,
@@ -8148,6 +8173,229 @@ function handleGameEventsMessage(message, sender, sendResponse) {
   return true;
 }
 
+function parseNativeEventScheduleGamePagePlaceId(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "www.roblox.com" ||
+      url.port !== "" ||
+      url.username !== "" ||
+      url.password !== ""
+    ) {
+      return null;
+    }
+    const segments = url.pathname.split("/").slice(1);
+    if (segments.at(-1) === "") segments.pop();
+    if (NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has(segments[0]?.toLowerCase())) {
+      segments.shift();
+    }
+    if (
+      segments.length < 2 ||
+      segments.length > 3 ||
+      segments[0] !== "games" ||
+      (segments.length === 3 && !segments[2])
+    ) {
+      return null;
+    }
+    return normalizeId(segments[1]);
+  } catch {
+    return null;
+  }
+}
+
+function getTrustedNativeEventSchedulePagePlaceId(sender) {
+  if (
+    sender?.id !== chrome.runtime.id ||
+    sender?.tab?.incognito === true ||
+    getTrustedRobloxTopFrameTabId(sender) === null ||
+    typeof sender?.tab?.url !== "string" ||
+    typeof sender?.url !== "string"
+  ) {
+    return null;
+  }
+  const tabPlaceId = parseNativeEventScheduleGamePagePlaceId(sender.tab.url);
+  const framePlaceId = parseNativeEventScheduleGamePagePlaceId(sender.url);
+  return tabPlaceId && framePlaceId === tabPlaceId ? tabPlaceId : null;
+}
+
+function normalizeNativeEventScheduleEventIds(rawValue) {
+  if (
+    !Array.isArray(rawValue) ||
+    rawValue.length === 0 ||
+    rawValue.length > NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS
+  ) {
+    return null;
+  }
+  const ids = [];
+  const seen = new Set();
+  for (const rawId of rawValue) {
+    const id = normalizeGameEventId(rawId);
+    if (!id || seen.has(id)) return null;
+    seen.add(id);
+    ids.push(id);
+  }
+  return Object.freeze(ids);
+}
+
+function normalizeNativeEventScheduleMatches(
+  payload,
+  rawUniverseId,
+  rawEventIds,
+  rawGameName,
+  now = Date.now()
+) {
+  const universeId = normalizeId(rawUniverseId);
+  const eventIds = normalizeNativeEventScheduleEventIds(rawEventIds);
+  const gameName = normalizeGameEventsText(
+    rawGameName,
+    GAME_EVENTS_NAME_MAX_LENGTH,
+    true
+  );
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !Array.isArray(payload.data) ||
+    !universeId ||
+    !eventIds ||
+    !gameName
+  ) {
+    throw new GameEventsError("ROBLOX_UNAVAILABLE", 502);
+  }
+  const wanted = new Set(eventIds);
+  const matches = [];
+  const seen = new Set();
+  for (const rawEvent of payload.data) {
+    const event = normalizeGameEvent(rawEvent, universeId, now);
+    if (
+      !event ||
+      event.status !== "upcoming" ||
+      event.startAt <= now ||
+      !wanted.has(event.id) ||
+      seen.has(event.id)
+    ) {
+      continue;
+    }
+    seen.add(event.id);
+    matches.push(Object.freeze({
+      id: event.id,
+      universeId: event.universeId,
+      placeId: event.placeId,
+      gameName,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      status: "upcoming"
+    }));
+  }
+  matches.sort((left, right) =>
+    left.startAt - right.startAt || left.id.localeCompare(right.id)
+  );
+  return Object.freeze(matches);
+}
+
+async function getNativeEventScheduleData(message) {
+  await assertJoinSchedulerFeatureEnabled(true);
+  const placeId = normalizeId(message?.placeId);
+  const eventIds = normalizeNativeEventScheduleEventIds(message?.eventIds);
+  if (!placeId || !eventIds) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  const locale = normalizeGameEventsLocale(message?.locale);
+  const universeId = await resolveGameEventsUniverseIdFromPlace(placeId);
+  const endpoint = new URL(
+    `/virtual-events/v1/universes/${universeId}/virtual-events`,
+    "https://apis.roblox.com"
+  );
+  const [game, payload] = await Promise.all([
+    fetchGameEventsGameDetails(universeId, locale, placeId),
+    fetchJson(endpoint, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": locale
+      }
+    })
+  ]);
+  const checkedAt = Date.now();
+  const events = normalizeNativeEventScheduleMatches(
+    payload,
+    universeId,
+    eventIds,
+    game.name,
+    checkedAt
+  );
+  await assertJoinSchedulerFeatureEnabled(true);
+  return {
+    ok: true,
+    requestId: message.requestId,
+    enabled: true,
+    placeId,
+    universeId,
+    checkedAt,
+    events
+  };
+}
+
+function getNativeEventScheduleErrorCode(error) {
+  if (error?.code === "DISABLED") return "DISABLED";
+  if (error?.code === "INVALID" || error?.status === 400) return "INVALID";
+  return getGameEventsErrorCode(error);
+}
+
+function handleNativeEventScheduleDataMessage(message, sender, sendResponse) {
+  if (message?.type !== NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE) return false;
+  const messageKeys = message && typeof message === "object" && !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const hasExactMessageShape =
+    messageKeys.length === 5 &&
+    messageKeys[0] === "eventIds" &&
+    messageKeys[1] === "locale" &&
+    messageKeys[2] === "placeId" &&
+    messageKeys[3] === "requestId" &&
+    messageKeys[4] === "type";
+  const requestId = normalizeJoinSchedulerRequestId(message?.requestId);
+  const messagePlaceId = normalizeId(message?.placeId);
+  const senderPlaceId = getTrustedNativeEventSchedulePagePlaceId(sender);
+  const eventIds = normalizeNativeEventScheduleEventIds(message?.eventIds);
+  if (
+    !hasExactMessageShape ||
+    requestId === null ||
+    !messagePlaceId ||
+    senderPlaceId !== messagePlaceId ||
+    !eventIds
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId || 0,
+      enabled: joinSchedulerFeatureEnabled,
+      code: "INVALID"
+    });
+    return false;
+  }
+  getNativeEventScheduleData({
+    ...message,
+    requestId,
+    placeId: messagePlaceId,
+    eventIds
+  })
+    .then(sendResponse)
+    .catch((error) => {
+      const code = getNativeEventScheduleErrorCode(error);
+      sendResponse({
+        ok: false,
+        requestId,
+        enabled: code === "DISABLED" ? false : joinSchedulerFeatureEnabled,
+        code,
+        placeId: messagePlaceId
+      });
+    });
+  return true;
+}
+
 function resetGameEventsStateForTests() {
   gameEventsFeatureEnabled = true;
   gameEventsFeatureReady = true;
@@ -11409,6 +11657,9 @@ const JOIN_SCHEDULER_TEST_HOOKS = {
   constants: Object.freeze({
     featureKey: JOIN_SCHEDULER_FEATURE_KEY,
     showMessageType: JOIN_SCHEDULER_SHOW_MESSAGE_TYPE,
+    nativeEventScheduleDataMessageType:
+      NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE,
+    nativeEventScheduleMaxEventIds: NATIVE_EVENT_SCHEDULE_MAX_EVENT_IDS,
     messageTypes: JOIN_SCHEDULER_MESSAGE_TYPES,
     alarmName: JOIN_SCHEDULER_ALARM_NAME,
     notificationPrefix: JOIN_SCHEDULER_NOTIFICATION_PREFIX,
@@ -11453,6 +11704,12 @@ const JOIN_SCHEDULER_TEST_HOOKS = {
   createRobloxTabInNormalWindow: createJoinSchedulerRobloxTabInNormalWindow,
   executePreparedDestination: executePreparedJoinSchedulerDestination,
   handleContentMessage: handleJoinSchedulerContentMessage,
+  parseNativeEventScheduleGamePagePlaceId,
+  getTrustedNativeEventSchedulePagePlaceId,
+  normalizeNativeEventScheduleEventIds,
+  normalizeNativeEventScheduleMatches,
+  getNativeEventScheduleData,
+  handleNativeEventScheduleDataMessage,
   dispatchContentMessage: dispatchJoinSchedulerContentMessage,
   handlePermissionRequest: handleJoinSchedulerNotificationPermissionRequest,
   handleNotificationClick: handleJoinSchedulerNotificationClicked,
@@ -12355,6 +12612,542 @@ function getTrustedRobloxTopFrameTabId(sender) {
   return tabId;
 }
 
+function normalizeExtensionUpdateVersion(value, requireTagPrefix = false) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64) {
+    return null;
+  }
+  const pattern = requireTagPrefix
+    ? /^v(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})$/
+    : /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})$/;
+  const match = pattern.exec(value);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
+}
+
+function compareExtensionUpdateVersions(leftValue, rightValue) {
+  const left = normalizeExtensionUpdateVersion(leftValue);
+  const right = normalizeExtensionUpdateVersion(rightValue);
+  if (!left || !right) {
+    return null;
+  }
+  const leftParts = left.split(".");
+  const rightParts = right.split(".");
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index].length !== rightParts[index].length) {
+      return leftParts[index].length > rightParts[index].length ? 1 : -1;
+    }
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] > rightParts[index] ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+function createEmptyExtensionUpdateState() {
+  return {
+    version: EXTENSION_UPDATE_STORAGE_VERSION,
+    latest: null,
+    checkedAt: 0,
+    retryNotBefore: 0,
+    lastPresentedVersion: null,
+    lastPresentedAt: 0
+  };
+}
+
+function normalizeExtensionUpdateState(rawValue, now = Date.now()) {
+  const state = createEmptyExtensionUpdateState();
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    Array.isArray(rawValue) ||
+    rawValue.version !== EXTENSION_UPDATE_STORAGE_VERSION
+  ) {
+    return state;
+  }
+
+  const latest = normalizeExtensionUpdateVersion(rawValue.latest);
+  if (latest === rawValue.latest) {
+    state.latest = latest;
+  }
+  const checkedAt = Number(rawValue.checkedAt);
+  if (
+    Number.isSafeInteger(checkedAt) &&
+    checkedAt > 0 &&
+    checkedAt <= now + 5 * 60_000
+  ) {
+    state.checkedAt = checkedAt;
+  }
+
+  const retryNotBefore = Number(rawValue.retryNotBefore);
+  if (
+    Number.isSafeInteger(retryNotBefore) &&
+    retryNotBefore > now &&
+    retryNotBefore <= now + EXTENSION_UPDATE_FAILURE_RETRY_MS + 5 * 60_000
+  ) {
+    state.retryNotBefore = retryNotBefore;
+  }
+
+  const lastPresentedVersion = normalizeExtensionUpdateVersion(
+    rawValue.lastPresentedVersion
+  );
+  const lastPresentedAt = Number(rawValue.lastPresentedAt);
+  const presentationAge = now - lastPresentedAt;
+  if (
+    state.latest &&
+    lastPresentedVersion === state.latest &&
+    lastPresentedVersion === rawValue.lastPresentedVersion &&
+    Number.isSafeInteger(lastPresentedAt) &&
+    lastPresentedAt > 0 &&
+    presentationAge >= 0 &&
+    presentationAge < EXTENSION_UPDATE_PRESENTATION_TTL_MS
+  ) {
+    state.lastPresentedVersion = lastPresentedVersion;
+    state.lastPresentedAt = lastPresentedAt;
+  }
+  return state;
+}
+
+function extensionUpdateStatesEqual(left, right) {
+  return (
+    left.version === right.version &&
+    left.latest === right.latest &&
+    left.checkedAt === right.checkedAt &&
+    left.retryNotBefore === right.retryNotBefore &&
+    left.lastPresentedVersion === right.lastPresentedVersion &&
+    left.lastPresentedAt === right.lastPresentedAt
+  );
+}
+
+function readExtensionUpdateStateStorage() {
+  if (typeof extensionUpdateStorageOverride?.read === "function") {
+    return Promise.resolve(extensionUpdateStorageOverride.read());
+  }
+  if (!chrome.storage?.local?.get) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(
+      { [EXTENSION_UPDATE_STORAGE_KEY]: null },
+      (result) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(result?.[EXTENSION_UPDATE_STORAGE_KEY] ?? null);
+      }
+    );
+  });
+}
+
+function writeExtensionUpdateStateStorage(state) {
+  if (typeof extensionUpdateStorageOverride?.write === "function") {
+    return Promise.resolve(extensionUpdateStorageOverride.write({ ...state }));
+  }
+  if (!chrome.storage?.local?.set) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(
+      { [EXTENSION_UPDATE_STORAGE_KEY]: { ...state } },
+      () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+async function loadExtensionUpdateState() {
+  if (extensionUpdateStateMemory) {
+    return extensionUpdateStateMemory;
+  }
+  if (extensionUpdateStateLoadPromise) {
+    return extensionUpdateStateLoadPromise;
+  }
+  const load = (async () => {
+    let rawValue = null;
+    try {
+      rawValue = await readExtensionUpdateStateStorage();
+    } catch {
+      rawValue = null;
+    }
+    extensionUpdateStateMemory = normalizeExtensionUpdateState(rawValue);
+    return extensionUpdateStateMemory;
+  })();
+  const tracked = load.finally(() => {
+    if (extensionUpdateStateLoadPromise === tracked) {
+      extensionUpdateStateLoadPromise = null;
+    }
+  });
+  extensionUpdateStateLoadPromise = tracked;
+  return tracked;
+}
+
+function enqueueExtensionUpdateStateOperation(operation) {
+  const run = extensionUpdateStateMutationTail
+    .catch(() => undefined)
+    .then(async () => operation(await loadExtensionUpdateState()));
+  extensionUpdateStateMutationTail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function persistExtensionUpdateState(state, now = Date.now()) {
+  const normalized = normalizeExtensionUpdateState(state, now);
+  extensionUpdateStateMemory = normalized;
+  await writeExtensionUpdateStateStorage(normalized);
+  return normalized;
+}
+
+async function persistExtensionUpdateStateSafely(state, now = Date.now()) {
+  try {
+    return await persistExtensionUpdateState(state, now);
+  } catch {
+    return extensionUpdateStateMemory || normalizeExtensionUpdateState(state, now);
+  }
+}
+
+function getCurrentExtensionUpdateVersion() {
+  try {
+    return normalizeExtensionUpdateVersion(chrome.runtime.getManifest().version);
+  } catch {
+    return null;
+  }
+}
+
+async function readBoundedExtensionUpdateResponse(
+  response,
+  maxBytes = EXTENSION_UPDATE_MAX_RESPONSE_BYTES
+) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new Error("Invalid response size limit");
+  }
+  const rawLength = response?.headers?.get?.("content-length");
+  if (typeof rawLength === "string" && /^\d+$/.test(rawLength)) {
+    const contentLength = Number(rawLength);
+    if (!Number.isSafeInteger(contentLength) || contentLength > maxBytes) {
+      throw new Error("Response is too large");
+    }
+  }
+
+  const reader = response?.body?.getReader?.();
+  if (!reader) {
+    throw new Error("Response body is unavailable");
+  }
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let body = "";
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk?.done) {
+        break;
+      }
+      if (
+        !chunk?.value ||
+        !ArrayBuffer.isView(chunk.value) ||
+        chunk.value.BYTES_PER_ELEMENT !== 1
+      ) {
+        throw new Error("Invalid response body");
+      }
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The request is already being discarded.
+        }
+        throw new Error("Response is too large");
+      }
+      body += decoder.decode(chunk.value, { stream: true });
+    }
+    body += decoder.decode();
+  } finally {
+    try {
+      reader.releaseLock?.();
+    } catch {
+      // Releasing a failed stream is best effort.
+    }
+  }
+  return body;
+}
+
+async function fetchLatestExtensionUpdateVersion() {
+  if (typeof globalThis.fetch !== "function") {
+    throw new Error("Fetch is unavailable");
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    EXTENSION_UPDATE_FETCH_TIMEOUT_MS
+  );
+  try {
+    const response = await globalThis.fetch(EXTENSION_UPDATE_LATEST_RELEASE_URL, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal
+    });
+    if (!response?.ok || response.status !== 200) {
+      throw new Error("Release request failed");
+    }
+    const contentType = response.headers?.get?.("content-type") || "";
+    if (
+      !/^application\/(?:json|vnd\.github\+json)(?:\s*;|$)/i.test(
+        contentType
+      )
+    ) {
+      throw new Error("Unexpected release response");
+    }
+    const body = await readBoundedExtensionUpdateResponse(response);
+    const payload = JSON.parse(body);
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      Array.isArray(payload) ||
+      payload.draft !== false ||
+      payload.prerelease !== false
+    ) {
+      throw new Error("Invalid release response");
+    }
+    const latest = normalizeExtensionUpdateVersion(payload.tag_name, true);
+    if (!latest) {
+      throw new Error("Invalid release tag");
+    }
+    return latest;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isExtensionUpdateCacheFresh(state, now = Date.now()) {
+  const age = now - state.checkedAt;
+  return Boolean(
+    state.latest &&
+    Number.isSafeInteger(state.checkedAt) &&
+    state.checkedAt > 0 &&
+    age >= 0 &&
+    age < EXTENSION_UPDATE_CACHE_TTL_MS
+  );
+}
+
+async function ensureFreshExtensionUpdateState(now = Date.now()) {
+  const cached = await enqueueExtensionUpdateStateOperation((state) => ({
+    ...state
+  }));
+  if (
+    isExtensionUpdateCacheFresh(cached, now) ||
+    cached.retryNotBefore > now
+  ) {
+    return cached;
+  }
+  if (extensionUpdateCheckPromise) {
+    await extensionUpdateCheckPromise;
+    return enqueueExtensionUpdateStateOperation((state) => ({ ...state }));
+  }
+
+  const check = (async () => {
+    try {
+      const latest = await fetchLatestExtensionUpdateVersion();
+      const checkedAt = Date.now();
+      await enqueueExtensionUpdateStateOperation(async (state) => {
+        const next = normalizeExtensionUpdateState(state, checkedAt);
+        next.latest = latest;
+        next.checkedAt = checkedAt;
+        next.retryNotBefore = 0;
+        if (next.lastPresentedVersion !== latest) {
+          next.lastPresentedVersion = null;
+          next.lastPresentedAt = 0;
+        }
+        await persistExtensionUpdateStateSafely(next, checkedAt);
+      });
+    } catch {
+      const failedAt = Date.now();
+      await enqueueExtensionUpdateStateOperation(async (state) => {
+        const next = normalizeExtensionUpdateState(state, failedAt);
+        next.retryNotBefore = failedAt + EXTENSION_UPDATE_FAILURE_RETRY_MS;
+        await persistExtensionUpdateStateSafely(next, failedAt);
+      });
+    }
+  })();
+  const tracked = check.finally(() => {
+    if (extensionUpdateCheckPromise === tracked) {
+      extensionUpdateCheckPromise = null;
+    }
+  });
+  extensionUpdateCheckPromise = tracked;
+  await tracked;
+  return enqueueExtensionUpdateStateOperation((state) => ({ ...state }));
+}
+
+function getExtensionUpdateNextCheckAt(state, now = Date.now()) {
+  if (Number.isSafeInteger(state?.retryNotBefore) && state.retryNotBefore > now) {
+    return Math.min(
+      state.retryNotBefore,
+      now + EXTENSION_UPDATE_FAILURE_RETRY_MS + 5 * 60_000
+    );
+  }
+  if (
+    state?.latest &&
+    Number.isSafeInteger(state.checkedAt) &&
+    state.checkedAt > 0
+  ) {
+    const nextCheckAt = state.checkedAt + EXTENSION_UPDATE_CACHE_TTL_MS;
+    if (nextCheckAt > now) {
+      return Math.min(nextCheckAt, now + EXTENSION_UPDATE_CACHE_TTL_MS);
+    }
+  }
+  return now + EXTENSION_UPDATE_FAILURE_RETRY_MS;
+}
+
+function getExtensionUpdateNextNoticeAt(
+  state,
+  updateAvailable,
+  now = Date.now()
+) {
+  if (!updateAvailable) {
+    return null;
+  }
+  if (
+    state?.lastPresentedVersion === state.latest &&
+    Number.isSafeInteger(state.lastPresentedAt) &&
+    state.lastPresentedAt > 0
+  ) {
+    const nextNoticeAt = state.lastPresentedAt +
+      EXTENSION_UPDATE_PRESENTATION_TTL_MS;
+    if (nextNoticeAt > now) {
+      return Math.min(nextNoticeAt, now + EXTENSION_UPDATE_PRESENTATION_TTL_MS);
+    }
+  }
+  return now;
+}
+
+function buildExtensionUpdateStatus(
+  state,
+  showNotice = false,
+  now = Date.now()
+) {
+  const current = getCurrentExtensionUpdateVersion();
+  const latest = normalizeExtensionUpdateVersion(state?.latest);
+  const updateAvailable = Boolean(
+    current &&
+    latest &&
+    compareExtensionUpdateVersions(latest, current) === 1
+  );
+  const checkedAt = Number.isSafeInteger(state?.checkedAt) &&
+    state.checkedAt > 0
+    ? state.checkedAt
+    : null;
+  return {
+    ok: true,
+    current,
+    latest,
+    updateAvailable,
+    showNotice: updateAvailable && showNotice === true,
+    checkedAt,
+    nextNoticeAt: getExtensionUpdateNextNoticeAt(
+      state,
+      updateAvailable,
+      now
+    ),
+    nextCheckAt: getExtensionUpdateNextCheckAt(state, now),
+    howToUpdateUrl: EXTENSION_UPDATE_HOW_TO_URL
+  };
+}
+
+async function getExtensionUpdateStatus(options = {}) {
+  const tabId = Number(options.tabId);
+  const pageVisible = options.pageVisible === true;
+  const tabActive = options.tabActive === true;
+  const now = Number.isSafeInteger(options.now) && options.now > 0
+    ? options.now
+    : Date.now();
+  const canCheck =
+    Number.isSafeInteger(tabId) && tabId >= 0 && pageVisible && tabActive;
+  const canPresent = canCheck && options.claimNotice === true;
+
+  if (canCheck) {
+    await ensureFreshExtensionUpdateState(now);
+  }
+
+  return enqueueExtensionUpdateStateOperation(async (state) => {
+    const next = normalizeExtensionUpdateState(state, now);
+    const current = getCurrentExtensionUpdateVersion();
+    const updateAvailable = Boolean(
+      current &&
+      next.latest &&
+      compareExtensionUpdateVersions(next.latest, current) === 1
+    );
+    let showNotice = false;
+
+    if (
+      canPresent &&
+      updateAvailable &&
+      next.lastPresentedVersion !== next.latest
+    ) {
+      next.lastPresentedVersion = next.latest;
+      next.lastPresentedAt = now;
+      showNotice = true;
+    }
+
+    if (canPresent && !extensionUpdateStatesEqual(state, next)) {
+      await persistExtensionUpdateStateSafely(next, now);
+    }
+    return buildExtensionUpdateStatus(next, showNotice, now);
+  });
+}
+
+function handleExtensionUpdateStatusMessage(message, sender, sendResponse) {
+  const messageKeys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  if (
+    message?.type !== EXTENSION_UPDATE_STATUS_MESSAGE_TYPE ||
+    typeof message.pageVisible !== "boolean" ||
+    typeof message.claimNotice !== "boolean" ||
+    messageKeys.length !== 3 ||
+    messageKeys[0] !== "claimNotice" ||
+    messageKeys[1] !== "pageVisible" ||
+    messageKeys[2] !== "type"
+  ) {
+    return false;
+  }
+  const tabId = getTrustedRobloxTopFrameTabId(sender);
+  if (tabId === null) {
+    return false;
+  }
+  getExtensionUpdateStatus({
+    tabId,
+    pageVisible: message.pageVisible,
+    tabActive: sender.tab.active === true,
+    claimNotice: message.claimNotice
+  })
+    .then(sendResponse)
+    .catch(() => {
+      sendResponse(
+        buildExtensionUpdateStatus(createEmptyExtensionUpdateState())
+      );
+    });
+  return true;
+}
+
+function resetExtensionUpdateStateForTests() {
+  extensionUpdateCheckPromise = null;
+  extensionUpdateStateLoadPromise = null;
+  extensionUpdateStateMemory = null;
+  extensionUpdateStateMutationTail = Promise.resolve();
+  extensionUpdateStorageOverride = null;
+}
+
 function getTrustedRobloxHomeTabId(sender) {
   const tabId = getTrustedRobloxTopFrameTabId(sender);
   if (tabId === null) {
@@ -13212,6 +14005,37 @@ if (globalThis.__rslBackgroundTestHooks) {
     clearPreferredCurrentExperience,
     getQuickSettingsErrorCode,
     resetQuickSettingsStateForTests,
+    normalizeExtensionUpdateVersion,
+    compareExtensionUpdateVersions,
+    createEmptyExtensionUpdateState,
+    normalizeExtensionUpdateState,
+    readBoundedExtensionUpdateResponse,
+    fetchLatestExtensionUpdateVersion,
+    isExtensionUpdateCacheFresh,
+    ensureFreshExtensionUpdateState,
+    getExtensionUpdateNextCheckAt,
+    getExtensionUpdateNextNoticeAt,
+    buildExtensionUpdateStatus,
+    getExtensionUpdateStatus,
+    handleExtensionUpdateStatusMessage,
+    resetExtensionUpdateStateForTests,
+    setExtensionUpdateStorageOverrideForTests(override) {
+      extensionUpdateStorageOverride = override;
+      extensionUpdateStateLoadPromise = null;
+      extensionUpdateStateMemory = null;
+    },
+    extensionUpdateConstants: Object.freeze({
+      messageType: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
+      storageKey: EXTENSION_UPDATE_STORAGE_KEY,
+      storageVersion: EXTENSION_UPDATE_STORAGE_VERSION,
+      latestReleaseUrl: EXTENSION_UPDATE_LATEST_RELEASE_URL,
+      howToUpdateUrl: EXTENSION_UPDATE_HOW_TO_URL,
+      cacheTtlMs: EXTENSION_UPDATE_CACHE_TTL_MS,
+      presentationTtlMs: EXTENSION_UPDATE_PRESENTATION_TTL_MS,
+      fetchTimeoutMs: EXTENSION_UPDATE_FETCH_TIMEOUT_MS,
+      maxResponseBytes: EXTENSION_UPDATE_MAX_RESPONSE_BYTES,
+      failureRetryMs: EXTENSION_UPDATE_FAILURE_RETRY_MS
+    }),
     isTrustedRobloxPageUrl,
     getTrustedRobloxTopFrameTabId,
     getTrustedRobloxChartsTabId,
@@ -13320,6 +14144,14 @@ chrome.contextMenus?.onClicked?.addListener((info, tab) => {
 function handleRuntimeMessage(message, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) {
     return false;
+  }
+
+  if (message?.type === EXTENSION_UPDATE_STATUS_MESSAGE_TYPE) {
+    return handleExtensionUpdateStatusMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE) {
+    return handleNativeEventScheduleDataMessage(message, sender, sendResponse);
   }
 
   if (

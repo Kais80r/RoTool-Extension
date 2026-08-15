@@ -71,6 +71,7 @@ assert.notEqual(gameEventsStylesStart, -1, "missing Game Events stylesheet secti
 assert.notEqual(gameEventsMobileStart, -1, "missing Game Events mobile breakpoint");
 assert.notEqual(gameEventsNarrowStart, -1, "missing Game Events narrow breakpoint");
 assert.notEqual(gameEventsReducedMotionStart, -1, "missing Game Events reduced-motion section");
+const gameEventsStyles = stylesSource.slice(gameEventsStylesStart);
 const gameEventsBaseStyles = stylesSource.slice(gameEventsStylesStart, gameEventsMobileStart);
 const gameEventsMobileStyles = stylesSource.slice(gameEventsMobileStart, gameEventsNarrowStart);
 const gameEventsNarrowStyles = stylesSource.slice(gameEventsNarrowStart, gameEventsReducedMotionStart);
@@ -1472,19 +1473,19 @@ assert.match(stylesSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*
 assert.match(stylesSource,
   /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.rsl-game-events-dialog \*[\s\S]*?transition-duration:\s*0s\s*!important[\s\S]*?animation-duration:\s*0s\s*!important/,
   "the entire feed, including the moving Now point, respects reduced motion");
-assert.match(stylesSource,
+assert.match(gameEventsStyles,
   /@media\s*\(forced-colors:\s*active\)[\s\S]*?rsl-game-events/,
   "status selection, timeline markers, and feed focus remain visible in forced colors");
-assert.match(stylesSource,
+assert.match(gameEventsStyles,
   /@media\s*\(forced-colors:\s*active\)[\s\S]*?\.rsl-game-events__time-dot\s*\{[^}]*background:\s*Canvas[^}]*border-color:\s*CanvasText[\s\S]*?\.rsl-game-events__now-dot\s*\{[^}]*background:\s*Highlight/s,
   "forced colors preserve hollow scheduled points and a solid current-time point");
-assert.match(stylesSource,
+assert.match(gameEventsStyles,
   /@media\s*\(forced-colors:\s*active\)[\s\S]*?\.rsl-game-events__timeline::before\s*\{[^}]*background:\s*CanvasText/s,
   "the one continuous line remains visible in high-contrast mode");
-assert.match(stylesSource,
+assert.match(gameEventsStyles,
   /@media\s*\(forced-colors:\s*active\)[\s\S]*?\.rsl-game-events__date-heading-label\s*\{[^}]*forced-color-adjust:\s*none[^}]*color:\s*CanvasText[^}]*background:\s*transparent[^}]*border:\s*0/s,
   "the plain centered heading remains readable without becoming a badge in high-contrast mode");
-assert.doesNotMatch(stylesSource,
+assert.doesNotMatch(gameEventsStyles,
   /@media\s*\(forced-colors:\s*active\)[\s\S]*?\.rsl-game-events__date-heading::before\s*\{/s,
   "forced colors cannot revive the removed horizontal connector");
 assert.doesNotMatch(gameEventsMobileStyles,

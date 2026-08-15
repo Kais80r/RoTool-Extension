@@ -10,7 +10,7 @@ const contentSource = fs.readFileSync(path.join(projectRoot, "content.js"), "utf
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.1");
+assert.equal(manifest.version, "0.19.2");
 assert.match(contentSource, /function findSidebarInsertBoundary\(list, addRow\)/);
 assert.match(contentSource, /const peerClassCandidates = \[/);
 assert.match(contentSource, /const anchor = row\.querySelector\(":scope > a\[href\]"\)/);

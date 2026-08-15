@@ -20,7 +20,7 @@ const privateServerDialogVisualFixtureSource = fs.readFileSync(
 );
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.1");
+assert.equal(manifest.version, "0.19.2");
 assert.match(manifest.description, /Quick Play/);
 assert.match(manifest.description, /Private Servers/);
 assert.match(manifest.description, /Random Server/);
@@ -56,7 +56,7 @@ assert.match(
 const initializeSource = contentSource.slice(contentSource.indexOf("function initialize()"));
 assert.match(
   initializeSource,
-  /const observer = new MutationObserver\(\(mutations\) => \{\s*if \(\s*privateServersDialogOpener &&\s*\(!privateServersDialogOpener\.isConnected \|\|\s*!isQuickPlayButtonCurrent\(\s*privateServersDialogOpener,\s*privateServersPlaceId\s*\)\)\s*\) \{\s*closePrivateServersDialog\(false\);\s*\}\s*(?:invalidateStaleGameTileCcuControls\(mutations\);\s*)?invalidateStaleQuickPlayControls\(mutations\);\s*if \(mutationsAffectExtensionMount\(mutations\)\) \{\s*queueMount\(\);\s*\}/s,
+  /const observer = new MutationObserver\(\(mutations\) => \{[\s\S]*?if \(\s*privateServersDialogOpener &&\s*\(!privateServersDialogOpener\.isConnected \|\|\s*!isQuickPlayButtonCurrent\(\s*privateServersDialogOpener,\s*privateServersPlaceId\s*\)\)\s*\) \{\s*closePrivateServersDialog\(false\);\s*\}\s*(?:invalidateStaleGameTileCcuControls\(mutations\);\s*)?invalidateStaleQuickPlayControls\(mutations\);\s*if \(mutationsAffectExtensionMount\(mutations\)\) \{\s*queueMount\(\);\s*\}/s,
   "the mount observer must close a private-server dialog whose opener detached or changed place"
 );
 assert.match(

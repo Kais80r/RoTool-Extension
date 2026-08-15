@@ -1033,9 +1033,10 @@ assert.ok(
 const fakeNode = { ELEMENT_NODE: 1 };
 const { mutationsAffectExtensionMount } = new Function(
   "Node",
+  "NATIVE_EVENT_SCHEDULE_ATTRIBUTE",
   `${source.slice(mutationStart, mutationEnd)}\n` +
     "return { mutationsAffectExtensionMount };"
-)(fakeNode);
+)(fakeNode, "data-rsl-native-event-schedule");
 
 const dialog = {
   nodeType: fakeNode.ELEMENT_NODE,

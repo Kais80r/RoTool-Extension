@@ -737,6 +737,18 @@ function cssBlock(marker, source = stylesSource) {
   assert.fail(`missing closing brace for CSS block: ${marker}`);
 }
 
+function cssBlockContaining(marker, requiredSelector, source = stylesSource) {
+  let searchFrom = 0;
+  while (searchFrom < source.length) {
+    const markerIndex = source.indexOf(marker, searchFrom);
+    if (markerIndex === -1) break;
+    const block = cssBlock(marker, source.slice(markerIndex));
+    if (block.includes(requiredSelector)) return block;
+    searchFrom = markerIndex + marker.length;
+  }
+  assert.fail(`missing CSS block ${marker} containing ${requiredSelector}`);
+}
+
 function pxDeclaration(block, property) {
   const value = block.match(new RegExp(`${property}:\\s*(\\d+)px`))?.[1];
   assert.ok(value, `missing ${property} pixel declaration`);
@@ -809,7 +821,10 @@ assert.ok(
   phoneBreakpoint < desktopReferenceWidth,
   "the stacked mobile row must not activate in the 565px desktop screenshot"
 );
-const phoneCss = cssBlock(`@media (max-width: ${phoneBreakpoint}px)`);
+const phoneCss = cssBlockContaining(
+  `@media (max-width: ${phoneBreakpoint}px)`,
+  ".rsl-server-history__item"
+);
 const phoneCardCss = cssBlock(".rsl-server-history__item", phoneCss);
 assert.equal(pxDeclaration(phoneCardCss, "min-height"), 108);
 assert.ok(
