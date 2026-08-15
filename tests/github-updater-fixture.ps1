@@ -163,6 +163,24 @@ function New-InstallFixture {
   Write-Utf8File -Path (Join-Path $Root "content.js") -Value $Content
 }
 
+function New-ManagedRuntimeFixture {
+  param(
+    [Parameter(Mandatory = $true)][string]$Root,
+    [Parameter(Mandatory = $true)][string]$Version,
+    [Parameter(Mandatory = $true)][string]$Marker,
+    [Parameter(Mandatory = $true)][string[]]$ManagedFiles
+  )
+
+  foreach ($relative in $ManagedFiles) {
+    $content = if ($relative -ceq "manifest.json") {
+      New-TestManifestJson $Version
+    } else {
+      "${Marker}::$relative"
+    }
+    Write-Utf8File -Path (Join-Path $Root ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))) -Value $content
+  }
+}
+
 function New-ChromiumProfileFixture {
   param(
     [Parameter(Mandatory = $true)][string]$UserDataRoot,
@@ -521,6 +539,183 @@ try {
   Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $backupRoot "content.js")) "old runtime" "rollback backup contains old runtime"
   Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $stateRoot "journal.json") | ConvertFrom-Json).status) "completed" "successful update journal completes"
 
+  # The released updater 1.2.0 managed 18 files. After its verified core
+  # refresh, the corrected updater must be able to add the three Scheduler
+  # files in the strict 21-file package without replacing the install folder.
+  $introducedManagedFiles = @("join-scheduler.html", "join-scheduler.css", "join-scheduler.js")
+  $releaseManagedFiles = @(Get-RoToolPackageFiles)
+  $legacyManagedFiles = @($releaseManagedFiles | Where-Object { $introducedManagedFiles -cnotcontains $_ })
+  Assert-Equal $legacyManagedFiles.Count 18 "RoTool 0.17.6 used the historical 18-file allowlist"
+  Assert-Equal $releaseManagedFiles.Count 21 "RoTool 0.19.1 uses the expanded 21-file allowlist"
+  Assert-SequenceEqual @($releaseManagedFiles | Where-Object { $introducedManagedFiles -ccontains $_ }) $introducedManagedFiles "the allowlist expansion consists only of the three Scheduler files"
+
+  $migrationInstall = Join-Path $fixtureRoot "migration-install-0176"
+  $migrationStaging = Join-Path $fixtureRoot "migration-staging-0191"
+  $migrationState = Join-Path $fixtureRoot "migration-state"
+  New-ManagedRuntimeFixture -Root $migrationInstall -Version "0.17.6" -Marker "legacy-0176" -ManagedFiles $legacyManagedFiles
+  New-ManagedRuntimeFixture -Root $migrationStaging -Version "0.19.1" -Marker "release-0191" -ManagedFiles $releaseManagedFiles
+  Write-Utf8File -Path (Join-Path $migrationInstall "friend-notes.txt") -Value "preserve migration extra"
+  $migrationInstallPath = (Get-Item -LiteralPath $migrationInstall).FullName
+  $migrationBackup = Install-RoToolValidatedPackage -InstallRoot $migrationInstall -StagingRoot $migrationStaging -OldVersion "0.17.6" -NewVersion "0.19.1" -StateRoot $migrationState -ManagedFiles $releaseManagedFiles
+  $migrationJournal = Get-Content -Raw -LiteralPath (Join-Path $migrationState "journal.json") | ConvertFrom-Json
+  Assert-Equal ([string](Get-RoToolManifest $migrationInstall).version) "0.19.1" "the 18-to-21-file migration advances the installed manifest"
+  Assert-Equal (Get-Item -LiteralPath $migrationInstall).FullName $migrationInstallPath "the allowlist migration keeps the permanent installation path"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $migrationInstall "friend-notes.txt")) "preserve migration extra" "the allowlist migration preserves unmanaged files"
+  Assert-SequenceEqual @($migrationJournal.absentManagedFiles) $introducedManagedFiles "the transaction journal records exactly the three newly introduced files"
+  Assert-Equal ([string]$migrationJournal.status) "completed" "the allowlist migration journal completes"
+  foreach ($relative in $releaseManagedFiles) {
+    Assert-Equal (Get-RoToolFileSha256 (Join-Path $migrationInstall $relative)) (Get-RoToolFileSha256 (Join-Path $migrationStaging $relative)) "the migrated $relative matches the verified staging bytes"
+  }
+  foreach ($relative in $legacyManagedFiles) {
+    Assert-True (Test-Path -LiteralPath (Join-Path $migrationBackup $relative) -PathType Leaf) "the rollback backup contains legacy file $relative"
+  }
+  foreach ($relative in $introducedManagedFiles) {
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $migrationBackup $relative))) "the rollback backup does not invent absent file $relative"
+  }
+
+  # A directory at a managed path is not treated as an absent file. Reject the
+  # installation before applying any staged bytes.
+  $directoryInstall = Join-Path $fixtureRoot "managed-directory-install"
+  $directoryStaging = Join-Path $fixtureRoot "managed-directory-staging"
+  $directoryState = Join-Path $fixtureRoot "managed-directory-state"
+  New-ManagedRuntimeFixture -Root $directoryInstall -Version "0.17.6" -Marker "directory-old" -ManagedFiles $legacyManagedFiles
+  New-ManagedRuntimeFixture -Root $directoryStaging -Version "0.19.1" -Marker "directory-new" -ManagedFiles $releaseManagedFiles
+  [void](New-Item -ItemType Directory -Path (Join-Path $directoryInstall "join-scheduler.html"))
+  Assert-Throws {
+    [void](Install-RoToolValidatedPackage -InstallRoot $directoryInstall -StagingRoot $directoryStaging -OldVersion "0.17.6" -NewVersion "0.19.1" -StateRoot $directoryState -ManagedFiles $releaseManagedFiles)
+  } "managed path is not a file" "a directory cannot masquerade as an absent managed file"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $directoryInstall "background.js")) "directory-old::background.js" "managed-path rejection occurs before runtime mutation"
+  Assert-True (-not (Test-Path -LiteralPath (Join-Path $directoryState "journal.json"))) "managed-path rejection occurs before an applying journal is written"
+
+  # Force a failure after all three newly introduced files have been created.
+  # Rollback must restore the 18 legacy files and remove the additions that had
+  # no pre-update bytes.
+  $growthRollbackInstall = Join-Path $fixtureRoot "growth-rollback-install"
+  $growthRollbackStaging = Join-Path $fixtureRoot "growth-rollback-staging"
+  $growthRollbackState = Join-Path $fixtureRoot "growth-rollback-state"
+  New-ManagedRuntimeFixture -Root $growthRollbackInstall -Version "0.17.6" -Marker "growth-old" -ManagedFiles $legacyManagedFiles
+  New-ManagedRuntimeFixture -Root $growthRollbackStaging -Version "0.19.1" -Marker "growth-new" -ManagedFiles @($releaseManagedFiles | Where-Object { $_ -cne "README.md" })
+  Assert-Throws {
+    [void](Install-RoToolValidatedPackage -InstallRoot $growthRollbackInstall -StagingRoot $growthRollbackStaging -OldVersion "0.17.6" -NewVersion "0.19.1" -StateRoot $growthRollbackState -ManagedFiles $releaseManagedFiles)
+  } "previous files were restored" "a failed allowlist expansion reports rollback"
+  foreach ($relative in $legacyManagedFiles) {
+    $expected = if ($relative -ceq "manifest.json") { New-TestManifestJson "0.17.6" } else { "growth-old::$relative" }
+    Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $growthRollbackInstall $relative)) $expected "allowlist-growth rollback restores legacy file $relative"
+  }
+  foreach ($relative in $introducedManagedFiles) {
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $growthRollbackInstall $relative))) "allowlist-growth rollback removes originally absent file $relative"
+  }
+  $growthRollbackJournal = Get-Content -Raw -LiteralPath (Join-Path $growthRollbackState "journal.json") | ConvertFrom-Json
+  Assert-Equal ([string]$growthRollbackJournal.status) "rolledBack" "allowlist-growth rollback journal records rolledBack"
+  Assert-SequenceEqual @($growthRollbackJournal.absentManagedFiles) $introducedManagedFiles "allowlist-growth rollback retains the exact absent-file snapshot"
+
+  # Recreate the on-disk state left by a process interruption after applying the
+  # expanded package. A later run must restore old bytes and remove new files.
+  $recoveryInstall = Join-Path $fixtureRoot "growth-recovery-install"
+  $recoveryBackup = Join-Path $fixtureRoot "growth-recovery-state\backups\manual-v0.17.6"
+  $recoveryState = Join-Path $fixtureRoot "growth-recovery-state"
+  New-ManagedRuntimeFixture -Root $recoveryInstall -Version "0.19.1" -Marker "interrupted-new" -ManagedFiles $releaseManagedFiles
+  New-ManagedRuntimeFixture -Root $recoveryBackup -Version "0.17.6" -Marker "interrupted-old" -ManagedFiles $legacyManagedFiles
+  [void](New-Item -ItemType Directory -Path $recoveryState -Force)
+  Write-RoToolJournal -Path (Join-Path $recoveryState "journal.json") -Value ([PSCustomObject]@{
+    status = "applying"
+    installRoot = $recoveryInstall
+    backupRoot = $recoveryBackup
+    oldVersion = "0.17.6"
+    newVersion = "0.19.1"
+    absentManagedFiles = @($introducedManagedFiles)
+  })
+  Repair-RoToolInterruptedUpdate -StateRoot $recoveryState -ExpectedInstallRoot $recoveryInstall -ManagedFiles $releaseManagedFiles
+  foreach ($relative in $legacyManagedFiles) {
+    $expected = if ($relative -ceq "manifest.json") { New-TestManifestJson "0.17.6" } else { "interrupted-old::$relative" }
+    Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $recoveryInstall $relative)) $expected "interrupted recovery restores legacy file $relative"
+  }
+  foreach ($relative in $introducedManagedFiles) {
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $recoveryInstall $relative))) "interrupted recovery removes originally absent file $relative"
+  }
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $recoveryState "journal.json") | ConvertFrom-Json).status) "recovered" "interrupted allowlist-growth journal records recovery"
+
+  # Journals written before absentManagedFiles was introduced remain valid when
+  # every managed file has a rollback backup.
+  $legacyJournalInstall = Join-Path $fixtureRoot "legacy-journal-install"
+  $legacyJournalState = Join-Path $fixtureRoot "legacy-journal-state"
+  $legacyJournalBackup = Join-Path $legacyJournalState "backups\legacy-complete"
+  New-InstallFixture -Root $legacyJournalInstall -Version "1.1.0" -Content "legacy interrupted new runtime"
+  New-InstallFixture -Root $legacyJournalBackup -Version "1.0.0" -Content "legacy journal backup runtime"
+  [void](New-Item -ItemType Directory -Path $legacyJournalState -Force)
+  Write-RoToolJournal -Path (Join-Path $legacyJournalState "journal.json") -Value ([PSCustomObject]@{
+    status = "applying"
+    installRoot = $legacyJournalInstall
+    backupRoot = $legacyJournalBackup
+    oldVersion = "1.0.0"
+    newVersion = "1.1.0"
+  })
+  Repair-RoToolInterruptedUpdate -StateRoot $legacyJournalState -ExpectedInstallRoot $legacyJournalInstall -ManagedFiles $managedFiles
+  Assert-Equal ([string](Get-RoToolManifest $legacyJournalInstall).version) "1.0.0" "a legacy journal without absent metadata restores its manifest"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $legacyJournalInstall "content.js")) "legacy journal backup runtime" "a legacy journal without absent metadata restores runtime bytes"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $legacyJournalState "journal.json") | ConvertFrom-Json).status) "recovered" "a legacy journal without absent metadata records recovery"
+
+  # Recovery preflights every removal and backup. A directory at an absent path
+  # must stop recovery before any earlier managed file is restored.
+  $directoryRecoveryInstall = Join-Path $fixtureRoot "directory-recovery-install"
+  $directoryRecoveryBackup = Join-Path $fixtureRoot "directory-recovery-state\backups\manual-v0.17.6"
+  $directoryRecoveryState = Join-Path $fixtureRoot "directory-recovery-state"
+  New-ManagedRuntimeFixture -Root $directoryRecoveryInstall -Version "0.19.1" -Marker "directory-recovery-new" -ManagedFiles $releaseManagedFiles
+  New-ManagedRuntimeFixture -Root $directoryRecoveryBackup -Version "0.17.6" -Marker "directory-recovery-old" -ManagedFiles $legacyManagedFiles
+  Remove-Item -LiteralPath (Join-Path $directoryRecoveryInstall "join-scheduler.html") -Force
+  [void](New-Item -ItemType Directory -Path (Join-Path $directoryRecoveryInstall "join-scheduler.html"))
+  [void](New-Item -ItemType Directory -Path $directoryRecoveryState -Force)
+  Write-RoToolJournal -Path (Join-Path $directoryRecoveryState "journal.json") -Value ([PSCustomObject]@{
+    status = "applying"
+    installRoot = $directoryRecoveryInstall
+    backupRoot = $directoryRecoveryBackup
+    absentManagedFiles = @($introducedManagedFiles)
+  })
+  Assert-Throws {
+    Repair-RoToolInterruptedUpdate -StateRoot $directoryRecoveryState -ExpectedInstallRoot $directoryRecoveryInstall -ManagedFiles $releaseManagedFiles
+  } "absent managed file is not a file" "recovery refuses to delete a directory at an absent managed path"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $directoryRecoveryInstall "background.js")) "directory-recovery-new::background.js" "recovery path-type preflight prevents partial restoration"
+  Assert-True (Test-Path -LiteralPath (Join-Path $directoryRecoveryInstall "join-scheduler.html") -PathType Container) "recovery path-type preflight preserves the unexpected directory"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $directoryRecoveryState "journal.json") | ConvertFrom-Json).status) "applying" "rejected recovery journal remains applying"
+
+  # Journal paths and absent-file metadata are untrusted local state. Neither a
+  # foreign installation nor a backup outside StateRoot\backups may be touched.
+  $foreignInstall = Join-Path $fixtureRoot "foreign-install"
+  New-ManagedRuntimeFixture -Root $foreignInstall -Version "0.19.1" -Marker "foreign-untouched" -ManagedFiles $releaseManagedFiles
+  $hostileState = Join-Path $fixtureRoot "hostile-journal-state"
+  $hostileBackup = Join-Path $hostileState "backups\valid-shape"
+  New-ManagedRuntimeFixture -Root $hostileBackup -Version "0.17.6" -Marker "hostile-backup" -ManagedFiles $legacyManagedFiles
+  [void](New-Item -ItemType Directory -Path $hostileState -Force)
+  Write-RoToolJournal -Path (Join-Path $hostileState "journal.json") -Value ([PSCustomObject]@{
+    status = "applying"
+    installRoot = $foreignInstall
+    backupRoot = $hostileBackup
+    absentManagedFiles = @($introducedManagedFiles)
+  })
+  Assert-Throws {
+    Repair-RoToolInterruptedUpdate -StateRoot $hostileState -ExpectedInstallRoot $migrationInstall -ManagedFiles $releaseManagedFiles
+  } "paths outside this RoTool installation" "an applying journal cannot redirect recovery to another installation"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $foreignInstall "background.js")) "foreign-untouched::background.js" "foreign install bytes are unchanged after journal rejection"
+
+  $outsideBackupState = Join-Path $fixtureRoot "outside-backup-journal-state"
+  $outsideBackup = Join-Path $fixtureRoot "outside-backup"
+  New-ManagedRuntimeFixture -Root $outsideBackup -Version "0.17.6" -Marker "outside-backup" -ManagedFiles $legacyManagedFiles
+  [void](New-Item -ItemType Directory -Path $outsideBackupState -Force)
+  Write-RoToolJournal -Path (Join-Path $outsideBackupState "journal.json") -Value ([PSCustomObject]@{
+    status = "applying"
+    installRoot = $foreignInstall
+    backupRoot = $outsideBackup
+    absentManagedFiles = @($introducedManagedFiles)
+  })
+  Assert-Throws {
+    Repair-RoToolInterruptedUpdate -StateRoot $outsideBackupState -ExpectedInstallRoot $foreignInstall -ManagedFiles $releaseManagedFiles
+  } "paths outside this RoTool installation" "an applying journal cannot restore from an out-of-tree backup"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $foreignInstall "background.js")) "foreign-untouched::background.js" "out-of-tree backup rejection occurs before mutation"
+
+  Assert-Throws {
+    Restore-RoToolBackup -InstallRoot $recoveryInstall -BackupRoot $recoveryBackup -AbsentManagedFiles @("../outside.txt") -ManagedFiles $releaseManagedFiles
+  } "unexpected or duplicate absent managed file" "rollback rejects absent-file metadata outside the strict managed allowlist"
+
   # A failure after the first replacement restores every managed file.
   $rollbackInstall = Join-Path $fixtureRoot "rollback-install"
   $rollbackStaging = Join-Path $fixtureRoot "rollback-staging"
@@ -561,6 +756,42 @@ try {
   Assert-Throws {
     [void](Expand-RoToolValidatedUpdaterPackage -PackagePath $traversalUpdaterZip -Destination (Join-Path $updaterArchiveRoot "traversal-expanded"))
   } "unexpected|unsafe" "updater package cannot traverse into the stable launcher"
+
+  # Model the exact released friend path: updater 1.2.0 starts with the
+  # v0.17.6 18-file definition, refreshes its three-file core to 1.2.3, and
+  # retains the stable launcher and local configuration.
+  $releasedUpdaterRoot = Join-Path $fixtureRoot "released-updater-120"
+  $correctedUpdaterRoot = Join-Path $fixtureRoot "corrected-updater-123"
+  $releasedUpdaterState = Join-Path $fixtureRoot "released-updater-state"
+  New-TestUpdaterCore -Root $releasedUpdaterRoot -Version "1.2.0" -Marker "released-0176"
+  Write-Utf8File -Path (Join-Path $releasedUpdaterRoot "package-files.json") -Value (($legacyManagedFiles | ConvertTo-Json) + [Environment]::NewLine)
+  Write-Utf8File -Path (Join-Path $releasedUpdaterRoot "Update RoTool.cmd") -Value "released stable launcher"
+  Write-Utf8File -Path (Join-Path $releasedUpdaterRoot "updater.config.json") -Value '{"repository":"Kais80r/RoTool-Extension","browser":"edge","configVersion":2}'
+  [void](New-Item -ItemType Directory -Path $correctedUpdaterRoot)
+  foreach ($relative in @("Update-RoTool.ps1", "README.md", "package-files.json")) {
+    Copy-Item -LiteralPath (Join-Path $ProjectRoot "updater\$relative") -Destination (Join-Path $correctedUpdaterRoot $relative)
+  }
+  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $releasedUpdaterRoot "Update-RoTool.ps1")) "1.2.0" "the migration fixture begins with the released updater 1.2.0"
+  Assert-Equal @((Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "package-files.json") | ConvertFrom-Json)).Count 18 "released updater 1.2.0 begins with the 18-file package definition"
+  $releasedRefreshResult = Install-RoToolUpdaterCore -UpdaterRoot $releasedUpdaterRoot -StagingRoot $correctedUpdaterRoot -StateRoot $releasedUpdaterState -RunningVersion "1.2.0"
+  Assert-True ([bool]$releasedRefreshResult.Updated) "released updater 1.2.0 refreshes to the corrected core"
+  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $releasedUpdaterRoot "Update-RoTool.ps1")) "1.2.3" "the verified self-refresh installs updater 1.2.3"
+  Assert-SequenceEqual @((Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "package-files.json") | ConvertFrom-Json)) $releaseManagedFiles "the self-refresh installs the strict 21-file package definition"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "Update RoTool.cmd")) "released stable launcher" "the 1.2.0-to-1.2.3 refresh preserves the stable launcher"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "updater.config.json")) '{"repository":"Kais80r/RoTool-Extension","browser":"edge","configVersion":2}' "the 1.2.0-to-1.2.3 refresh preserves local configuration bytes"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.0-to-1.2.3 updater refresh journal completes"
+
+  # The failed v0.19.0 attempt already left some users on updater 1.2.2 even
+  # though their runtime stayed old. That refreshed core must also advance and
+  # retry successfully instead of being trapped on different same-version bytes.
+  $failedReleaseUpdaterRoot = Join-Path $fixtureRoot "failed-release-updater-122"
+  $failedReleaseUpdaterState = Join-Path $fixtureRoot "failed-release-updater-state"
+  New-TestUpdaterCore -Root $failedReleaseUpdaterRoot -Version "1.2.2" -Marker "failed-release-core"
+  Write-Utf8File -Path (Join-Path $failedReleaseUpdaterRoot "package-files.json") -Value (($releaseManagedFiles | ConvertTo-Json) + [Environment]::NewLine)
+  $failedReleaseRefreshResult = Install-RoToolUpdaterCore -UpdaterRoot $failedReleaseUpdaterRoot -StagingRoot $correctedUpdaterRoot -StateRoot $failedReleaseUpdaterState -RunningVersion "1.2.2"
+  Assert-True ([bool]$failedReleaseRefreshResult.Updated) "updater 1.2.2 from the failed release refreshes to corrected bytes"
+  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $failedReleaseUpdaterRoot "Update-RoTool.ps1")) "1.2.3" "the failed-release updater advances from 1.2.2 to 1.2.3"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $failedReleaseUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.2-to-1.2.3 updater refresh journal completes"
 
   $installedUpdaterRoot = Join-Path $fixtureRoot "installed-updater"
   $stagedUpdaterRoot = Join-Path $fixtureRoot "staged-updater"

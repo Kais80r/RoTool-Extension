@@ -15,10 +15,18 @@ const gitignore = fs.readFileSync(path.join(projectRoot, ".gitignore"), "utf8");
 const ciWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "ci.yml"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "release.yml"), "utf8");
 const releaseBuilder = fs.readFileSync(path.join(projectRoot, "tools", "build-release.ps1"), "utf8");
+const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
 const exampleConfiguration = JSON.parse(
   fs.readFileSync(path.join(updaterRoot, "updater.config.example.json"), "utf8")
 );
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
+
+assert.equal(manifest.version, "0.19.1", "the corrected migration release must advance the extension version");
+assert.match(
+  updaterSource,
+  /^\$script:UpdaterVersion\s*=\s*"1\.2\.3"\s*$/m,
+  "the corrected updater core must be newer than the released 1.2.2 core"
+);
 
 const expectedPackageFiles = [
   "manifest.json",
@@ -62,6 +70,8 @@ assert.match(updaterSource, /Security\.Cryptography\.SHA256/);
 assert.doesNotMatch(updaterSource, /Get-FileHash/);
 assert.match(updaterSource, /Restore-RoToolBackup/);
 assert.match(updaterSource, /Repair-RoToolInterruptedUpdate/);
+assert.match(updaterSource, /AbsentManagedFiles/);
+assert.match(updaterSource, /absentManagedFiles/);
 assert.match(updaterSource, /\.rotool-new-/);
 assert.match(updaterSource, /function Resolve-RoToolBrowser/);
 assert.match(updaterSource, /ChromeUserDataRoot/);

@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
-$script:UpdaterVersion = "1.2.2"
+$script:UpdaterVersion = "1.2.3"
 $script:PackageAssetName = "RoTool-extension.zip"
 $script:ChecksumAssetName = "RoTool-extension.zip.sha256"
 $script:UpdaterPackageAssetName = "RoTool-updater.zip"
@@ -408,15 +408,50 @@ function Restore-RoToolBackup {
   param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
     [Parameter(Mandatory = $true)][string]$BackupRoot,
+    [object[]]$AbsentManagedFiles = @(),
     [string[]]$ManagedFiles = (Get-RoToolPackageFiles)
   )
 
+  $managed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  foreach ($relative in $ManagedFiles) { [void]$managed.Add($relative) }
+  $absent = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  foreach ($relative in @($AbsentManagedFiles)) {
+    if (
+      $relative -isnot [string] -or
+      -not $managed.Contains([string]$relative) -or
+      -not $absent.Add([string]$relative)
+    ) {
+      throw "Rollback state contains an unexpected or duplicate absent managed file."
+    }
+  }
+
+  # Verify the complete rollback state before changing the installation.
   foreach ($relative in $ManagedFiles) {
+    if ($absent.Contains($relative)) {
+      $destination = Join-Path $InstallRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
+      if (
+        (Test-Path -LiteralPath $destination) -and
+        -not (Test-Path -LiteralPath $destination -PathType Leaf)
+      ) {
+        throw "Rollback target for an absent managed file is not a file: $relative"
+      }
+      continue
+    }
     $backup = Join-Path $BackupRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
-    $destination = Join-Path $InstallRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
     if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
       throw "Rollback backup is incomplete: $relative"
     }
+  }
+
+  foreach ($relative in $ManagedFiles) {
+    $destination = Join-Path $InstallRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
+    if ($absent.Contains($relative)) {
+      if (Test-Path -LiteralPath $destination -PathType Leaf) {
+        Remove-Item -LiteralPath $destination -Force
+      }
+      continue
+    }
+    $backup = Join-Path $BackupRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
     $parent = Split-Path -Parent $destination
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
       [void](New-Item -ItemType Directory -Path $parent -Force)
@@ -428,6 +463,7 @@ function Restore-RoToolBackup {
 function Repair-RoToolInterruptedUpdate {
   param(
     [Parameter(Mandatory = $true)][string]$StateRoot,
+    [Parameter(Mandatory = $true)][string]$ExpectedInstallRoot,
     [string[]]$ManagedFiles = (Get-RoToolPackageFiles)
   )
 
@@ -440,8 +476,24 @@ function Repair-RoToolInterruptedUpdate {
   }
   if ([string]$journal.status -ne "applying") { return }
 
+  $journalInstallRoot = [IO.Path]::GetFullPath([string]$journal.installRoot).TrimEnd('\')
+  $journalBackupRoot = [IO.Path]::GetFullPath([string]$journal.backupRoot).TrimEnd('\')
+  $expectedInstallRoot = [IO.Path]::GetFullPath($ExpectedInstallRoot).TrimEnd('\')
+  $allowedBackupRoot = [IO.Path]::GetFullPath((Join-Path $StateRoot "backups")).TrimEnd('\') + '\'
+  if (
+    -not [string]::Equals($journalInstallRoot, $expectedInstallRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    -not ($journalBackupRoot + '\').StartsWith($allowedBackupRoot, [StringComparison]::OrdinalIgnoreCase)
+  ) {
+    throw "A prior updater journal contains paths outside this RoTool installation."
+  }
+
+  $absentManagedFiles = @()
+  $absentProperty = $journal.PSObject.Properties["absentManagedFiles"]
+  if ($null -ne $absentProperty) {
+    $absentManagedFiles = @($absentProperty.Value)
+  }
   Write-Host "Recovering the previous interrupted RoTool update..." -ForegroundColor Yellow
-  Restore-RoToolBackup -InstallRoot ([string]$journal.installRoot) -BackupRoot ([string]$journal.backupRoot) -ManagedFiles $ManagedFiles
+  Restore-RoToolBackup -InstallRoot $journalInstallRoot -BackupRoot $journalBackupRoot -AbsentManagedFiles $absentManagedFiles -ManagedFiles $ManagedFiles
   $journal.status = "recovered"
   Write-RoToolJournal -Path $journalPath -Value $journal
 }
@@ -460,15 +512,20 @@ function Install-RoToolValidatedPackage {
   if (-not (Test-Path -LiteralPath $StateRoot -PathType Container)) {
     [void](New-Item -ItemType Directory -Path $StateRoot -Force)
   }
-  Repair-RoToolInterruptedUpdate -StateRoot $StateRoot -ManagedFiles $ManagedFiles
+  Repair-RoToolInterruptedUpdate -StateRoot $StateRoot -ExpectedInstallRoot $InstallRoot -ManagedFiles $ManagedFiles
 
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $backupRoot = Join-Path $StateRoot "backups\$stamp-v$OldVersion"
   [void](New-Item -ItemType Directory -Path $backupRoot -Force)
+  $absentManagedFiles = @()
   foreach ($relative in $ManagedFiles) {
     $source = Join-Path $InstallRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
+    if (-not (Test-Path -LiteralPath $source)) {
+      $absentManagedFiles += $relative
+      continue
+    }
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-      throw "Current RoTool installation is incomplete; refusing to update: $relative"
+      throw "Current RoTool managed path is not a file: $relative"
     }
     $backup = Join-Path $backupRoot ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
     $parent = Split-Path -Parent $backup
@@ -485,6 +542,7 @@ function Install-RoToolValidatedPackage {
     backupRoot = $backupRoot
     oldVersion = $OldVersion
     newVersion = $NewVersion
+    absentManagedFiles = @($absentManagedFiles)
     startedAt = [DateTime]::UtcNow.ToString("o")
     completedAt = ""
     failure = ""
@@ -536,7 +594,7 @@ function Install-RoToolValidatedPackage {
         Remove-Item -LiteralPath $temporaryFile -Force
       }
     }
-    Restore-RoToolBackup -InstallRoot $InstallRoot -BackupRoot $backupRoot -ManagedFiles $ManagedFiles
+    Restore-RoToolBackup -InstallRoot $InstallRoot -BackupRoot $backupRoot -AbsentManagedFiles $absentManagedFiles -ManagedFiles $ManagedFiles
     $journal.status = "rolledBack"
     $journal.failure = $failure.Exception.Message
     Write-RoToolJournal -Path $journalPath -Value $journal
@@ -1101,7 +1159,7 @@ function Invoke-RoToolUpdater {
     [void](New-Item -ItemType Directory -Path $stateRoot -Force)
   }
   Repair-RoToolInterruptedUpdaterUpdate -StateRoot $stateRoot -ExpectedUpdaterRoot $PSScriptRoot
-  Repair-RoToolInterruptedUpdate -StateRoot $stateRoot
+  Repair-RoToolInterruptedUpdate -StateRoot $stateRoot -ExpectedInstallRoot $installRoot
   $currentManifest = Get-RoToolManifest $installRoot
   $configuration = Get-RoToolUpdaterConfiguration -RequestedRepository $RequestedRepository -DoNotPrompt:$DoNotPrompt
 

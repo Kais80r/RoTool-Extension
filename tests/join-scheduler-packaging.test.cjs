@@ -22,7 +22,7 @@ const releaseBuilderSource = fs.readFileSync(
   "utf8"
 );
 
-assert.equal(manifest.version, "0.19.0", "Join Scheduler ships as RoTool 0.19.0");
+assert.equal(manifest.version, "0.19.1", "the updater migration fix ships as RoTool 0.19.1");
 assert.equal(
   manifest.minimum_chrome_version,
   "102",
@@ -130,8 +130,8 @@ assert.equal(
 
 assert.match(
   updaterSource,
-  /^\$script:UpdaterVersion\s*=\s*"1\.2\.2"\s*$/m,
-  "the unchanged 21-file updater-core contract remains at 1.2.2"
+  /^\$script:UpdaterVersion\s*=\s*"1\.2\.3"\s*$/m,
+  "the corrected 21-file updater-core contract advances to 1.2.3"
 );
 
 console.log("PASS Join Scheduler manifest, permission, packaging, and updater contract");
