@@ -182,8 +182,12 @@ function runRealChromiumTemplateParserRegression() {
   const encodedTemplate = Buffer.from(template, "utf8").toString("base64");
   const encodedStyles = Buffer.from(shadowStyles, "utf8").toString("base64");
   const resourceUrls = {
-    "join-scheduler.html": `data:text/html;charset=utf-8;base64,${encodedTemplate}`,
-    "join-scheduler.css": `data:text/css;charset=utf-8;base64,${encodedStyles}`
+    "join-scheduler.html": "https://fixture.invalid/join-scheduler.html",
+    "join-scheduler.css": "https://fixture.invalid/join-scheduler.css"
+  };
+  const resourcePayloads = {
+    [resourceUrls["join-scheduler.html"]]: encodedTemplate,
+    [resourceUrls["join-scheduler.css"]]: encodedStyles
   };
   const fixtureSource = [
     "<!doctype html>",
@@ -191,8 +195,14 @@ function runRealChromiumTemplateParserRegression() {
     "<pre id=\"result\" data-result=\"pending\">pending</pre>",
     "<script>",
     "const decode = (value) => new TextDecoder().decode(Uint8Array.from(atob(value), (character) => character.charCodeAt(0)));",
+    "const report = document.getElementById('result');",
+    "const fail = (error) => { report.dataset.result = `error:${error?.message || error}`; report.textContent = String(error?.stack || error); };",
+    "globalThis.addEventListener('error', (event) => fail(event.error || event.message));",
+    "globalThis.addEventListener('unhandledrejection', (event) => fail(event.reason));",
     "globalThis.__rslJoinSchedulerTestHooks = { skipInitialize: true };",
     `const resourceUrls = ${JSON.stringify(resourceUrls)};`,
+    `const resourcePayloads = ${JSON.stringify(resourcePayloads)};`,
+    "globalThis.fetch = async (url) => { const normalizedUrl = String(url); const payload = resourcePayloads[normalizedUrl]; if (!payload) throw new TypeError('fixture-resource'); return { ok: true, url: normalizedUrl, headers: new Headers(), text: async () => decode(payload) }; };",
     "globalThis.chrome = { runtime: { id: 'fixture-extension', lastError: null, getURL: (resourcePath) => resourceUrls[resourcePath], onMessage: { addListener() {} }, sendMessage(message, callback) { queueMicrotask(() => callback({ ok: false, requestId: message.requestId, code: 'UNAUTHENTICATED' })); } } };",
     `(0, eval)(decode(${JSON.stringify(encodedController)}));`,
     `const markup = decode(${JSON.stringify(encodedTemplate)});`,
@@ -222,14 +232,13 @@ function runRealChromiumTemplateParserRegression() {
     "outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' })); ensure(firstHelp.getAttribute('aria-expanded') === 'false', 'outside touch must close help');",
     "firstHelp.click(); probeDialog.dispatchEvent(new Event('close')); ensure(firstHelp.getAttribute('aria-expanded') === 'false', 'dialog close must reset help');",
     "helpController.destroy(); firstHelp.click(); ensure(firstHelp.getAttribute('aria-expanded') === 'false', 'destroy must detach help listeners'); probeHost.remove();",
-    "const report = document.getElementById('result');",
     "globalThis.__rslJoinSchedulerModal.open().then((opened) => {",
     "  const host = document.getElementById('rsl-join-scheduler-host');",
     "  const outcome = { parent: ownedTemplate?.parentElement?.tagName || null, headChildren: parsed.head.children.length, bodyChildren: parsed.body.children.length, dialog: Boolean(content.querySelector('[data-scheduler-dialog]')), help: true, opened, host: Boolean(host), closedShadow: host?.shadowRoot === null, isOpen: globalThis.__rslJoinSchedulerModal.isOpen() };",
     "  globalThis.__rslJoinSchedulerModal.destroy();",
     "  report.dataset.result = 'ok';",
     "  report.textContent = JSON.stringify(outcome);",
-    "}, (error) => { report.dataset.result = `error:${error?.message || error}`; report.textContent = String(error?.stack || error); });",
+    "}, fail);",
     "</script>"
   ].join("\n");
   fs.writeFileSync(fixturePath, fixtureSource, "utf8");
