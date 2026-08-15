@@ -10,6 +10,8 @@ const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
 const sidebarSettings = [
+  ["sidebarGameEvents", "Game Events"],
+  ["sidebarJoinScheduler", "Join Scheduler"],
   ["sidebarServerHistory", "Server History"],
   ["sidebarCustomShortcuts", "Custom Shortcuts"],
   ["sidebarHome", "Home"],
@@ -45,7 +47,7 @@ for (const setting of [
 
 assert.match(
   contentSource,
-  /key: "sidebarShortcuts"[\s\S]*?label: "Sidebar Customization"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "sidebarServerHistory"[\s\S]*?key: "sidebarCustomShortcuts"[\s\S]*?key: "sidebarHome"[\s\S]*?key: "sidebarProfile"[\s\S]*?key: "sidebarRobloxPlus"[\s\S]*?key: "sidebarMessages"[\s\S]*?key: "sidebarFriends"[\s\S]*?key: "sidebarAvatar"[\s\S]*?key: "sidebarInventory"[\s\S]*?key: "sidebarTrade"[\s\S]*?key: "sidebarCommunities"[\s\S]*?key: "sidebarBlog"[\s\S]*?key: "sidebarOfficialStore"[\s\S]*?key: "sidebarGiftCards"[\s\S]*?\]/,
+  /key: "sidebarShortcuts"[\s\S]*?label: "Sidebar Customization"[\s\S]*?children: (?:Object\.freeze\()?\[[\s\S]*?key: "sidebarGameEvents"[\s\S]*?key: "sidebarJoinScheduler"[\s\S]*?key: "sidebarServerHistory"[\s\S]*?key: "sidebarCustomShortcuts"[\s\S]*?key: "sidebarHome"[\s\S]*?key: "sidebarProfile"[\s\S]*?key: "sidebarRobloxPlus"[\s\S]*?key: "sidebarMessages"[\s\S]*?key: "sidebarFriends"[\s\S]*?key: "sidebarAvatar"[\s\S]*?key: "sidebarInventory"[\s\S]*?key: "sidebarTrade"[\s\S]*?key: "sidebarCommunities"[\s\S]*?key: "sidebarBlog"[\s\S]*?key: "sidebarOfficialStore"[\s\S]*?key: "sidebarGiftCards"[\s\S]*?\]/,
   "every visible sidebar item must have a nested individual setting"
 );
 assert.match(

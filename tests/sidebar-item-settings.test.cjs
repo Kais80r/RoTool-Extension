@@ -9,6 +9,7 @@ const contentSource = fs.readFileSync(path.join(projectRoot, "content.js"), "utf
 
 const sidebarDefinitions = [
   ["sidebarGameEvents", "Game Events", null],
+  ["sidebarJoinScheduler", "Join Scheduler", null],
   ["sidebarServerHistory", "Server History", null],
   ["sidebarCustomShortcuts", "Custom Shortcuts", null],
   ["sidebarHome", "Home", "home"],
@@ -48,8 +49,10 @@ for (const [key] of sidebarDefinitions) {
 }
 assert.equal(hooks.defaultFeatureSettings.sidebarShortcuts, true);
 assert.equal(hooks.defaultFeatureSettings.sidebarGameEvents, true);
+assert.equal(hooks.defaultFeatureSettings.sidebarJoinScheduler, true);
 assert.equal(hooks.defaultFeatureSettings.sidebarServerHistory, true);
 assert.equal(hooks.defaultFeatureSettings.gameEvents, true);
+assert.equal(hooks.defaultFeatureSettings.joinScheduler, true);
 assert.equal(hooks.defaultFeatureSettings.serverHistory, false);
 assert.equal(hooks.defaultFeatureSettings.gameCcuHoverGraph, true);
 const playerCountsDefinition = hooks.featureDefinitions.find(
@@ -87,8 +90,10 @@ assert.equal(oldPayload.quickPlay, false);
 assert.equal(oldPayload.gameCcu, true);
 assert.equal(oldPayload.sidebarHome, true);
 assert.equal(oldPayload.sidebarGameEvents, true);
+assert.equal(oldPayload.sidebarJoinScheduler, true);
 assert.equal(oldPayload.sidebarServerHistory, true);
 assert.equal(oldPayload.gameEvents, true);
+assert.equal(oldPayload.joinScheduler, true);
 assert.equal(oldPayload.serverHistory, false);
 assert.equal(oldPayload.gameCcuHoverGraph, true);
 const oldCountsOffPayload = hooks.normalizeFeatureSettings({

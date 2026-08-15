@@ -3377,6 +3377,17 @@
   text-align: end;
 }
 
+.rsl-game-events__schedule {
+  width: fit-content;
+  min-height: 28px;
+  margin-block-start: 2px;
+  padding: 4px 10px;
+  justify-self: start;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .rsl-game-events__actions {
   display: grid;
   width: 110px;

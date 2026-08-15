@@ -1,0 +1,245 @@
+<template id="rsl-join-scheduler-template">
+  <svg class="scheduler-symbols" aria-hidden="true">
+    <defs>
+      <symbol id="rsl-scheduler-rotool-logo" viewBox="-16 -4 128 128">
+        <path
+          fill="#18181b"
+          fill-rule="evenodd"
+          stroke="#ffffff"
+          stroke-width="4"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          vector-effect="non-scaling-stroke"
+          transform="translate(-7 5) scale(4.6)"
+          d="M2 17.88L17.88 22L22 6.12L6.12 2zm8.86-7.81l3.07.79l-.79 3.07l-3.07-.79z"
+        />
+        <path
+          fill="#ffffff"
+          stroke="#18181b"
+          stroke-width="4"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          vector-effect="non-scaling-stroke"
+          transform="translate(5 20) scale(.18)"
+          d="m280.16 242.79l-26.11-26.12a32 32 0 0 0-45.14-.12L27.38 384.08c-6.61 6.23-10.95 14.17-11.35 23.06a32.1 32.1 0 0 0 9.21 23.94l39 39.43A32.3 32.3 0 0 0 87 480h1.18c8.89-.33 16.85-4.5 23.17-11.17l168.7-180.7a32 32 0 0 0 .11-45.34M490 190l-.31-.31l-34.27-33.92a21.46 21.46 0 0 0-15.28-6.26a21.9 21.9 0 0 0-12.79 4.14c0-.43.06-.85.09-1.22c.45-6.5 1.15-16.32-5.2-25.22a258 258 0 0 0-24.8-28.74c-13.32-13.12-42.31-37.83-86.72-55.94A139.6 139.6 0 0 0 257.56 32C226 32 202 46.24 192.81 54.68a120 120 0 0 0-14.18 16.22a16 16 0 0 0 18.65 24.34a75 75 0 0 1 8.58-2.63a63.5 63.5 0 0 1 18.45-1.15c13.19 1.09 28.79 7.64 35.69 13.09c11.7 9.41 17.33 22.09 18.26 41.09c.18 3.82-7.72 18.14-20 34.48a16 16 0 0 0 1.45 21l34.41 34.41a16 16 0 0 0 22 .62c9.73-8.69 24.55-21.79 29.73-25c7.69-4.73 13.19-5.64 14.7-5.8a19.2 19.2 0 0 1 11.29 2.38a1.24 1.24 0 0 1-.31.95l-1.82 1.73a21.52 21.52 0 0 0 .05 30.54l34.26 33.91a21.45 21.45 0 0 0 15.28 6.25a21.7 21.7 0 0 0 15.22-6.2l55.5-54.82A21.87 21.87 0 0 0 490 190"
+        />
+      </symbol>
+    </defs>
+  </svg>
+
+  <dialog
+    class="rsl-dialog rsl-feature-settings-dialog scheduler-dialog"
+    data-scheduler-dialog
+    aria-labelledby="scheduler-title"
+    aria-describedby="scheduler-description"
+  >
+    <div class="rsl-dialog__surface rsl-feature-settings-dialog__surface scheduler-surface" data-size="Medium">
+      <div class="rsl-dialog__close-container">
+        <button class="rsl-icon-button" type="button" data-action="close-scheduler" aria-label="Close Join Scheduler">
+          <span class="rsl-dialog__close-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <header class="rsl-feature-settings__title-row scheduler-header">
+        <svg class="rsl-feature-settings__logo" viewBox="-16 -4 128 128" aria-hidden="true" focusable="false">
+          <use href="#rsl-scheduler-rotool-logo"></use>
+        </svg>
+        <div class="rsl-dialog__header">
+          <h1 id="scheduler-title" class="content-emphasis text-title-large" data-scheduler-title data-editor-title tabindex="-1">Join Scheduler</h1>
+          <p id="scheduler-description" class="content-default text-body-medium" data-scheduler-description>Plan a reminder or one automatic join attempt.</p>
+        </div>
+      </header>
+
+      <div class="rsl-dialog__body rsl-feature-settings-dialog__body scheduler-scroll" data-scheduler-scroll>
+        <section class="scheduler-view scheduler-shell" data-scheduler-view="list" aria-labelledby="scheduler-title">
+          <div class="rsl-feature-settings__groups scheduler-groups">
+            <section class="rsl-feature-settings__group scheduler-section" aria-labelledby="schedules-title">
+              <div class="scheduler-group-heading">
+                <h2 id="schedules-title" class="rsl-feature-settings__group-title content-default text-label-medium">Schedules</h2>
+                <p class="scheduler-summary content-default text-body-medium" data-upcoming-summary>Loading schedules...</p>
+              </div>
+              <div class="rsl-feature-settings__list scheduler-list-frame">
+                <div class="schedule-loading" data-loading aria-hidden="true">
+                  <span></span><span></span><span></span>
+                </div>
+                <ul class="schedule-list rsl-feature-settings__item" data-schedule-list aria-label="Join schedules"></ul>
+                <div class="empty-state" data-empty-state hidden>
+                  <h2 class="content-emphasis text-label-large">No joins scheduled</h2>
+                  <p class="content-default text-body-medium">Schedule a game for later, or choose Schedule beside an upcoming Game Event.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <form id="scheduler-form" class="scheduler-view editor" data-scheduler-view="editor" data-editor data-schedule-form aria-labelledby="scheduler-title" novalidate hidden>
+          <div class="form-status" data-form-status role="alert" aria-live="assertive"></div>
+
+          <div class="rsl-feature-settings__groups editor-groups">
+          <section class="rsl-feature-settings__group form-section" aria-labelledby="game-section-title">
+            <div class="form-section__heading">
+              <h3 id="game-section-title" class="rsl-feature-settings__group-title content-default text-label-medium">Game</h3>
+            </div>
+            <div class="rsl-feature-settings__list form-section__panel">
+              <div class="combobox-wrap">
+                <label class="field-label" for="game-search">Roblox game</label>
+                <input id="game-search" class="text-input" type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="game-search-results" placeholder="Search games or paste a Roblox URL" data-game-search>
+                <p class="field-help" data-game-selection-help>Select a suggestion to continue.</p>
+                <div class="search-status" data-search-status role="status" aria-live="polite"></div>
+                <ul id="game-search-results" class="search-results" role="listbox" data-search-results hidden></ul>
+              </div>
+              <article class="selected-game" data-selected-game hidden>
+                <span class="game-thumbnail" data-selected-game-thumbnail aria-hidden="true"></span>
+                <div>
+                  <strong data-selected-game-name></strong>
+                  <span data-selected-game-details></span>
+                </div>
+                <button class="rsl-button rsl-button--secondary button button--quiet button--compact" type="button" data-action="change-game">Change</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="rsl-feature-settings__group form-section" aria-labelledby="time-section-title">
+            <div class="form-section__heading">
+              <h3 id="time-section-title" class="rsl-feature-settings__group-title content-default text-label-medium">Time</h3>
+            </div>
+            <div class="rsl-feature-settings__list form-section__panel">
+              <label class="field-label" for="schedule-time">Date and time</label>
+              <input id="schedule-time" class="text-input" type="datetime-local" required data-schedule-time>
+              <p class="field-help" data-time-zone></p>
+              <article class="official-event" data-official-event hidden>
+                <span class="status-pill status-pill--event">Official event</span>
+                <div>
+                  <strong data-official-event-title></strong>
+                  <span data-official-event-time></span>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="rsl-feature-settings__group form-section" aria-labelledby="action-section-title">
+            <div class="form-section__heading form-section__heading--with-help">
+              <h3 id="action-section-title" class="rsl-feature-settings__group-title content-default text-label-medium">Action</h3>
+              <span class="scheduler-help">
+                <button class="rsl-icon-button scheduler-help__button" type="button" data-help-trigger aria-label="About schedule actions" aria-controls="action-help-copy" aria-describedby="action-help-copy" aria-expanded="false">
+                  <span class="scheduler-help__icon" aria-hidden="true"><slot name="scheduler-action-help-icon" data-quick-settings-help-icon><span class="scheduler-help__icon-fallback" aria-hidden="true"></span></slot></span>
+                </button>
+                <span id="action-help-copy" class="scheduler-help__copy" role="tooltip" hidden>Only notify me sends a reminder; nothing opens unless you press Join now. Try to join automatically sends the same reminder and also makes one automatic launch attempt at the scheduled time. Scheduling needs browser notification permission.</span>
+              </span>
+            </div>
+            <fieldset class="rsl-feature-settings__list choice-grid" data-mode-choices>
+              <legend class="sr-only">Schedule action</legend>
+              <label class="rsl-feature-settings__row choice-card">
+                <span class="choice-control"><input type="radio" name="schedule-mode" value="notify" checked></span>
+                <span class="rsl-feature-settings__copy">
+                  <strong class="content-emphasis text-label-large">Only notify me</strong>
+                </span>
+              </label>
+              <label class="rsl-feature-settings__row choice-card">
+                <span class="choice-control"><input type="radio" name="schedule-mode" value="auto"></span>
+                <span class="rsl-feature-settings__copy">
+                  <strong class="content-emphasis text-label-large">Try to join automatically</strong>
+                </span>
+              </label>
+            </fieldset>
+          </section>
+
+          <section class="rsl-feature-settings__group form-section" aria-labelledby="destination-section-title">
+            <div class="form-section__heading form-section__heading--with-help">
+              <h3 id="destination-section-title" class="rsl-feature-settings__group-title content-default text-label-medium" tabindex="-1">Join location</h3>
+              <span class="scheduler-help">
+                <button class="rsl-icon-button scheduler-help__button" type="button" data-help-trigger aria-label="About join location" aria-controls="destination-help-copy" aria-describedby="destination-help-copy" aria-expanded="false">
+                  <span class="scheduler-help__icon" aria-hidden="true"><slot name="scheduler-destination-help-icon" data-quick-settings-help-icon><span class="scheduler-help__icon-fallback" aria-hidden="true"></span></slot></span>
+                </button>
+                <span id="destination-help-copy" class="scheduler-help__copy" role="tooltip" hidden>Join now in the notification opens the selected destination. If you choose automatic joining, the automatic attempt uses it too. Public game uses Roblox matchmaking. Private server uses your saved private-server link and never falls back to public matchmaking.</span>
+              </span>
+            </div>
+            <div class="rsl-feature-settings__list form-section__panel destination-panel">
+              <fieldset class="segmented" data-destination-choices>
+                <legend class="sr-only">Join destination</legend>
+                <label class="destination-choice">
+                  <input type="radio" name="destination-type" value="public" checked>
+                  <span>Public game</span>
+                </label>
+                <label class="destination-choice">
+                  <input type="radio" name="destination-type" value="private">
+                  <span>Private server</span>
+                </label>
+              </fieldset>
+
+              <div class="private-fields" data-private-fields hidden>
+                <label class="field-label" for="private-server-url">Roblox private-server link</label>
+                <div class="input-action-row">
+                  <input id="private-server-url" class="text-input" type="password" inputmode="url" autocomplete="off" spellcheck="false" maxlength="2048" placeholder="https://www.roblox.com/share?code=..." data-private-url>
+                  <button class="rsl-button rsl-button--secondary button button--secondary" type="button" data-action="validate-private">Check link</button>
+                </div>
+                <p class="field-help">The server code stays hidden after you save it. Roblox may show the link in your address bar or history while checking or joining.</p>
+                <div class="validation-result" data-destination-validation role="status" aria-live="polite"></div>
+                <label class="check-row" data-unverified-confirm hidden>
+                  <input type="checkbox" data-confirm-unverified>
+                  <span>I understand that this modern share link cannot be matched to the selected game. Use it without public-server fallback.</span>
+                </label>
+              </div>
+
+              <div class="saved-destinations" data-saved-destinations hidden>
+                <label class="field-label" for="saved-destination">Saved private server</label>
+                <div class="input-action-row input-action-row--saved">
+                  <select id="saved-destination" class="text-input" data-saved-destination></select>
+                  <button class="rsl-button rsl-button--secondary button button--secondary" type="button" data-action="test-private" hidden>Test Private Server</button>
+                  <button class="rsl-button rsl-button--secondary button button--quiet" type="button" data-action="delete-private" hidden>Remove</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rsl-feature-settings__group auto-consent" data-auto-consent hidden aria-labelledby="auto-consent-title">
+            <div class="form-section__heading form-section__heading--with-help">
+              <h3 id="auto-consent-title" class="rsl-feature-settings__group-title content-default text-label-medium">Automatic joining</h3>
+              <span class="scheduler-help">
+                <button class="rsl-icon-button scheduler-help__button" type="button" data-help-trigger aria-label="About automatic joining" aria-controls="auto-consent-help-copy" aria-describedby="auto-consent-help-copy" aria-expanded="false">
+                  <span class="scheduler-help__icon" aria-hidden="true"><slot name="scheduler-auto-help-icon" data-quick-settings-help-icon><span class="scheduler-help__icon-fallback" aria-hidden="true"></span></slot></span>
+                </button>
+                <span id="auto-consent-help-copy" class="scheduler-help__copy" role="tooltip" hidden>Your browser must be running at the scheduled time. RoTool makes one launch attempt and never falls back from a private server to public matchmaking.</span>
+              </span>
+            </div>
+            <div class="rsl-feature-settings__list auto-consent__panel">
+              <p class="content-default text-body-medium" data-consent-summary></p>
+              <label class="check-row check-row--important">
+                <input type="checkbox" data-auto-join-consent>
+                <span>I understand RoTool will make one automatic launch attempt at the time above, even if I am not at this window.</span>
+              </label>
+              <label class="check-row check-row--important">
+                <input id="allow-game-switch" type="checkbox" data-allow-switch aria-describedby="allow-game-switch-help">
+                <span>Allow RoTool to switch away from a Roblox game I'm playing.</span>
+              </label>
+              <p id="allow-game-switch-help" class="field-help">Off blocks automatic switching; Join now still works.</p>
+            </div>
+          </section>
+          </div>
+        </form>
+
+        <div class="inline-confirm" data-inline-confirm role="group" aria-labelledby="inline-confirm-title" aria-describedby="inline-confirm-copy" hidden>
+          <div class="inline-confirm__copy">
+            <strong id="inline-confirm-title" class="content-emphasis text-label-large" data-confirm-title>Remove?</strong>
+            <span id="inline-confirm-copy" class="content-default text-body-medium" data-confirm-copy></span>
+          </div>
+          <div class="inline-confirm__actions">
+            <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-action="cancel-confirm">Keep</button>
+            <button class="rsl-button rsl-button--danger button button--danger button--compact" type="button" data-confirm-action>Remove</button>
+          </div>
+        </div>
+      </div>
+
+      <footer class="rsl-dialog__actions rsl-feature-settings__footer scheduler-footer">
+        <span class="rsl-feature-settings__status scheduler-status" data-page-status role="status" aria-live="polite"></span>
+        <div class="scheduler-footer__actions" data-footer-actions="list">
+          <button class="rsl-button rsl-button--primary button button--primary" type="button" data-action="new-schedule" disabled>New Schedule</button>
+        </div>
+        <div class="scheduler-footer__actions" data-footer-actions="editor" hidden>
+          <button class="rsl-button rsl-button--secondary button button--secondary" type="button" data-action="close-editor">Back</button>
+          <button class="rsl-button rsl-button--primary button button--primary" type="submit" form="scheduler-form" data-submit-schedule>Schedule Reminder</button>
+        </div>
+      </footer>
+    </div>
+  </dialog>
+</template>

@@ -11,8 +11,8 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.18.0");
-assert.match(manifest.description, /configurable/i);
+assert.equal(manifest.version, "0.19.0");
+assert.match(manifest.description, /Join Scheduler/i);
 assert.ok(manifest.permissions.includes("storage"));
 
 assert.match(content, /const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1"/);
@@ -20,6 +20,7 @@ assert.match(content, /const FEATURE_SETTINGS_VERSION = 1/);
 for (const key of [
   "sidebarShortcuts",
   "sidebarGameEvents",
+  "sidebarJoinScheduler",
   "sidebarServerHistory",
   "quickSettings",
   "quickSettingsOnlineStatus",
@@ -30,6 +31,7 @@ for (const key of [
   "quickPlay",
   "gameCcu",
   "gameEvents",
+  "joinScheduler",
   "serverHistory",
   "copyRobloxIds"
 ]) {
@@ -49,6 +51,16 @@ assert.match(
   content,
   /key: "sidebarGameEvents"[\s\S]*?label: "Game Events"/,
   "the independently remembered Game Events sidebar choice must default on"
+);
+assert.match(
+  content,
+  /key: "joinScheduler"[\s\S]*?label: "Join Scheduler"/,
+  "Join Scheduler must have its own independently configurable feature"
+);
+assert.match(
+  content,
+  /key: "sidebarJoinScheduler"[\s\S]*?label: "Join Scheduler"/,
+  "the independently remembered Join Scheduler sidebar choice must default on"
 );
 assert.match(
   content,

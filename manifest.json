@@ -2,14 +2,18 @@
   "manifest_version": 3,
   "name": "RoTool",
   "short_name": "RoTool",
-  "version": "0.18.0",
-  "description": "Configurable Game Events, Server History, Quick Settings, Quick Play, Random Server, Private Servers, Best Friends & ID copying.",
+  "version": "0.19.0",
+  "minimum_chrome_version": "102",
+  "description": "Join Scheduler, Game Events, Server History, Quick Settings, Quick Play, Random Server, Private Servers, Best Friends & ID copying.",
   "permissions": [
     "storage",
     "alarms",
     "contextMenus",
     "clipboardWrite",
     "scripting"
+  ],
+  "optional_permissions": [
+    "notifications"
   ],
   "icons": {
     "16": "icons/rotool-16.png",
@@ -51,6 +55,7 @@
         "styles.css"
       ],
       "js": [
+        "join-scheduler.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -67,6 +72,17 @@
         "context-copy.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "join-scheduler.html",
+        "join-scheduler.css"
+      ],
+      "matches": [
+        "https://www.roblox.com/*"
+      ]
     }
   ]
 }

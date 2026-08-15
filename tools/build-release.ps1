@@ -52,8 +52,8 @@ foreach ($relative in $packageFiles) {
     throw "Release input is missing: $relative"
   }
 }
-if ($packageFiles.Count -ne 18) {
-  throw "The RoTool runtime package must contain exactly 18 managed files."
+if ($packageFiles.Count -ne 21) {
+  throw "The RoTool runtime package must contain exactly 21 managed files."
 }
 
 if (-not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {

@@ -279,6 +279,50 @@ const GAME_EVENTS_NAME_MAX_LENGTH = 100;
 const GAME_EVENTS_TITLE_MAX_LENGTH = 200;
 const GAME_EVENTS_SUBTITLE_MAX_LENGTH = 300;
 const GAME_EVENTS_FALLBACK_LOCALE = "en-US";
+const JOIN_SCHEDULER_FEATURE_KEY = "joinScheduler";
+const JOIN_SCHEDULER_SHOW_MESSAGE_TYPE = "rsl:show-join-scheduler";
+const JOIN_SCHEDULER_MESSAGE_PREFIX = "rsl:join-scheduler:";
+const JOIN_SCHEDULER_MESSAGE_TYPES = Object.freeze({
+  getState: `${JOIN_SCHEDULER_MESSAGE_PREFIX}get-state`,
+  searchGames: `${JOIN_SCHEDULER_MESSAGE_PREFIX}search-games`,
+  validateDestination: `${JOIN_SCHEDULER_MESSAGE_PREFIX}validate-destination`,
+  saveDestination: `${JOIN_SCHEDULER_MESSAGE_PREFIX}save-destination`,
+  deleteDestination: `${JOIN_SCHEDULER_MESSAGE_PREFIX}delete-destination`,
+  createSchedule: `${JOIN_SCHEDULER_MESSAGE_PREFIX}create-schedule`,
+  cancelSchedule: `${JOIN_SCHEDULER_MESSAGE_PREFIX}cancel-schedule`,
+  deleteSchedule: `${JOIN_SCHEDULER_MESSAGE_PREFIX}delete-schedule`,
+  joinNow: `${JOIN_SCHEDULER_MESSAGE_PREFIX}join-now`,
+  setEnabled: `${JOIN_SCHEDULER_MESSAGE_PREFIX}set-enabled`,
+  requestNotificationPermission:
+    `${JOIN_SCHEDULER_MESSAGE_PREFIX}request-notification-permission`
+});
+const JOIN_SCHEDULER_DB_NAME = "rslJoinSchedulerV1";
+const JOIN_SCHEDULER_DB_VERSION = 1;
+const JOIN_SCHEDULER_DESTINATIONS_STORE = "destinations";
+const JOIN_SCHEDULER_SCHEDULES_STORE = "schedules";
+const JOIN_SCHEDULER_META_STORE = "meta";
+const JOIN_SCHEDULER_RECORD_VERSION = 1;
+const JOIN_SCHEDULER_ALARM_NAME = "rsl-join-scheduler-coordinator-v1";
+const JOIN_SCHEDULER_NOTIFICATION_PREFIX = "rsl-join-scheduler-v1:";
+const JOIN_SCHEDULER_MAX_ACCOUNTS = 8;
+const JOIN_SCHEDULER_MAX_DESTINATIONS = 30;
+const JOIN_SCHEDULER_MAX_SCHEDULES = 50;
+const JOIN_SCHEDULER_NOTIFICATION_LEAD_MS = 30_000;
+const JOIN_SCHEDULER_LATE_GRACE_MS = 2 * 60_000;
+const JOIN_SCHEDULER_AUTO_COLLISION_MS = 5 * 60_000;
+const JOIN_SCHEDULER_MAX_FUTURE_MS = 366 * 24 * 60 * 60_000;
+const JOIN_SCHEDULER_CONSENT_VERSION = 1;
+const JOIN_SCHEDULER_TEXT_MAX_LENGTH = 120;
+const JOIN_SCHEDULER_TITLE_MAX_LENGTH = 200;
+const JOIN_SCHEDULER_SHARE_CODE_MAX_LENGTH = 512;
+const JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH = 2_048;
+const JOIN_SCHEDULER_DESTINATION_RESOLVE_TIMEOUT_MS = 8_000;
+const JOIN_SCHEDULER_DESTINATION_RESPONSE_MAX_BYTES = 512_000;
+const JOIN_SCHEDULER_DESTINATION_REDIRECT_MAX_HOPS = 3;
+const JOIN_SCHEDULER_BROWSER_API_TIMEOUT_MS = 15_000;
+const JOIN_SCHEDULER_SHOW_MESSAGE_TIMEOUT_MS = 4_000;
+const JOIN_SCHEDULER_NEW_TAB_READY_TIMEOUT_MS = 12_000;
+const JOIN_SCHEDULER_SHOW_TAB_CANDIDATE_LIMIT = 5;
 const PRIVATE_SERVER_SUPPORT_MESSAGE_TYPE = "rsl:get-private-server-support";
 const PRIVATE_SERVER_LIST_MESSAGE_TYPE = "rsl:get-private-servers";
 const PRIVATE_SERVER_JOIN_MESSAGE_TYPE = "rsl:join-private-server";
@@ -409,6 +453,15 @@ const gameEventsCache = new Map();
 const gameEventsRequests = new Map();
 const gameEventsGameResolutionCache = new Map();
 const gameEventsSearchCache = new Map();
+let joinSchedulerFeatureEnabled = true;
+let joinSchedulerFeatureReady = false;
+let joinSchedulerFeatureSyncPromise = null;
+let joinSchedulerDbPromise = null;
+let joinSchedulerStorageWriteTail = Promise.resolve();
+let joinSchedulerStorageOverride = null;
+let joinSchedulerRuntimeOverrides = null;
+let joinSchedulerCoordinatorPromise = null;
+let joinSchedulerPermissionGeneration = 0;
 const privateServerSupportCache = new Map();
 const privateServerSupportByPlaceId = new Map();
 const privateServerSupportRequestsByPlaceId = new Map();
@@ -499,6 +552,16 @@ class GameEventsError extends Error {
     this.status = status;
     this.retryAfterMs = retryAfterMs;
     this.viewerUserId = viewerUserId;
+  }
+}
+
+class JoinSchedulerError extends Error {
+  constructor(code, status = 0, details = null) {
+    super(code);
+    this.name = "JoinSchedulerError";
+    this.code = code;
+    this.status = status;
+    this.details = details;
   }
 }
 
@@ -8097,6 +8160,3340 @@ function resetGameEventsStateForTests() {
   gameEventsSearchCache.clear();
 }
 
+function joinSchedulerNow() {
+  const overridden = joinSchedulerRuntimeOverrides?.now;
+  return typeof overridden === "function" ? overridden() : Date.now();
+}
+
+function runJoinSchedulerBrowserApi(operation) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      callback(value);
+    };
+    const timeoutId = setTimeout(() => {
+      finish(reject, new JoinSchedulerError("UNAVAILABLE"));
+    }, JOIN_SCHEDULER_BROWSER_API_TIMEOUT_MS);
+    try {
+      Promise.resolve(operation()).then(
+        (value) => finish(resolve, value),
+        (error) => finish(reject, error)
+      );
+    } catch (error) {
+      finish(reject, error);
+    }
+  });
+}
+
+function normalizeJoinSchedulerRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeJoinSchedulerText(value, maxLength, required = false) {
+  const text = typeof value === "string"
+    ? value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim()
+    : "";
+  if (!text || text.length > maxLength) return required ? null : "";
+  return text;
+}
+
+function normalizeJoinSchedulerRecordId(value, prefix) {
+  const id = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return new RegExp(`^${prefix}_[0-9a-f]{32}$`).test(id) ? id : null;
+}
+
+function createJoinSchedulerRecordId(prefix) {
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues !== "function") {
+    throw new JoinSchedulerError("STORAGE_UNAVAILABLE");
+  }
+  globalThis.crypto.getRandomValues(bytes);
+  return `${prefix}_${Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("")}`;
+}
+
+function normalizeJoinSchedulerTimestamp(value, allowZero = false) {
+  const timestamp = Number(value);
+  if (allowZero && timestamp === 0) return 0;
+  return Number.isSafeInteger(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+function normalizeJoinSchedulerRevision(value) {
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision > 0 ? revision : null;
+}
+
+function normalizeJoinSchedulerResultCode(value) {
+  const code = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return /^[a-z][a-z0-9-]{0,63}$/.test(code) ? code : null;
+}
+
+function parseJoinSchedulerDestinationUrl(rawUrl) {
+  if (
+    typeof rawUrl !== "string" ||
+    rawUrl !== rawUrl.trim() ||
+    !rawUrl ||
+    rawUrl.length > JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH
+  ) {
+    throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+  }
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "www.roblox.com" ||
+    url.port !== "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.hash !== ""
+  ) {
+    throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+  }
+  const parameters = Array.from(url.searchParams.entries());
+  const names = parameters.map(([name]) => name);
+  if (new Set(names).size !== names.length) {
+    throw new JoinSchedulerError("DUPLICATE_URL_PARAMETER", 400);
+  }
+  const legacyMatch = /^\/games\/([1-9]\d{0,19})(?:\/[^/?#]*)?\/?$/i.exec(
+    url.pathname
+  );
+  if (legacyMatch) {
+    if (
+      parameters.length !== 1 ||
+      parameters[0][0] !== "privateServerLinkCode"
+    ) {
+      throw new JoinSchedulerError("UNKNOWN_URL_PARAMETER", 400);
+    }
+    const accessCode = normalizePrivateServerAccessCode(parameters[0][1]);
+    if (!accessCode) {
+      throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+    }
+    return Object.freeze({
+      type: "private-legacy",
+      placeId: legacyMatch[1],
+      secret: accessCode,
+      canonicalUrl: `https://www.roblox.com/games/${legacyMatch[1]}?privateServerLinkCode=${encodeURIComponent(accessCode)}`
+    });
+  }
+  if (url.pathname === "/share" || url.pathname === "/share/") {
+    if (
+      parameters.length !== 2 ||
+      !url.searchParams.has("code") ||
+      !url.searchParams.has("type") ||
+      url.searchParams.get("type") !== "Server" ||
+      names.some((name) => name !== "code" && name !== "type")
+    ) {
+      throw new JoinSchedulerError("UNKNOWN_URL_PARAMETER", 400);
+    }
+    const code = url.searchParams.get("code") || "";
+    if (
+      code !== code.trim() ||
+      code.length < 8 ||
+      code.length > JOIN_SCHEDULER_SHARE_CODE_MAX_LENGTH ||
+      !/^[A-Za-z0-9_-]+$/.test(code)
+    ) {
+      throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+    }
+    return Object.freeze({
+      type: "private-share",
+      placeId: null,
+      secret: code,
+      canonicalUrl: `https://www.roblox.com/share?code=${encodeURIComponent(code)}&type=Server`
+    });
+  }
+  throw new JoinSchedulerError("INVALID_PRIVATE_SERVER_URL", 400);
+}
+
+function normalizeJoinSchedulerDestinationRecord(rawRecord) {
+  if (
+    !rawRecord ||
+    typeof rawRecord !== "object" ||
+    Array.isArray(rawRecord) ||
+    rawRecord.recordVersion !== JOIN_SCHEDULER_RECORD_VERSION
+  ) {
+    return null;
+  }
+  const accountId = normalizeId(rawRecord.accountId);
+  const id = normalizeJoinSchedulerRecordId(rawRecord.id, "d");
+  const universeId = normalizeId(rawRecord.universeId);
+  const placeId = normalizeId(rawRecord.placeId);
+  const gameName = normalizeJoinSchedulerText(
+    rawRecord.gameName,
+    JOIN_SCHEDULER_TEXT_MAX_LENGTH,
+    true
+  );
+  const label = normalizeJoinSchedulerText(
+    rawRecord.label,
+    JOIN_SCHEDULER_TEXT_MAX_LENGTH,
+    true
+  );
+  const type = ["public", "private-legacy", "private-share"].includes(
+    rawRecord.type
+  ) ? rawRecord.type : null;
+  const createdAt = normalizeJoinSchedulerTimestamp(rawRecord.createdAt);
+  const updatedAt = normalizeJoinSchedulerTimestamp(rawRecord.updatedAt);
+  let secret = null;
+  let verified = rawRecord.verified === true;
+  let confirmedUnverified = rawRecord.confirmedUnverified === true;
+  if (type === "private-legacy") {
+    secret = normalizePrivateServerAccessCode(rawRecord.secret);
+    verified = true;
+    confirmedUnverified = false;
+  } else if (type === "private-share") {
+    const candidate = typeof rawRecord.secret === "string" ? rawRecord.secret : "";
+    secret = candidate.length >= 8 &&
+      candidate.length <= JOIN_SCHEDULER_SHARE_CODE_MAX_LENGTH &&
+      /^[A-Za-z0-9_-]+$/.test(candidate)
+      ? candidate
+      : null;
+    if (!verified && !confirmedUnverified) return null;
+  } else if (type === "public") {
+    verified = true;
+    confirmedUnverified = false;
+  }
+  if (
+    !accountId ||
+    !id ||
+    rawRecord.key !== `${accountId}:${id}` ||
+    !universeId ||
+    !placeId ||
+    !gameName ||
+    !label ||
+    !type ||
+    !createdAt ||
+    !updatedAt ||
+    updatedAt < createdAt ||
+    (type !== "public" && !secret) ||
+    (type === "public" && rawRecord.secret !== null)
+  ) {
+    return null;
+  }
+  return {
+    recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+    key: `${accountId}:${id}`,
+    accountId,
+    id,
+    universeId,
+    placeId,
+    gameName,
+    label,
+    type,
+    secret,
+    verified,
+    confirmedUnverified,
+    createdAt,
+    updatedAt
+  };
+}
+
+function normalizeJoinSchedulerScheduleRecord(rawRecord) {
+  if (
+    !rawRecord ||
+    typeof rawRecord !== "object" ||
+    Array.isArray(rawRecord) ||
+    rawRecord.recordVersion !== JOIN_SCHEDULER_RECORD_VERSION
+  ) {
+    return null;
+  }
+  const accountId = normalizeId(rawRecord.accountId);
+  const id = normalizeJoinSchedulerRecordId(rawRecord.id, "s");
+  const universeId = normalizeId(rawRecord.universeId);
+  const placeId = normalizeId(rawRecord.placeId);
+  const destinationId = normalizeJoinSchedulerRecordId(
+    rawRecord.destinationId,
+    "d"
+  );
+  const gameName = normalizeJoinSchedulerText(
+    rawRecord.gameName,
+    JOIN_SCHEDULER_TEXT_MAX_LENGTH,
+    true
+  );
+  const title = normalizeJoinSchedulerText(
+    rawRecord.title,
+    JOIN_SCHEDULER_TITLE_MAX_LENGTH,
+    true
+  );
+  const startAt = normalizeJoinSchedulerTimestamp(rawRecord.startAt);
+  const rawEndAt = normalizeJoinSchedulerTimestamp(rawRecord.endAt, true);
+  const endAt = rawEndAt === 0 ? null : rawEndAt;
+  const eventId = rawRecord.eventId === null
+    ? null
+    : normalizeGameEventId(rawRecord.eventId);
+  const mode = ["notify", "auto"].includes(rawRecord.mode)
+    ? rawRecord.mode
+    : null;
+  const status = [
+    "pending",
+    "claimed",
+    "completed",
+    "canceled",
+    "missed",
+    "failed"
+  ].includes(rawRecord.status) ? rawRecord.status : null;
+  const revision = normalizeJoinSchedulerRevision(rawRecord.revision);
+  const createdAt = normalizeJoinSchedulerTimestamp(rawRecord.createdAt);
+  const updatedAt = normalizeJoinSchedulerTimestamp(rawRecord.updatedAt);
+  const notifiedAt = normalizeJoinSchedulerTimestamp(rawRecord.notifiedAt, true);
+  const claimedAt = normalizeJoinSchedulerTimestamp(rawRecord.claimedAt, true);
+  const completedAt = normalizeJoinSchedulerTimestamp(rawRecord.completedAt, true);
+  const consentVersion = Number(rawRecord.consentVersion);
+  const consentedAt = normalizeJoinSchedulerTimestamp(rawRecord.consentedAt, true);
+  const resultCode = rawRecord.resultCode === null
+    ? null
+    : normalizeJoinSchedulerResultCode(rawRecord.resultCode);
+  if (
+    !accountId ||
+    !id ||
+    rawRecord.key !== `${accountId}:${id}` ||
+    !universeId ||
+    !placeId ||
+    !destinationId ||
+    !gameName ||
+    !title ||
+    !startAt ||
+    (endAt !== null && endAt <= startAt) ||
+    !mode ||
+    !revision ||
+    typeof rawRecord.allowSwitch !== "boolean" ||
+    !status ||
+    !createdAt ||
+    !updatedAt ||
+    updatedAt < createdAt ||
+    notifiedAt === null ||
+    claimedAt === null ||
+    completedAt === null ||
+    consentedAt === null ||
+    (rawRecord.resultCode !== null && !resultCode) ||
+    (mode === "auto" &&
+      (consentVersion !== JOIN_SCHEDULER_CONSENT_VERSION || !consentedAt)) ||
+    (mode === "notify" && (consentVersion !== 0 || consentedAt !== 0))
+  ) {
+    return null;
+  }
+  return {
+    recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+    key: `${accountId}:${id}`,
+    accountId,
+    id,
+    universeId,
+    placeId,
+    destinationId,
+    gameName,
+    title,
+    startAt,
+    endAt,
+    eventId,
+    mode,
+    revision,
+    allowSwitch: rawRecord.allowSwitch,
+    status,
+    consentVersion,
+    consentedAt,
+    notifiedAt,
+    claimedAt,
+    completedAt,
+    resultCode,
+    createdAt,
+    updatedAt
+  };
+}
+
+function normalizeJoinSchedulerMetaRecord(rawRecord) {
+  if (
+    !rawRecord ||
+    typeof rawRecord !== "object" ||
+    Array.isArray(rawRecord) ||
+    rawRecord.recordVersion !== JOIN_SCHEDULER_RECORD_VERSION
+  ) {
+    return null;
+  }
+  if (rawRecord.key === "global") {
+    const lastAutoAttemptAt = normalizeJoinSchedulerTimestamp(
+      rawRecord.lastAutoAttemptAt,
+      true
+    );
+    return lastAutoAttemptAt === null ? null : {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: "global",
+      lastAutoAttemptAt
+    };
+  }
+  const accountId = normalizeId(rawRecord.accountId);
+  const updatedAt = normalizeJoinSchedulerTimestamp(rawRecord.updatedAt);
+  if (
+    !accountId ||
+    rawRecord.key !== `account:${accountId}` ||
+    typeof rawRecord.enabled !== "boolean" ||
+    !updatedAt
+  ) {
+    return null;
+  }
+  return {
+    recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+    key: `account:${accountId}`,
+    accountId,
+    enabled: rawRecord.enabled,
+    updatedAt
+  };
+}
+
+function normalizeJoinSchedulerSnapshot(rawSnapshot) {
+  const rawDestinations = Array.isArray(rawSnapshot?.destinations)
+    ? rawSnapshot.destinations
+    : [];
+  const rawSchedules = Array.isArray(rawSnapshot?.schedules)
+    ? rawSnapshot.schedules
+    : [];
+  const rawMeta = Array.isArray(rawSnapshot?.meta) ? rawSnapshot.meta : [];
+  const destinationsByKey = new Map();
+  for (const raw of rawDestinations) {
+    const record = normalizeJoinSchedulerDestinationRecord(raw);
+    if (!record || destinationsByKey.has(record.key)) continue;
+    destinationsByKey.set(record.key, record);
+  }
+  const schedulesByKey = new Map();
+  for (const raw of rawSchedules) {
+    const record = normalizeJoinSchedulerScheduleRecord(raw);
+    if (!record || schedulesByKey.has(record.key)) continue;
+    schedulesByKey.set(record.key, record);
+  }
+  const metaByKey = new Map();
+  for (const raw of rawMeta) {
+    const record = normalizeJoinSchedulerMetaRecord(raw);
+    if (!record || metaByKey.has(record.key)) continue;
+    metaByKey.set(record.key, record);
+  }
+  const accountUpdatedAt = new Map();
+  const touchAccount = (accountId, updatedAt) => accountUpdatedAt.set(
+    accountId,
+    Math.max(accountUpdatedAt.get(accountId) || 0, updatedAt || 0)
+  );
+  for (const record of destinationsByKey.values()) {
+    touchAccount(record.accountId, record.updatedAt);
+  }
+  for (const record of schedulesByKey.values()) {
+    touchAccount(record.accountId, record.updatedAt);
+  }
+  for (const record of metaByKey.values()) {
+    if (record.accountId) touchAccount(record.accountId, record.updatedAt);
+  }
+  const keptAccounts = new Set(
+    Array.from(accountUpdatedAt)
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, JOIN_SCHEDULER_MAX_ACCOUNTS)
+      .map(([accountId]) => accountId)
+  );
+  const limitPerAccount = (records, limit) => {
+    const byAccount = new Map();
+    for (const record of records) {
+      if (!keptAccounts.has(record.accountId)) continue;
+      if (!byAccount.has(record.accountId)) byAccount.set(record.accountId, []);
+      byAccount.get(record.accountId).push(record);
+    }
+    return Array.from(byAccount.values()).flatMap((accountRecords) =>
+      accountRecords
+        .sort((left, right) => right.updatedAt - left.updatedAt || left.id.localeCompare(right.id))
+        .slice(0, limit)
+    );
+  };
+  const meta = [];
+  const globalMeta = metaByKey.get("global");
+  if (globalMeta) meta.push(globalMeta);
+  for (const accountId of keptAccounts) {
+    meta.push(metaByKey.get(`account:${accountId}`) || {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: `account:${accountId}`,
+      accountId,
+      enabled: true,
+      updatedAt: accountUpdatedAt.get(accountId)
+    });
+  }
+  return {
+    destinations: limitPerAccount(
+      Array.from(destinationsByKey.values()),
+      JOIN_SCHEDULER_MAX_DESTINATIONS
+    ),
+    schedules: limitPerAccount(
+      Array.from(schedulesByKey.values()),
+      JOIN_SCHEDULER_MAX_SCHEDULES
+    ),
+    meta
+  };
+}
+
+function requestJoinSchedulerIdb(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
+  });
+}
+
+function openJoinSchedulerDatabase() {
+  if (joinSchedulerDbPromise) return joinSchedulerDbPromise;
+  if (!globalThis.indexedDB?.open) {
+    return Promise.reject(new JoinSchedulerError("STORAGE_UNAVAILABLE"));
+  }
+  joinSchedulerDbPromise = new Promise((resolve, reject) => {
+    const request = globalThis.indexedDB.open(
+      JOIN_SCHEDULER_DB_NAME,
+      JOIN_SCHEDULER_DB_VERSION
+    );
+    request.onupgradeneeded = (event) => {
+      const database = request.result;
+      if (event.oldVersion !== 0) {
+        request.transaction?.abort();
+        return;
+      }
+      const destinations = database.createObjectStore(
+        JOIN_SCHEDULER_DESTINATIONS_STORE,
+        { keyPath: "key" }
+      );
+      destinations.createIndex("accountId", "accountId", { unique: false });
+      const schedules = database.createObjectStore(
+        JOIN_SCHEDULER_SCHEDULES_STORE,
+        { keyPath: "key" }
+      );
+      schedules.createIndex("accountId", "accountId", { unique: false });
+      schedules.createIndex("startAt", "startAt", { unique: false });
+      database.createObjectStore(JOIN_SCHEDULER_META_STORE, { keyPath: "key" });
+    };
+    request.onsuccess = () => {
+      const database = request.result;
+      const requiredStores = [
+        JOIN_SCHEDULER_DESTINATIONS_STORE,
+        JOIN_SCHEDULER_SCHEDULES_STORE,
+        JOIN_SCHEDULER_META_STORE
+      ];
+      if (requiredStores.some((name) => !database.objectStoreNames.contains(name))) {
+        database.close();
+        reject(new JoinSchedulerError("STORAGE_SCHEMA_UNSUPPORTED"));
+        return;
+      }
+      database.onversionchange = () => {
+        database.close();
+        joinSchedulerDbPromise = null;
+      };
+      resolve(database);
+    };
+    request.onerror = () => {
+      joinSchedulerDbPromise = null;
+      reject(new JoinSchedulerError("STORAGE_UNAVAILABLE", 0, request.error));
+    };
+    request.onblocked = () => {
+      joinSchedulerDbPromise = null;
+      reject(new JoinSchedulerError("STORAGE_UNAVAILABLE"));
+    };
+  });
+  return joinSchedulerDbPromise;
+}
+
+async function readJoinSchedulerSnapshot() {
+  if (typeof joinSchedulerStorageOverride?.read === "function") {
+    return normalizeJoinSchedulerSnapshot(await joinSchedulerStorageOverride.read());
+  }
+  const database = await openJoinSchedulerDatabase();
+  const transaction = database.transaction([
+    JOIN_SCHEDULER_DESTINATIONS_STORE,
+    JOIN_SCHEDULER_SCHEDULES_STORE,
+    JOIN_SCHEDULER_META_STORE
+  ], "readonly");
+  const [destinations, schedules, meta] = await Promise.all([
+    requestJoinSchedulerIdb(
+      transaction.objectStore(JOIN_SCHEDULER_DESTINATIONS_STORE).getAll()
+    ),
+    requestJoinSchedulerIdb(
+      transaction.objectStore(JOIN_SCHEDULER_SCHEDULES_STORE).getAll()
+    ),
+    requestJoinSchedulerIdb(
+      transaction.objectStore(JOIN_SCHEDULER_META_STORE).getAll()
+    )
+  ]);
+  return normalizeJoinSchedulerSnapshot({ destinations, schedules, meta });
+}
+
+async function writeJoinSchedulerSnapshotInTransaction(snapshot) {
+  const normalized = normalizeJoinSchedulerSnapshot(snapshot);
+  const database = await openJoinSchedulerDatabase();
+  const transaction = database.transaction([
+    JOIN_SCHEDULER_DESTINATIONS_STORE,
+    JOIN_SCHEDULER_SCHEDULES_STORE,
+    JOIN_SCHEDULER_META_STORE
+  ], "readwrite");
+  const stores = [
+    [JOIN_SCHEDULER_DESTINATIONS_STORE, normalized.destinations],
+    [JOIN_SCHEDULER_SCHEDULES_STORE, normalized.schedules],
+    [JOIN_SCHEDULER_META_STORE, normalized.meta]
+  ];
+  for (const [storeName, records] of stores) {
+    const store = transaction.objectStore(storeName);
+    store.clear();
+    for (const record of records) store.put(record);
+  }
+  await new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("IndexedDB transaction failed")
+    );
+    transaction.onabort = () => reject(
+      transaction.error || new Error("IndexedDB transaction aborted")
+    );
+  });
+  return normalized;
+}
+
+async function mutateJoinSchedulerSnapshotInTransaction(mutator) {
+  const database = await openJoinSchedulerDatabase();
+  const transaction = database.transaction([
+    JOIN_SCHEDULER_DESTINATIONS_STORE,
+    JOIN_SCHEDULER_SCHEDULES_STORE,
+    JOIN_SCHEDULER_META_STORE
+  ], "readwrite");
+  const destinationStore = transaction.objectStore(
+    JOIN_SCHEDULER_DESTINATIONS_STORE
+  );
+  const scheduleStore = transaction.objectStore(JOIN_SCHEDULER_SCHEDULES_STORE);
+  const metaStore = transaction.objectStore(JOIN_SCHEDULER_META_STORE);
+  const [destinations, schedules, meta] = await Promise.all([
+    requestJoinSchedulerIdb(destinationStore.getAll()),
+    requestJoinSchedulerIdb(scheduleStore.getAll()),
+    requestJoinSchedulerIdb(metaStore.getAll())
+  ]);
+  const snapshot = normalizeJoinSchedulerSnapshot({ destinations, schedules, meta });
+  const result = mutator(snapshot);
+  const normalized = normalizeJoinSchedulerSnapshot(snapshot);
+  for (const [store, records] of [
+    [destinationStore, normalized.destinations],
+    [scheduleStore, normalized.schedules],
+    [metaStore, normalized.meta]
+  ]) {
+    store.clear();
+    for (const record of records) store.put(record);
+  }
+  await new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("IndexedDB transaction failed")
+    );
+    transaction.onabort = () => reject(
+      transaction.error || new Error("IndexedDB transaction aborted")
+    );
+  });
+  return result;
+}
+
+function mutateJoinSchedulerStorage(mutator) {
+  const operation = joinSchedulerStorageWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      if (typeof joinSchedulerStorageOverride?.mutate === "function") {
+        return joinSchedulerStorageOverride.mutate((rawSnapshot) => {
+          const snapshot = normalizeJoinSchedulerSnapshot(rawSnapshot);
+          const result = mutator(snapshot);
+          return { snapshot: normalizeJoinSchedulerSnapshot(snapshot), result };
+        });
+      }
+      return mutateJoinSchedulerSnapshotInTransaction(mutator);
+    });
+  joinSchedulerStorageWriteTail = operation.catch(() => undefined);
+  return operation;
+}
+
+function createJoinSchedulerMemoryStorageForTests(initialSnapshot = null) {
+  let snapshot = normalizeJoinSchedulerSnapshot(initialSnapshot);
+  return {
+    async read() {
+      return structuredClone(snapshot);
+    },
+    async mutate(callback) {
+      const outcome = callback(structuredClone(snapshot));
+      snapshot = normalizeJoinSchedulerSnapshot(outcome.snapshot);
+      return outcome.result;
+    },
+    getSnapshot() {
+      return structuredClone(snapshot);
+    }
+  };
+}
+
+function getJoinSchedulerAccountMeta(snapshot, accountId, now, create = false) {
+  let meta = snapshot.meta.find((record) => record.accountId === accountId) || null;
+  if (!meta && create) {
+    meta = {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: `account:${accountId}`,
+      accountId,
+      enabled: true,
+      updatedAt: now
+    };
+    snapshot.meta.push(meta);
+  }
+  return meta;
+}
+
+function getJoinSchedulerGlobalMeta(snapshot, create = false) {
+  let meta = snapshot.meta.find((record) => record.key === "global") || null;
+  if (!meta && create) {
+    meta = {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: "global",
+      lastAutoAttemptAt: 0
+    };
+    snapshot.meta.push(meta);
+  }
+  return meta;
+}
+
+function sanitizeJoinSchedulerDestination(destination) {
+  return {
+    id: destination.id,
+    universeId: destination.universeId,
+    placeId: destination.placeId,
+    gameName: destination.gameName,
+    label: destination.label,
+    type: destination.type,
+    verified: destination.verified,
+    requiresConfirmation:
+      destination.type === "private-share" && !destination.verified,
+    createdAt: destination.createdAt,
+    updatedAt: destination.updatedAt
+  };
+}
+
+function sanitizeJoinSchedulerSchedule(schedule) {
+  return {
+    id: schedule.id,
+    universeId: schedule.universeId,
+    placeId: schedule.placeId,
+    destinationId: schedule.destinationId,
+    gameName: schedule.gameName,
+    title: schedule.title,
+    startAt: schedule.startAt,
+    endAt: schedule.endAt,
+    eventId: schedule.eventId,
+    mode: schedule.mode,
+    revision: schedule.revision,
+    allowSwitch: schedule.allowSwitch,
+    status: schedule.status,
+    notifiedAt: schedule.notifiedAt,
+    completedAt: schedule.completedAt,
+    resultCode: schedule.resultCode,
+    createdAt: schedule.createdAt,
+    updatedAt: schedule.updatedAt
+  };
+}
+
+async function readJoinSchedulerAccountState(accountId) {
+  await joinSchedulerStorageWriteTail.catch(() => undefined);
+  const snapshot = await readJoinSchedulerSnapshot();
+  const meta = getJoinSchedulerAccountMeta(snapshot, accountId, joinSchedulerNow());
+  return {
+    enabled: joinSchedulerFeatureEnabled && (meta?.enabled !== false),
+    accountEnabled: meta?.enabled !== false,
+    destinations: snapshot.destinations
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .map(sanitizeJoinSchedulerDestination),
+    schedules: snapshot.schedules
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) => left.startAt - right.startAt || right.updatedAt - left.updatedAt)
+      .map(sanitizeJoinSchedulerSchedule)
+  };
+}
+
+function getJoinSchedulerFeatureValue(rawValue) {
+  return !(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === FEATURE_SETTINGS_VERSION &&
+    rawValue.flags &&
+    typeof rawValue.flags === "object" &&
+    !Array.isArray(rawValue.flags) &&
+    rawValue.flags[JOIN_SCHEDULER_FEATURE_KEY] === false
+  );
+}
+
+function applyJoinSchedulerFeatureValue(rawValue, reconcile = false) {
+  const nextEnabled = getJoinSchedulerFeatureValue(rawValue);
+  const changed = joinSchedulerFeatureReady &&
+    joinSchedulerFeatureEnabled !== nextEnabled;
+  joinSchedulerFeatureEnabled = nextEnabled;
+  joinSchedulerFeatureReady = true;
+  if (reconcile || changed) {
+    if (nextEnabled) {
+      void (reconcile === "startup"
+        ? reconcileJoinSchedulerLifecycle()
+        : ensureJoinSchedulerCoordinatorAlarm()).catch(() => undefined);
+    } else {
+      void cancelAllJoinSchedulerSchedules("feature-disabled").catch(
+        () => undefined
+      );
+    }
+  }
+}
+
+function syncJoinSchedulerFeatureFromStorage(reconcile = false) {
+  if (!chrome.storage?.local?.get) {
+    applyJoinSchedulerFeatureValue(null, reconcile);
+    return Promise.resolve();
+  }
+  const sync = new Promise((resolve) => {
+    chrome.storage.local.get(
+      { [FEATURE_SETTINGS_STORAGE_KEY]: null },
+      (result) => {
+        void chrome.runtime.lastError;
+        applyJoinSchedulerFeatureValue(
+          result?.[FEATURE_SETTINGS_STORAGE_KEY],
+          reconcile
+        );
+        resolve();
+      }
+    );
+  });
+  const tracked = sync.finally(() => {
+    if (joinSchedulerFeatureSyncPromise === tracked) {
+      joinSchedulerFeatureSyncPromise = null;
+    }
+  });
+  joinSchedulerFeatureSyncPromise = tracked;
+  return tracked;
+}
+
+async function assertJoinSchedulerFeatureEnabled(fresh = false) {
+  if (fresh || !joinSchedulerFeatureReady) {
+    await (joinSchedulerFeatureSyncPromise ||
+      syncJoinSchedulerFeatureFromStorage());
+  }
+  if (!joinSchedulerFeatureEnabled) {
+    throw new JoinSchedulerError("DISABLED");
+  }
+}
+
+function getJoinSchedulerExpectedViewerUserId(message) {
+  if (
+    message?.viewerUserId === undefined ||
+    message?.viewerUserId === null ||
+    message?.viewerUserId === ""
+  ) {
+    return null;
+  }
+  const viewerUserId = normalizeId(message.viewerUserId);
+  if (!viewerUserId) throw new JoinSchedulerError("INVALID", 400);
+  return viewerUserId;
+}
+
+async function getJoinSchedulerViewerUserId(message, fresh = false) {
+  const expected = getJoinSchedulerExpectedViewerUserId(message);
+  const override = fresh
+    ? joinSchedulerRuntimeOverrides?.fetchFreshViewerUserId
+    : joinSchedulerRuntimeOverrides?.getViewerUserId;
+  let viewerUserId;
+  if (typeof override === "function") {
+    viewerUserId = normalizeId(await override());
+  } else if (fresh) {
+    viewerUserId = await fetchFreshGameEventsViewerUserId();
+  } else {
+    viewerUserId = await getAuthenticatedViewerUserId();
+  }
+  if (!viewerUserId) throw new JoinSchedulerError("UNAUTHENTICATED", 401);
+  if (expected && expected !== viewerUserId) {
+    throw new JoinSchedulerError("ACCOUNT_CHANGED", 409, { viewerUserId });
+  }
+  return viewerUserId;
+}
+
+async function hasJoinSchedulerNotificationPermission() {
+  if (typeof joinSchedulerRuntimeOverrides?.hasNotificationPermission === "function") {
+    return joinSchedulerRuntimeOverrides.hasNotificationPermission();
+  }
+  if (!chrome.permissions?.contains || !chrome.notifications?.create) return false;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value === true);
+    };
+    try {
+      const result = chrome.permissions.contains(
+        { permissions: ["notifications"] },
+        finish
+      );
+      if (result?.then) result.then(finish, () => finish(false));
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+async function hasJoinSchedulerNotificationAuthority(accountId) {
+  try {
+    await assertJoinSchedulerFeatureEnabled(true);
+    if (!await hasJoinSchedulerNotificationPermission()) return false;
+    await getJoinSchedulerViewerUserId({ viewerUserId: accountId }, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJoinSchedulerResponseTextLimited(
+  response,
+  maxBytes = JOIN_SCHEDULER_DESTINATION_RESPONSE_MAX_BYTES
+) {
+  const contentLength = Number(response?.headers?.get?.("content-length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+  }
+  if (typeof response?.body?.getReader !== "function") {
+    const text = String(await response.text());
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+    }
+    return text;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      size += chunk.byteLength;
+      if (size > maxBytes) {
+        try { await reader.cancel(); } catch { /* best effort */ }
+        throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+      }
+      text += decoder.decode(chunk, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    try { reader.releaseLock(); } catch { /* best effort */ }
+  }
+}
+
+function parseTrustedJoinSchedulerShareResolveUrl(rawUrl, baseUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl, baseUrl);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "www.roblox.com" ||
+    url.port !== "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    !["/share", "/share/", "/share-links", "/share-links/"].includes(
+      url.pathname
+    )
+  ) {
+    return null;
+  }
+  return url;
+}
+
+async function resolveJoinSchedulerModernDestination(parsed) {
+  if (typeof joinSchedulerRuntimeOverrides?.resolveModernDestination === "function") {
+    return joinSchedulerRuntimeOverrides.resolveModernDestination(parsed);
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    JOIN_SCHEDULER_DESTINATION_RESOLVE_TIMEOUT_MS
+  );
+  let response = null;
+  let html;
+  let finalUrl = parseTrustedJoinSchedulerShareResolveUrl(parsed.canonicalUrl);
+  if (!finalUrl) throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+  try {
+    for (
+      let hop = 0;
+      hop <= JOIN_SCHEDULER_DESTINATION_REDIRECT_MAX_HOPS;
+      hop += 1
+    ) {
+      response = await fetch(finalUrl.href, {
+        method: "GET",
+        cache: "no-store",
+        credentials: "omit",
+        redirect: "manual",
+        headers: { Accept: "text/html" },
+        signal: controller.signal
+      });
+      if ([301, 302, 303, 307, 308].includes(response?.status)) {
+        const location = response?.headers?.get?.("location");
+        if (
+          hop >= JOIN_SCHEDULER_DESTINATION_REDIRECT_MAX_HOPS ||
+          typeof location !== "string" ||
+          location.length === 0 ||
+          location.length > JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH
+        ) {
+          throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+        }
+        const nextUrl = parseTrustedJoinSchedulerShareResolveUrl(
+          location,
+          finalUrl.href
+        );
+        if (!nextUrl) throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+        try { await response.body?.cancel?.(); } catch { /* best effort */ }
+        finalUrl = nextUrl;
+        continue;
+      }
+      if (!response?.ok) throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+      const reportedUrl = parseTrustedJoinSchedulerShareResolveUrl(
+        response.url || finalUrl.href,
+        finalUrl.href
+      );
+      if (!reportedUrl) throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+      finalUrl = reportedUrl;
+      html = await readJoinSchedulerResponseTextLimited(response);
+      break;
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (typeof html !== "string") {
+    throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+  }
+  let placeId = null;
+  for (const match of html.matchAll(/<meta\b[^>]{0,2000}>/gi)) {
+    const tag = match[0];
+    const name = /\bname\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] || "";
+    if (name.toLowerCase() !== "roblox:start_place_id") continue;
+    placeId = normalizeId(
+      /\bcontent\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
+    );
+    if (placeId) break;
+  }
+  if (!placeId) throw new JoinSchedulerError("PRIVATE_LINK_UNVERIFIED");
+  const universeId = await resolveGameEventsUniverseIdFromPlace(placeId);
+  return { placeId, universeId };
+}
+
+async function validateJoinSchedulerDestination(message) {
+  const universeId = normalizeId(message?.universeId);
+  const fallbackPlaceId = normalizeId(message?.placeId);
+  if (!universeId || !fallbackPlaceId) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  if (message?.url === undefined || message?.url === null || message.url === "") {
+    return {
+      type: "public",
+      universeId,
+      placeId: fallbackPlaceId,
+      verified: true,
+      requiresConfirmation: false,
+      label: "Public server"
+    };
+  }
+  const parsed = parseJoinSchedulerDestinationUrl(message.url);
+  if (parsed.type === "private-legacy") {
+    const resolvedUniverseId = await resolveGameEventsUniverseIdFromPlace(
+      parsed.placeId
+    );
+    if (resolvedUniverseId !== universeId) {
+      throw new JoinSchedulerError("PRIVATE_LINK_GAME_MISMATCH", 409);
+    }
+    return {
+      type: parsed.type,
+      universeId,
+      placeId: parsed.placeId,
+      verified: true,
+      requiresConfirmation: false,
+      label: "Private server",
+      parsed
+    };
+  }
+  try {
+    const resolved = await resolveJoinSchedulerModernDestination(parsed);
+    if (resolved.universeId !== universeId) {
+      throw new JoinSchedulerError("PRIVATE_LINK_GAME_MISMATCH", 409);
+    }
+    return {
+      type: parsed.type,
+      universeId,
+      placeId: resolved.placeId,
+      verified: true,
+      requiresConfirmation: false,
+      label: "Private server",
+      parsed
+    };
+  } catch (error) {
+    if (error instanceof JoinSchedulerError &&
+      error.code === "PRIVATE_LINK_GAME_MISMATCH") {
+      throw error;
+    }
+    return {
+      type: parsed.type,
+      universeId,
+      placeId: fallbackPlaceId,
+      verified: false,
+      requiresConfirmation: true,
+      label: "Private server (unverified)",
+      parsed
+    };
+  }
+}
+
+async function getJoinSchedulerSearchResponse(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message);
+  const query = normalizeGameEventsSearchQuery(message?.query);
+  if (!query) throw new JoinSchedulerError("INVALID", 400);
+  const rawResults = await searchGameEventsGames(query, message?.locale);
+  const results = await Promise.all(rawResults.map(async (game) => ({
+    ...game,
+    thumbnailUrl: await getThumbnail("gameUniverse", game.universeId)
+      .catch(() => null)
+  })));
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    query,
+    results
+  };
+}
+
+function pruneJoinSchedulerOrphanPublicDestinations(
+  snapshot,
+  accountId,
+  candidateIds = null
+) {
+  const candidates = candidateIds === null
+    ? null
+    : new Set(Array.from(candidateIds, (id) => String(id)));
+  const referenced = new Set(
+    snapshot.schedules
+      .filter((schedule) => schedule.accountId === accountId)
+      .map((schedule) => schedule.destinationId)
+  );
+  const removed = [];
+  snapshot.destinations = snapshot.destinations.filter((destination) => {
+    const orphan = destination.accountId === accountId &&
+      destination.type === "public" &&
+      !referenced.has(destination.id) &&
+      (candidates === null || candidates.has(destination.id));
+    if (orphan) removed.push(destination.id);
+    return !orphan;
+  });
+  return removed;
+}
+
+async function saveJoinSchedulerDestination(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const gameName = normalizeJoinSchedulerText(
+    message?.gameName,
+    JOIN_SCHEDULER_TEXT_MAX_LENGTH,
+    true
+  );
+  if (!gameName) throw new JoinSchedulerError("INVALID", 400);
+  const checked = await validateJoinSchedulerDestination(message);
+  if (checked.requiresConfirmation && message?.confirmUnverified !== true) {
+    return {
+      ok: true,
+      requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+      viewerUserId,
+      requiresConfirmation: true,
+      destination: {
+        type: checked.type,
+        universeId: checked.universeId,
+        placeId: checked.placeId,
+        verified: false,
+        requiresConfirmation: true,
+        label: checked.label
+      }
+    };
+  }
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  const now = joinSchedulerNow();
+  const destination = await mutateJoinSchedulerStorage((snapshot) => {
+    pruneJoinSchedulerOrphanPublicDestinations(snapshot, viewerUserId);
+    const accountDestinations = snapshot.destinations.filter(
+      (record) => record.accountId === viewerUserId
+    );
+    if (accountDestinations.length >= JOIN_SCHEDULER_MAX_DESTINATIONS) {
+      throw new JoinSchedulerError("DESTINATION_LIMIT_REACHED", 400);
+    }
+    const id = createJoinSchedulerRecordId("d");
+    const record = {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: `${viewerUserId}:${id}`,
+      accountId: viewerUserId,
+      id,
+      universeId: checked.universeId,
+      placeId: checked.placeId,
+      gameName,
+      label: checked.label,
+      type: checked.type,
+      secret: checked.type === "public" ? null : checked.parsed.secret,
+      verified: checked.verified,
+      confirmedUnverified: checked.requiresConfirmation,
+      createdAt: now,
+      updatedAt: now
+    };
+    snapshot.destinations.push(record);
+    getJoinSchedulerAccountMeta(snapshot, viewerUserId, now, true).updatedAt = now;
+    return record;
+  });
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    requiresConfirmation: false,
+    destination: sanitizeJoinSchedulerDestination(destination)
+  };
+}
+
+function getOrCreateJoinSchedulerPublicDestination(
+  snapshot,
+  viewerUserId,
+  game,
+  now
+) {
+  let destination = snapshot.destinations.find((record) =>
+    record.accountId === viewerUserId &&
+    record.type === "public" &&
+    record.universeId === game.universeId &&
+    record.placeId === game.placeId
+  );
+  if (destination) {
+    destination.gameName = game.gameName;
+    destination.updatedAt = now;
+    return destination;
+  }
+  if (snapshot.destinations.filter((record) =>
+    record.accountId === viewerUserId
+  ).length >= JOIN_SCHEDULER_MAX_DESTINATIONS) {
+    pruneJoinSchedulerOrphanPublicDestinations(snapshot, viewerUserId);
+    if (snapshot.destinations.filter((record) =>
+      record.accountId === viewerUserId
+    ).length >= JOIN_SCHEDULER_MAX_DESTINATIONS) {
+      throw new JoinSchedulerError("DESTINATION_LIMIT_REACHED", 400);
+    }
+  }
+  const id = createJoinSchedulerRecordId("d");
+  destination = {
+    recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+    key: `${viewerUserId}:${id}`,
+    accountId: viewerUserId,
+    id,
+    universeId: game.universeId,
+    placeId: game.placeId,
+    gameName: game.gameName,
+    label: "Public server",
+    type: "public",
+    secret: null,
+    verified: true,
+    confirmedUnverified: false,
+    createdAt: now,
+    updatedAt: now
+  };
+  snapshot.destinations.push(destination);
+  return destination;
+}
+
+async function revalidateJoinSchedulerEvent(scheduleOrDraft, now = joinSchedulerNow()) {
+  if (!scheduleOrDraft.eventId) return null;
+  if (typeof joinSchedulerRuntimeOverrides?.revalidateEvent === "function") {
+    const result = await joinSchedulerRuntimeOverrides.revalidateEvent(
+      structuredClone(scheduleOrDraft),
+      now
+    );
+    if (!result || result.ok !== true) {
+      throw new JoinSchedulerError(result?.code || "EVENT_UNAVAILABLE");
+    }
+    return result.event || null;
+  }
+  let response;
+  try {
+    response = await getGameEventsForUniverse(scheduleOrDraft.universeId, {
+      forceRefresh: true,
+      now
+    });
+  } catch {
+    throw new JoinSchedulerError("EVENT_UNAVAILABLE");
+  }
+  if (
+    !response ||
+    response.stale !== false ||
+    response.usedCachedData !== false ||
+    response.failureCode !== null
+  ) {
+    throw new JoinSchedulerError("EVENT_UNAVAILABLE");
+  }
+  const event = response.events.find((entry) =>
+    entry.id === scheduleOrDraft.eventId
+  );
+  if (!event) throw new JoinSchedulerError("EVENT_UNAVAILABLE");
+  if (
+    event.startAt !== scheduleOrDraft.startAt ||
+    event.placeId !== scheduleOrDraft.placeId ||
+    (scheduleOrDraft.endAt !== null && event.endAt !== scheduleOrDraft.endAt)
+  ) {
+    throw new JoinSchedulerError("EVENT_CHANGED", 409);
+  }
+  return event;
+}
+
+function normalizeJoinSchedulerScheduleInput(message, now = joinSchedulerNow()) {
+  const universeId = normalizeId(message?.universeId);
+  const placeId = normalizeId(message?.placeId);
+  const gameName = normalizeJoinSchedulerText(
+    message?.gameName,
+    JOIN_SCHEDULER_TEXT_MAX_LENGTH,
+    true
+  );
+  const title = normalizeJoinSchedulerText(
+    message?.title,
+    JOIN_SCHEDULER_TITLE_MAX_LENGTH,
+    true
+  );
+  const startAt = normalizeJoinSchedulerTimestamp(message?.startAt);
+  const rawEndAt = message?.endAt === null || message?.endAt === undefined ||
+    message?.endAt === "" ? 0 : normalizeJoinSchedulerTimestamp(message.endAt);
+  const endAt = rawEndAt || null;
+  const eventId = message?.eventId === null || message?.eventId === undefined ||
+    message?.eventId === "" ? null : normalizeGameEventId(message.eventId);
+  const mode = ["notify", "auto"].includes(message?.mode)
+    ? message.mode
+    : null;
+  const destinationType = ["public", "saved"].includes(message?.destinationType)
+    ? message.destinationType
+    : null;
+  if (
+    !universeId ||
+    !placeId ||
+    !gameName ||
+    !title ||
+    !startAt ||
+    startAt <= now ||
+    startAt - now > JOIN_SCHEDULER_MAX_FUTURE_MS ||
+    (endAt !== null && endAt <= startAt) ||
+    (message?.eventId !== null && message?.eventId !== undefined &&
+      message?.eventId !== "" && !eventId) ||
+    !mode ||
+    !destinationType ||
+    typeof message?.allowSwitch !== "boolean"
+  ) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  if (mode === "auto" && message?.autoJoinConsent !== true) {
+    throw new JoinSchedulerError("CONSENT_REQUIRED", 400);
+  }
+  return {
+    universeId,
+    placeId,
+    gameName,
+    title,
+    startAt,
+    endAt,
+    eventId,
+    mode,
+    allowSwitch: mode === "auto" ? message.allowSwitch : false,
+    destinationType,
+    destinationId: destinationType === "saved"
+      ? normalizeJoinSchedulerRecordId(message?.destinationId, "d")
+      : null
+  };
+}
+
+async function createJoinSchedulerSchedule(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  if (!await hasJoinSchedulerNotificationPermission()) {
+    throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED", 400);
+  }
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const initialNow = joinSchedulerNow();
+  const input = normalizeJoinSchedulerScheduleInput(message, initialNow);
+  const hasRequestedSchedule = message?.scheduleId !== undefined &&
+    message?.scheduleId !== null && message?.scheduleId !== "";
+  const requestedScheduleId = hasRequestedSchedule
+    ? normalizeJoinSchedulerRecordId(message.scheduleId, "s")
+    : null;
+  const expectedRevision = hasRequestedSchedule
+    ? normalizeJoinSchedulerRevision(message?.expectedRevision)
+    : null;
+  if (hasRequestedSchedule && (!requestedScheduleId || !expectedRevision)) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  if (input.eventId) await revalidateJoinSchedulerEvent(input, initialNow);
+  await assertJoinSchedulerFeatureEnabled(true);
+  if (!await hasJoinSchedulerNotificationPermission()) {
+    throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED", 400);
+  }
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  const armNow = joinSchedulerNow();
+  if (
+    input.startAt <= armNow ||
+    input.startAt - armNow > JOIN_SCHEDULER_MAX_FUTURE_MS
+  ) {
+    throw new JoinSchedulerError("NOT_ACTIONABLE", 409);
+  }
+  const permissionGeneration = joinSchedulerPermissionGeneration;
+  const outcome = await mutateJoinSchedulerStorage((snapshot) => {
+    if (permissionGeneration !== joinSchedulerPermissionGeneration) {
+      throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED", 400);
+    }
+    const commitNow = joinSchedulerNow();
+    if (
+      input.startAt <= commitNow ||
+      input.startAt - commitNow > JOIN_SCHEDULER_MAX_FUTURE_MS
+    ) {
+      throw new JoinSchedulerError("NOT_ACTIONABLE", 409);
+    }
+    const meta = getJoinSchedulerAccountMeta(
+      snapshot,
+      viewerUserId,
+      commitNow,
+      true
+    );
+    if (!joinSchedulerFeatureEnabled || meta.enabled === false) {
+      throw new JoinSchedulerError("DISABLED");
+    }
+    let destination;
+    if (input.destinationType === "saved") {
+      if (!input.destinationId) throw new JoinSchedulerError("INVALID", 400);
+      destination = snapshot.destinations.find((record) =>
+        record.accountId === viewerUserId && record.id === input.destinationId
+      );
+      if (!destination) throw new JoinSchedulerError("DESTINATION_NOT_FOUND", 404);
+      if (destination.universeId !== input.universeId) {
+        throw new JoinSchedulerError("DESTINATION_GAME_MISMATCH", 409);
+      }
+    } else {
+      destination = getOrCreateJoinSchedulerPublicDestination(
+        snapshot,
+        viewerUserId,
+        input,
+        commitNow
+      );
+    }
+    let existing = null;
+    if (requestedScheduleId) {
+      existing = snapshot.schedules.find((record) =>
+        record.accountId === viewerUserId && record.id === requestedScheduleId
+      );
+      if (!existing) throw new JoinSchedulerError("SCHEDULE_NOT_FOUND", 404);
+      if (existing.status !== "pending") {
+        throw new JoinSchedulerError("SCHEDULE_NOT_EDITABLE", 409);
+      }
+      if (existing.revision !== expectedRevision) {
+        throw new JoinSchedulerError("SCHEDULE_CHANGED", 409);
+      }
+    } else if (snapshot.schedules.filter((record) =>
+      record.accountId === viewerUserId
+    ).length >= JOIN_SCHEDULER_MAX_SCHEDULES) {
+      throw new JoinSchedulerError("SCHEDULE_LIMIT_REACHED", 400);
+    }
+    const id = existing?.id || createJoinSchedulerRecordId("s");
+    const previousRevision = existing?.revision || null;
+    const previousDestinationId = existing?.destinationId || null;
+    const revision = existing ? existing.revision + 1 : 1;
+    if (!normalizeJoinSchedulerRevision(revision)) {
+      throw new JoinSchedulerError("SCHEDULE_NOT_EDITABLE", 409);
+    }
+    const record = {
+      recordVersion: JOIN_SCHEDULER_RECORD_VERSION,
+      key: `${viewerUserId}:${id}`,
+      accountId: viewerUserId,
+      id,
+      universeId: input.universeId,
+      placeId: input.placeId,
+      destinationId: destination.id,
+      gameName: input.gameName,
+      title: input.title,
+      startAt: input.startAt,
+      endAt: input.endAt,
+      eventId: input.eventId,
+      mode: input.mode,
+      revision,
+      allowSwitch: input.allowSwitch,
+      status: "pending",
+      consentVersion: input.mode === "auto" ? JOIN_SCHEDULER_CONSENT_VERSION : 0,
+      consentedAt: input.mode === "auto" ? commitNow : 0,
+      notifiedAt: 0,
+      claimedAt: 0,
+      completedAt: 0,
+      resultCode: null,
+      createdAt: existing?.createdAt || commitNow,
+      updatedAt: commitNow
+    };
+    if (existing) Object.assign(existing, record);
+    else snapshot.schedules.push(record);
+    if (previousDestinationId) {
+      pruneJoinSchedulerOrphanPublicDestinations(
+        snapshot,
+        viewerUserId,
+        [previousDestinationId]
+      );
+    }
+    meta.updatedAt = commitNow;
+    return {
+      schedule: structuredClone(record),
+      previousRevision
+    };
+  });
+  const schedule = outcome.schedule;
+  if (outcome.previousRevision) {
+    await clearJoinSchedulerNotification(schedule.id, outcome.previousRevision);
+  }
+  try {
+    await assertJoinSchedulerFeatureEnabled(true);
+    if (!await hasJoinSchedulerNotificationPermission()) {
+      throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED", 400);
+    }
+    await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  } catch (error) {
+    await cancelOwnedJoinSchedulerSchedule(
+      viewerUserId,
+      schedule.id,
+      "arm-check-failed",
+      schedule.revision
+    );
+    throw error;
+  }
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    schedule: sanitizeJoinSchedulerSchedule(schedule)
+  };
+}
+
+async function cancelJoinSchedulerSchedule(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const scheduleId = normalizeJoinSchedulerRecordId(message?.scheduleId, "s");
+  const expectedRevision = normalizeJoinSchedulerRevision(
+    message?.expectedRevision
+  );
+  if (!scheduleId || !expectedRevision) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  const canceled = await cancelOwnedJoinSchedulerSchedule(
+    viewerUserId,
+    scheduleId,
+    "canceled",
+    expectedRevision
+  );
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    scheduleId,
+    canceled
+  };
+}
+
+async function cancelOwnedJoinSchedulerSchedule(
+  viewerUserId,
+  scheduleId,
+  reason = "canceled",
+  expectedRevision = null
+) {
+  const now = joinSchedulerNow();
+  const canceled = await mutateJoinSchedulerStorage((snapshot) => {
+    const schedule = snapshot.schedules.find((record) =>
+      record.accountId === viewerUserId && record.id === scheduleId
+    );
+    if (!schedule) throw new JoinSchedulerError("SCHEDULE_NOT_FOUND", 404);
+    if (expectedRevision !== null && schedule.revision !== expectedRevision) {
+      throw new JoinSchedulerError("SCHEDULE_CHANGED", 409);
+    }
+    if (["pending", "claimed"].includes(schedule.status)) {
+      schedule.status = "canceled";
+      schedule.resultCode = normalizeJoinSchedulerResultCode(reason) || "canceled";
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return true;
+    }
+    return false;
+  });
+  await clearJoinSchedulerNotification(scheduleId, expectedRevision);
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return canceled;
+}
+
+async function deleteOwnedJoinSchedulerSchedule(
+  viewerUserId,
+  scheduleId,
+  expectedRevision
+) {
+  const removed = await mutateJoinSchedulerStorage((snapshot) => {
+    const index = snapshot.schedules.findIndex((record) =>
+      record.accountId === viewerUserId && record.id === scheduleId
+    );
+    if (index < 0) return false;
+    if (snapshot.schedules[index].revision !== expectedRevision) {
+      throw new JoinSchedulerError("SCHEDULE_CHANGED", 409);
+    }
+    const destinationId = snapshot.schedules[index].destinationId;
+    snapshot.schedules.splice(index, 1);
+    pruneJoinSchedulerOrphanPublicDestinations(
+      snapshot,
+      viewerUserId,
+      [destinationId]
+    );
+    return true;
+  });
+  await clearJoinSchedulerNotification(scheduleId, expectedRevision);
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return removed;
+}
+
+async function deleteJoinSchedulerSchedule(message) {
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const scheduleId = normalizeJoinSchedulerRecordId(message?.scheduleId, "s");
+  const expectedRevision = normalizeJoinSchedulerRevision(
+    message?.expectedRevision
+  );
+  if (!scheduleId || !expectedRevision) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  const removed = await deleteOwnedJoinSchedulerSchedule(
+    viewerUserId,
+    scheduleId,
+    expectedRevision
+  );
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    scheduleId,
+    removed
+  };
+}
+
+async function deleteJoinSchedulerDestination(message) {
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const destinationId = normalizeJoinSchedulerRecordId(message?.destinationId, "d");
+  if (!destinationId) throw new JoinSchedulerError("INVALID", 400);
+  const now = joinSchedulerNow();
+  const result = await mutateJoinSchedulerStorage((snapshot) => {
+    const index = snapshot.destinations.findIndex((record) =>
+      record.accountId === viewerUserId && record.id === destinationId
+    );
+    if (index < 0) return { removed: false, canceledScheduleIds: [] };
+    snapshot.destinations.splice(index, 1);
+    const canceledScheduleIds = [];
+    for (const schedule of snapshot.schedules) {
+      if (
+        schedule.accountId === viewerUserId &&
+        schedule.destinationId === destinationId &&
+        ["pending", "claimed"].includes(schedule.status)
+      ) {
+        schedule.status = "canceled";
+        schedule.resultCode = "destination-removed";
+        schedule.completedAt = now;
+        schedule.updatedAt = now;
+        canceledScheduleIds.push(schedule.id);
+      }
+    }
+    return { removed: true, canceledScheduleIds };
+  });
+  await Promise.all(result.canceledScheduleIds.map(clearJoinSchedulerNotification));
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    destinationId,
+    removed: result.removed,
+    canceledSchedules: result.canceledScheduleIds.length
+  };
+}
+
+async function setJoinSchedulerAccountEnabled(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  if (typeof message?.enabled !== "boolean") {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const now = joinSchedulerNow();
+  const canceledIds = await mutateJoinSchedulerStorage((snapshot) => {
+    const meta = getJoinSchedulerAccountMeta(snapshot, viewerUserId, now, true);
+    meta.enabled = message.enabled;
+    meta.updatedAt = now;
+    const ids = [];
+    if (!message.enabled) {
+      for (const schedule of snapshot.schedules) {
+        if (schedule.accountId === viewerUserId &&
+          ["pending", "claimed"].includes(schedule.status)) {
+          schedule.status = "canceled";
+          schedule.resultCode = "account-disabled";
+          schedule.completedAt = now;
+          schedule.updatedAt = now;
+          ids.push(schedule.id);
+        }
+      }
+    }
+    return ids;
+  });
+  await Promise.all(canceledIds.map(clearJoinSchedulerNotification));
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    enabled: message.enabled,
+    canceledSchedules: canceledIds.length
+  };
+}
+
+function getJoinSchedulerNotificationId(scheduleId, revision = 1) {
+  const normalizedScheduleId = normalizeJoinSchedulerRecordId(scheduleId, "s");
+  const normalizedRevision = normalizeJoinSchedulerRevision(revision);
+  if (!normalizedScheduleId || !normalizedRevision) return null;
+  return `${JOIN_SCHEDULER_NOTIFICATION_PREFIX}${normalizedScheduleId}:r${normalizedRevision}`;
+}
+
+async function clearJoinSchedulerNotification(scheduleId, revision = null) {
+  const normalizedScheduleId = normalizeJoinSchedulerRecordId(scheduleId, "s");
+  const normalizedRevision = revision === null
+    ? null
+    : normalizeJoinSchedulerRevision(revision);
+  if (!normalizedScheduleId || (revision !== null && !normalizedRevision)) {
+    return false;
+  }
+  if (typeof joinSchedulerRuntimeOverrides?.clearNotification === "function") {
+    return joinSchedulerRuntimeOverrides.clearNotification(
+      normalizedScheduleId,
+      normalizedRevision
+    );
+  }
+  if (!chrome.notifications?.clear) return false;
+  const clearOne = async (notificationId) => {
+    try {
+      return await chrome.notifications.clear(notificationId);
+    } catch {
+      return false;
+    }
+  };
+  if (normalizedRevision) {
+    return clearOne(getJoinSchedulerNotificationId(
+      normalizedScheduleId,
+      normalizedRevision
+    ));
+  }
+  try {
+    if (typeof chrome.notifications.getAll === "function") {
+      const all = await chrome.notifications.getAll();
+      const prefix = `${JOIN_SCHEDULER_NOTIFICATION_PREFIX}${normalizedScheduleId}:r`;
+      const matching = Object.keys(all || {}).filter((id) => id.startsWith(prefix));
+      const cleared = await Promise.all(matching.map(clearOne));
+      await clearOne(`${JOIN_SCHEDULER_NOTIFICATION_PREFIX}${normalizedScheduleId}`);
+      return cleared.some(Boolean);
+    }
+    return clearOne(`${JOIN_SCHEDULER_NOTIFICATION_PREFIX}${normalizedScheduleId}`);
+  } catch {
+    return false;
+  }
+}
+
+async function createJoinSchedulerNotification(schedule, message = null) {
+  if (!await hasJoinSchedulerNotificationPermission()) {
+    throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED");
+  }
+  if (typeof joinSchedulerRuntimeOverrides?.createNotification === "function") {
+    return joinSchedulerRuntimeOverrides.createNotification(
+      sanitizeJoinSchedulerSchedule(schedule),
+      message
+    );
+  }
+  const when = new Date(schedule.startAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  const notificationId = getJoinSchedulerNotificationId(
+    schedule.id,
+    schedule.revision
+  );
+  await chrome.notifications.create(notificationId, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/rotool-128.png"),
+    title: `Join ${schedule.gameName}`,
+    message: message || `${schedule.title} starts at ${when}.`,
+    priority: 2,
+    requireInteraction: true,
+    buttons: [{ title: "Join now" }, { title: "Remove" }]
+  });
+  return notificationId;
+}
+
+async function clearJoinSchedulerAlarm() {
+  if (typeof joinSchedulerRuntimeOverrides?.clearAlarm === "function") {
+    return joinSchedulerRuntimeOverrides.clearAlarm();
+  }
+  if (!chrome.alarms?.clear) return false;
+  try {
+    return await chrome.alarms.clear(JOIN_SCHEDULER_ALARM_NAME);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureJoinSchedulerCoordinatorAlarm(now = joinSchedulerNow()) {
+  await joinSchedulerStorageWriteTail.catch(() => undefined);
+  if (!joinSchedulerFeatureEnabled ||
+    (!chrome.alarms?.create &&
+      typeof joinSchedulerRuntimeOverrides?.createAlarm !== "function")) {
+    await clearJoinSchedulerAlarm();
+    return null;
+  }
+  const snapshot = await readJoinSchedulerSnapshot();
+  let nextAt = Infinity;
+  for (const schedule of snapshot.schedules) {
+    if (schedule.status !== "pending") continue;
+    const meta = getJoinSchedulerAccountMeta(snapshot, schedule.accountId, now);
+    if (meta?.enabled === false) continue;
+    let candidate;
+    if (!schedule.notifiedAt) {
+      candidate = schedule.startAt - JOIN_SCHEDULER_NOTIFICATION_LEAD_MS;
+    } else if (schedule.mode === "auto") {
+      candidate = schedule.startAt;
+    } else {
+      candidate = schedule.startAt + JOIN_SCHEDULER_LATE_GRACE_MS;
+    }
+    nextAt = Math.min(nextAt, Math.max(now + 100, candidate));
+  }
+  if (!Number.isFinite(nextAt)) {
+    await clearJoinSchedulerAlarm();
+    return null;
+  }
+  if (typeof joinSchedulerRuntimeOverrides?.createAlarm === "function") {
+    await joinSchedulerRuntimeOverrides.createAlarm(nextAt);
+  } else {
+    chrome.alarms.create(JOIN_SCHEDULER_ALARM_NAME, { when: nextAt });
+  }
+  return nextAt;
+}
+
+async function getJoinSchedulerRobloxTab(placeId) {
+  if (typeof joinSchedulerRuntimeOverrides?.getRobloxTab === "function") {
+    return joinSchedulerRuntimeOverrides.getRobloxTab(placeId);
+  }
+  if (!chrome.tabs?.query) return null;
+  let tabs = [];
+  try {
+    tabs = await runJoinSchedulerBrowserApi(() =>
+      chrome.tabs.query({ url: "https://www.roblox.com/*" })
+    );
+  } catch {
+    tabs = [];
+  }
+  const candidates = (Array.isArray(tabs) ? tabs : []).filter((tab) =>
+    isSafeJoinSchedulerRobloxTab(tab)
+  );
+  const existing = candidates.find((tab) => tab.active) || candidates[0];
+  if (existing) return existing;
+  try {
+    const created = await createJoinSchedulerRobloxTabInNormalWindow(
+      `https://www.roblox.com/games/${encodeURIComponent(placeId)}`
+    );
+    if (!isSafeJoinSchedulerRobloxTab(created)) return null;
+    if (created.status === "complete" || !chrome.tabs?.onUpdated?.addListener) {
+      return created;
+    }
+    await new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        chrome.tabs.onRemoved?.removeListener?.(onRemoved);
+        resolve();
+      };
+      const onUpdated = (tabId, changeInfo) => {
+        if (tabId === created.id && changeInfo?.status === "complete") finish();
+      };
+      const onRemoved = (tabId) => {
+        if (tabId === created.id) finish();
+      };
+      chrome.tabs.onUpdated.addListener(onUpdated);
+      chrome.tabs.onRemoved?.addListener?.(onRemoved);
+      timeoutId = setTimeout(finish, 12_000);
+    });
+    return created;
+  } catch {
+    return null;
+  }
+}
+
+async function getTrustedJoinSchedulerLaunchTab(tabId) {
+  if (
+    !Number.isSafeInteger(tabId) ||
+    tabId < 0 ||
+    typeof chrome.tabs?.get !== "function"
+  ) {
+    return null;
+  }
+  try {
+    const tab = await runJoinSchedulerBrowserApi(() => chrome.tabs.get(tabId));
+    return isSafeJoinSchedulerRobloxTab(tab) ? tab : null;
+  } catch {
+    return null;
+  }
+}
+
+async function executeJoinSchedulerPublicJoin(tabId, placeId) {
+  if (typeof chrome.scripting?.executeScript !== "function") return "unavailable";
+  if (!await getTrustedJoinSchedulerLaunchTab(tabId)) return "unavailable";
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      world: "MAIN",
+      args: [Number(placeId)],
+      func: async (numericPlaceId) => {
+        const launcher = globalThis.Roblox?.GameLauncher;
+        if (typeof launcher?.joinMultiplayerGame === "function") {
+          try {
+            const result = Reflect.apply(launcher.joinMultiplayerGame, launcher, [
+              numericPlaceId
+            ]);
+            if (result && typeof result.then === "function") await result;
+            return "started";
+          } catch {
+            return "failed";
+          }
+        }
+        try {
+          const assign = globalThis.location?.assign;
+          if (typeof assign !== "function") return "unavailable";
+          Reflect.apply(assign, globalThis.location, [
+            `roblox://experiences/start?placeId=${numericPlaceId}`
+          ]);
+          return "started";
+        } catch {
+          return "failed";
+        }
+      }
+    });
+    const result = Array.isArray(results)
+      ? results.find((entry) => entry?.frameId === 0)?.result
+      : null;
+    return ["started", "unavailable", "failed"].includes(result)
+      ? result
+      : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+async function executeJoinSchedulerPrivateLegacyJoin(tabId, placeId, secret) {
+  if (!await getTrustedJoinSchedulerLaunchTab(tabId)) return "unavailable";
+  return executePrivateServerJoin(tabId, placeId, secret);
+}
+
+async function prepareJoinSchedulerDestinationLaunch(destination) {
+  const normalized = normalizeJoinSchedulerDestinationRecord(destination);
+  if (!normalized) throw new JoinSchedulerError("DESTINATION_UNAVAILABLE");
+  if (typeof joinSchedulerRuntimeOverrides?.launchDestination === "function") {
+    return { kind: "override", destination: normalized };
+  }
+  if (normalized.type === "private-share") {
+    return { kind: "private-share", destination: normalized };
+  }
+  const tab = await getJoinSchedulerRobloxTab(normalized.placeId);
+  if (!Number.isSafeInteger(tab?.id)) {
+    return { kind: "unavailable", destination: normalized };
+  }
+  return { kind: normalized.type, destination: normalized, tabId: tab.id };
+}
+
+function executePreparedJoinSchedulerDestination(prepared) {
+  try {
+    if (prepared?.kind === "override") {
+      return Promise.resolve(joinSchedulerRuntimeOverrides.launchDestination(
+        structuredClone(prepared.destination)
+      ));
+    }
+    if (prepared?.kind === "private-share") {
+      return createJoinSchedulerRobloxTabInNormalWindow(
+        `https://www.roblox.com/share?code=${encodeURIComponent(prepared.destination.secret)}&type=Server`,
+        { requireKnownNormalWindow: true }
+      ).then((tab) => isSafeJoinSchedulerRobloxTab(tab) ? "started" : "failed", () => "failed");
+    }
+    if (prepared?.kind === "private-legacy") {
+      return executeJoinSchedulerPrivateLegacyJoin(
+        prepared.tabId,
+        prepared.destination.placeId,
+        prepared.destination.secret
+      );
+    }
+    if (prepared?.kind === "public") {
+      return executeJoinSchedulerPublicJoin(
+        prepared.tabId,
+        prepared.destination.placeId
+      );
+    }
+    return Promise.resolve("unavailable");
+  } catch {
+    return Promise.resolve("failed");
+  }
+}
+
+async function launchJoinSchedulerDestination(destination) {
+  const prepared = await prepareJoinSchedulerDestinationLaunch(destination);
+  return executePreparedJoinSchedulerDestination(prepared);
+}
+
+async function getJoinSchedulerPresence(viewerUserId) {
+  if (typeof joinSchedulerRuntimeOverrides?.getPresence === "function") {
+    return joinSchedulerRuntimeOverrides.getPresence(viewerUserId);
+  }
+  return fetchServerHistoryPresence(viewerUserId);
+}
+
+async function assertJoinSchedulerDestinationFresh(destination) {
+  const normalized = normalizeJoinSchedulerDestinationRecord(destination);
+  if (!normalized) throw new JoinSchedulerError("DESTINATION_UNAVAILABLE");
+  if (normalized.type === "private-legacy") {
+    try {
+      const universeId = await resolveGameEventsUniverseIdFromPlace(
+        normalized.placeId
+      );
+      if (universeId !== normalized.universeId) {
+        throw new JoinSchedulerError("DESTINATION_GAME_MISMATCH");
+      }
+    } catch (error) {
+      if (error instanceof JoinSchedulerError) throw error;
+      throw new JoinSchedulerError("DESTINATION_UNAVAILABLE");
+    }
+  } else if (normalized.type === "private-share" && normalized.verified) {
+    const parsed = {
+      type: normalized.type,
+      secret: normalized.secret,
+      canonicalUrl: `https://www.roblox.com/share?code=${encodeURIComponent(normalized.secret)}&type=Server`
+    };
+    try {
+      const resolved = await resolveJoinSchedulerModernDestination(parsed);
+      if (resolved.universeId !== normalized.universeId) {
+        throw new JoinSchedulerError("DESTINATION_GAME_MISMATCH");
+      }
+    } catch (error) {
+      if (error instanceof JoinSchedulerError &&
+        error.code === "DESTINATION_GAME_MISMATCH") throw error;
+      throw new JoinSchedulerError("DESTINATION_UNAVAILABLE");
+    }
+  }
+  return normalized;
+}
+
+async function finalizeJoinSchedulerSchedule(
+  accountId,
+  scheduleId,
+  expectedRevision,
+  expectedClaimedAt,
+  status,
+  resultCode,
+  now = joinSchedulerNow()
+) {
+  return mutateJoinSchedulerStorage((snapshot) => {
+    const schedule = snapshot.schedules.find((record) =>
+      record.accountId === accountId && record.id === scheduleId
+    );
+    if (
+      !schedule ||
+      schedule.status !== "claimed" ||
+      schedule.revision !== expectedRevision ||
+      schedule.claimedAt !== expectedClaimedAt
+    ) return null;
+    schedule.status = status;
+    schedule.resultCode = normalizeJoinSchedulerResultCode(resultCode) || "failed";
+    schedule.completedAt = now;
+    schedule.updatedAt = now;
+    return schedule;
+  });
+}
+
+async function claimJoinSchedulerSchedule(
+  accountId,
+  scheduleId,
+  automatic,
+  expectedRevision,
+  expectedPermissionGeneration = joinSchedulerPermissionGeneration
+) {
+  return mutateJoinSchedulerStorage((snapshot) => {
+    const now = joinSchedulerNow();
+    const schedule = snapshot.schedules.find((record) =>
+      record.accountId === accountId && record.id === scheduleId
+    );
+    const allowedStatuses = automatic
+      ? ["pending"]
+      : ["pending", "failed", "missed"];
+    if (!schedule || !allowedStatuses.includes(schedule.status)) {
+      return { code: "not-actionable", schedule: null, destination: null };
+    }
+    if (schedule.revision !== expectedRevision) {
+      return { code: "schedule-changed", schedule: null, destination: null };
+    }
+    const accountMeta = getJoinSchedulerAccountMeta(snapshot, accountId, now);
+    if (!joinSchedulerFeatureEnabled || accountMeta?.enabled === false) {
+      return { code: "disabled", schedule: null, destination: null };
+    }
+    if (automatic &&
+      expectedPermissionGeneration !== joinSchedulerPermissionGeneration) {
+      schedule.status = "canceled";
+      schedule.resultCode = "notifications-permission-removed";
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return { code: "notifications-permission-removed", schedule, destination: null };
+    }
+    if (automatic && (
+      schedule.mode !== "auto" ||
+      schedule.consentVersion !== JOIN_SCHEDULER_CONSENT_VERSION ||
+      !schedule.consentedAt
+    )) {
+      schedule.status = "failed";
+      schedule.resultCode = "consent-required";
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return { code: "consent-required", schedule, destination: null };
+    }
+    if (automatic && now < schedule.startAt) {
+      return { code: "not-due", schedule: null, destination: null };
+    }
+    if (automatic && now - schedule.startAt > JOIN_SCHEDULER_LATE_GRACE_MS) {
+      schedule.status = "missed";
+      schedule.resultCode = "missed";
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return { code: "missed", schedule, destination: null };
+    }
+    const destination = snapshot.destinations.find((record) =>
+      record.accountId === accountId && record.id === schedule.destinationId
+    );
+    if (!destination) {
+      schedule.status = "failed";
+      schedule.resultCode = "destination-missing";
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return { code: "destination-missing", schedule, destination: null };
+    }
+    if (automatic) {
+      const globalMeta = getJoinSchedulerGlobalMeta(snapshot, true);
+      if (
+        globalMeta.lastAutoAttemptAt &&
+        globalMeta.lastAutoAttemptAt <= now &&
+        now - globalMeta.lastAutoAttemptAt < JOIN_SCHEDULER_AUTO_COLLISION_MS &&
+        schedule.consentedAt < globalMeta.lastAutoAttemptAt
+      ) {
+        schedule.status = "failed";
+        schedule.resultCode = "collision";
+        schedule.completedAt = now;
+        schedule.updatedAt = now;
+        return { code: "collision", schedule, destination };
+      }
+      globalMeta.lastAutoAttemptAt = now;
+    }
+    schedule.status = "claimed";
+    schedule.claimedAt = now;
+    schedule.completedAt = 0;
+    schedule.resultCode = null;
+    schedule.updatedAt = now;
+    return {
+      code: "claimed",
+      schedule: structuredClone(schedule),
+      destination: structuredClone(destination)
+    };
+  });
+}
+
+function joinSchedulerDestinationsMatch(left, right) {
+  if (!left || !right) return false;
+  return [
+    "key",
+    "accountId",
+    "id",
+    "universeId",
+    "placeId",
+    "gameName",
+    "label",
+    "type",
+    "secret",
+    "verified",
+    "confirmedUnverified",
+    "createdAt",
+    "updatedAt"
+  ].every((field) => left[field] === right[field]);
+}
+
+async function authorizeJoinSchedulerLaunch(
+  accountId,
+  scheduleId,
+  claim,
+  automatic,
+  expectedPermissionGeneration
+) {
+  return mutateJoinSchedulerStorage((snapshot) => {
+    const now = joinSchedulerNow();
+    const schedule = snapshot.schedules.find((record) =>
+      record.accountId === accountId && record.id === scheduleId
+    );
+    if (!schedule || schedule.status !== "claimed") {
+      return { code: "canceled-before-launch", schedule: null, destination: null };
+    }
+    if (
+      schedule.revision !== claim.schedule.revision ||
+      schedule.claimedAt !== claim.schedule.claimedAt ||
+      schedule.destinationId !== claim.schedule.destinationId
+    ) {
+      return { code: "schedule-changed", schedule: null, destination: null };
+    }
+    const fail = (status, code) => {
+      schedule.status = status;
+      schedule.resultCode = code;
+      schedule.completedAt = now;
+      schedule.updatedAt = now;
+      return { code, schedule: structuredClone(schedule), destination: null };
+    };
+    const accountMeta = getJoinSchedulerAccountMeta(snapshot, accountId, now);
+    if (!joinSchedulerFeatureEnabled || accountMeta?.enabled === false) {
+      return fail("canceled", "disabled");
+    }
+    if (automatic &&
+      expectedPermissionGeneration !== joinSchedulerPermissionGeneration) {
+      return fail("canceled", "notifications-permission-removed");
+    }
+    if (automatic && (
+      schedule.mode !== "auto" ||
+      schedule.consentVersion !== JOIN_SCHEDULER_CONSENT_VERSION ||
+      !schedule.consentedAt
+    )) {
+      return fail("failed", "consent-required");
+    }
+    if (automatic && now < schedule.startAt) {
+      return fail("failed", "not-due");
+    }
+    if (automatic && now - schedule.startAt > JOIN_SCHEDULER_LATE_GRACE_MS) {
+      return fail("missed", "missed");
+    }
+    const destination = snapshot.destinations.find((record) =>
+      record.accountId === accountId && record.id === schedule.destinationId
+    );
+    if (!destination ||
+      !joinSchedulerDestinationsMatch(destination, claim.destination)) {
+      return fail("failed", "destination-changed");
+    }
+    return {
+      code: "authorized",
+      schedule: structuredClone(schedule),
+      destination: structuredClone(destination)
+    };
+  });
+}
+
+async function attemptJoinSchedulerSchedule(
+  accountId,
+  scheduleId,
+  options = {}
+) {
+  const automatic = options.automatic === true;
+  await assertJoinSchedulerFeatureEnabled(true);
+  const before = await readJoinSchedulerSnapshot();
+  const schedule = before.schedules.find((record) =>
+    record.accountId === accountId && record.id === scheduleId
+  );
+  const destination = schedule && before.destinations.find((record) =>
+    record.accountId === accountId && record.id === schedule.destinationId
+  );
+  if (!schedule || !destination) {
+    throw new JoinSchedulerError("SCHEDULE_NOT_FOUND", 404);
+  }
+  const expectedRevision = normalizeJoinSchedulerRevision(
+    options.expectedRevision
+  ) || schedule.revision;
+  if (schedule.revision !== expectedRevision) {
+    throw new JoinSchedulerError("SCHEDULE_CHANGED", 409);
+  }
+  if (automatic && !await hasJoinSchedulerNotificationPermission()) {
+    throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED", 400);
+  }
+  const permissionGeneration = joinSchedulerPermissionGeneration;
+  const claim = await claimJoinSchedulerSchedule(
+    accountId,
+    scheduleId,
+    automatic,
+    expectedRevision,
+    permissionGeneration
+  );
+  if (claim.code === "collision") {
+    await createJoinSchedulerNotification(
+      claim.schedule,
+      "Another scheduled join just ran. Use Join now if you still want to switch."
+    ).catch(() => undefined);
+    return { code: "collision", schedule: claim.schedule };
+  }
+  if (claim.code !== "claimed") {
+    if (["missed", "notifications-permission-removed"].includes(claim.code)) {
+      return { code: claim.code, schedule: claim.schedule };
+    }
+    throw new JoinSchedulerError(claim.code.toUpperCase().replaceAll("-", "_"), 409);
+  }
+  let resultCode = "failed";
+  try {
+    await assertJoinSchedulerFeatureEnabled(true);
+    await getJoinSchedulerViewerUserId({ viewerUserId: accountId }, true);
+    if (claim.schedule.eventId) {
+      await revalidateJoinSchedulerEvent(claim.schedule, joinSchedulerNow());
+    }
+    await assertJoinSchedulerDestinationFresh(claim.destination);
+    const presence = await getJoinSchedulerPresence(accountId);
+    let shouldLaunch = false;
+    if (presence?.kind === "in-game") {
+      const sameUniverse = presence.universeId
+        ? presence.universeId === claim.schedule.universeId
+        : presence.placeId === claim.schedule.placeId;
+      if (sameUniverse) {
+        resultCode = "already-in-game";
+      } else if (automatic && !claim.schedule.allowSwitch) {
+        resultCode = "switch-not-allowed";
+      } else {
+        shouldLaunch = true;
+      }
+    } else if (presence?.kind === "not-in-game") {
+      shouldLaunch = true;
+    } else {
+      resultCode = "presence-unavailable";
+    }
+    if (shouldLaunch) {
+      const prepared = await prepareJoinSchedulerDestinationLaunch(
+        claim.destination
+      );
+      await assertJoinSchedulerFeatureEnabled(true);
+      await getJoinSchedulerViewerUserId({ viewerUserId: accountId }, true);
+      if (automatic && !await hasJoinSchedulerNotificationPermission()) {
+        resultCode = "notifications-permission-removed";
+        shouldLaunch = false;
+      }
+      if (shouldLaunch) {
+        const authorization = await authorizeJoinSchedulerLaunch(
+          accountId,
+          scheduleId,
+          claim,
+          automatic,
+          permissionGeneration
+        );
+        if (authorization.code !== "authorized") {
+          resultCode = authorization.code;
+        } else {
+          resultCode = await executePreparedJoinSchedulerDestination(prepared);
+        }
+      }
+    }
+  } catch (error) {
+    resultCode = normalizeJoinSchedulerResultCode(
+      String(error?.code || "failed").toLowerCase().replaceAll("_", "-")
+    ) || "failed";
+  }
+  const succeeded = ["started", "already-in-game"].includes(resultCode);
+  const finalized = await finalizeJoinSchedulerSchedule(
+    accountId,
+    scheduleId,
+    claim.schedule.revision,
+    claim.schedule.claimedAt,
+    succeeded ? "completed" : "failed",
+    resultCode
+  );
+  if (succeeded) {
+    await clearJoinSchedulerNotification(scheduleId, claim.schedule.revision);
+  }
+  return { code: resultCode, schedule: finalized || claim.schedule };
+}
+
+async function attemptJoinSchedulerDestination(accountId, destinationId) {
+  await assertJoinSchedulerFeatureEnabled(true);
+  await getJoinSchedulerViewerUserId({ viewerUserId: accountId }, true);
+  const snapshot = await readJoinSchedulerSnapshot();
+  const destination = snapshot.destinations.find((record) =>
+    record.accountId === accountId && record.id === destinationId
+  );
+  if (!destination) throw new JoinSchedulerError("DESTINATION_NOT_FOUND", 404);
+  const fresh = await assertJoinSchedulerDestinationFresh(destination);
+  await getJoinSchedulerViewerUserId({ viewerUserId: accountId }, true);
+  return launchJoinSchedulerDestination(fresh);
+}
+
+async function markJoinSchedulerSchedules(
+  predicate,
+  status,
+  resultCode,
+  now = joinSchedulerNow()
+) {
+  const ids = await mutateJoinSchedulerStorage((snapshot) => {
+    const changed = [];
+    for (const schedule of snapshot.schedules) {
+      if (["pending", "claimed"].includes(schedule.status) && predicate(schedule)) {
+        schedule.status = status;
+        schedule.resultCode = resultCode;
+        schedule.completedAt = now;
+        schedule.updatedAt = now;
+        changed.push(schedule.id);
+      }
+    }
+    return changed;
+  });
+  await Promise.all(ids.map(clearJoinSchedulerNotification));
+  return ids;
+}
+
+async function cancelAllJoinSchedulerSchedules(reason = "feature-disabled") {
+  const ids = await markJoinSchedulerSchedules(
+    () => true,
+    "canceled",
+    normalizeJoinSchedulerResultCode(reason) || "canceled"
+  );
+  await clearJoinSchedulerAlarm();
+  return ids.length;
+}
+
+async function recoverInterruptedJoinSchedulerClaims() {
+  return markJoinSchedulerSchedules(
+    (schedule) => schedule.status === "claimed",
+    "failed",
+    "interrupted"
+  );
+}
+
+async function reconcileJoinSchedulerLifecycle() {
+  await recoverInterruptedJoinSchedulerClaims();
+  return ensureJoinSchedulerCoordinatorAlarm();
+}
+
+async function runJoinSchedulerCoordinator(rawNow = null) {
+  if (joinSchedulerCoordinatorPromise) return joinSchedulerCoordinatorPromise;
+  joinSchedulerCoordinatorPromise = (async () => {
+    const now = normalizeJoinSchedulerTimestamp(rawNow) || joinSchedulerNow();
+    try {
+      await assertJoinSchedulerFeatureEnabled(true);
+    } catch (error) {
+      if (error?.code === "DISABLED") await cancelAllJoinSchedulerSchedules();
+      return { processed: 0, code: error?.code || "UNAVAILABLE" };
+    }
+    if (!await hasJoinSchedulerNotificationPermission()) {
+      const canceled = await cancelAllJoinSchedulerSchedules(
+        "notifications-permission-removed"
+      );
+      return { processed: canceled, code: "NOTIFICATIONS_REQUIRED" };
+    }
+    let activeViewerUserId = null;
+    try {
+      activeViewerUserId = await getJoinSchedulerViewerUserId({}, true);
+    } catch {
+      // Due schedules are disarmed below; they must not launch late after sign-in.
+    }
+    const snapshot = await readJoinSchedulerSnapshot();
+    const due = snapshot.schedules
+      .filter((schedule) => schedule.status === "pending" &&
+        schedule.startAt - JOIN_SCHEDULER_NOTIFICATION_LEAD_MS <= now)
+      .sort((left, right) => left.startAt - right.startAt ||
+        left.id.localeCompare(right.id));
+    let processed = 0;
+    for (const stale of due) {
+      const current = (await readJoinSchedulerSnapshot()).schedules.find(
+        (record) => record.key === stale.key
+      );
+      if (!current || current.status !== "pending") continue;
+      const expectedRevision = current.revision;
+      const matchesPendingRevision = (schedule) =>
+        schedule.key === current.key &&
+        schedule.revision === expectedRevision &&
+        schedule.status === "pending";
+      const accountState = await readJoinSchedulerAccountState(current.accountId);
+      if (!accountState.enabled) {
+        await markJoinSchedulerSchedules(
+          matchesPendingRevision,
+          "canceled",
+          "disabled",
+          joinSchedulerNow()
+        );
+        processed += 1;
+        continue;
+      }
+      if (!activeViewerUserId || activeViewerUserId !== current.accountId) {
+        await markJoinSchedulerSchedules(
+          matchesPendingRevision,
+          "failed",
+          "account-not-active",
+          joinSchedulerNow()
+        );
+        processed += 1;
+        continue;
+      }
+      if (joinSchedulerNow() - current.startAt > JOIN_SCHEDULER_LATE_GRACE_MS) {
+        await markJoinSchedulerSchedules(
+          matchesPendingRevision,
+          "missed",
+          "missed",
+          joinSchedulerNow()
+        );
+        processed += 1;
+        continue;
+      }
+      try {
+        await revalidateJoinSchedulerEvent(current, joinSchedulerNow());
+      } catch (error) {
+        await markJoinSchedulerSchedules(
+          matchesPendingRevision,
+          "failed",
+          error?.code === "EVENT_CHANGED" ? "event-changed" : "event-unavailable",
+          joinSchedulerNow()
+        );
+        processed += 1;
+        continue;
+      }
+      if (!current.notifiedAt) {
+        let notificationCreated = false;
+        try {
+          if (!await hasJoinSchedulerNotificationAuthority(current.accountId)) {
+            await clearJoinSchedulerNotification(current.id, expectedRevision);
+            continue;
+          }
+          await createJoinSchedulerNotification(current);
+          notificationCreated = true;
+          if (!await hasJoinSchedulerNotificationAuthority(current.accountId)) {
+            await clearJoinSchedulerNotification(current.id, expectedRevision);
+            continue;
+          }
+          const recorded = await mutateJoinSchedulerStorage((nextSnapshot) => {
+            const notificationNow = joinSchedulerNow();
+            const record = nextSnapshot.schedules.find((entry) =>
+              entry.key === current.key &&
+              entry.revision === expectedRevision &&
+              entry.status === "pending"
+            );
+            if (
+              record &&
+              !record.notifiedAt &&
+              record.startAt - JOIN_SCHEDULER_NOTIFICATION_LEAD_MS <=
+                notificationNow &&
+              notificationNow - record.startAt <= JOIN_SCHEDULER_LATE_GRACE_MS
+            ) {
+              record.notifiedAt = notificationNow;
+              record.updatedAt = notificationNow;
+              return true;
+            }
+            return false;
+          });
+          if (!recorded) {
+            await clearJoinSchedulerNotification(current.id, expectedRevision);
+          }
+        } catch {
+          if (notificationCreated) {
+            await clearJoinSchedulerNotification(current.id, expectedRevision);
+          }
+          if (!await hasJoinSchedulerNotificationAuthority(current.accountId)) {
+            continue;
+          }
+          await markJoinSchedulerSchedules(
+            matchesPendingRevision,
+            "failed",
+            "notification-failed",
+            joinSchedulerNow()
+          );
+          processed += 1;
+          continue;
+        }
+      }
+      if (current.mode === "auto" && joinSchedulerNow() >= current.startAt) {
+        try {
+          await attemptJoinSchedulerSchedule(current.accountId, current.id, {
+            automatic: true,
+            expectedRevision
+          });
+        } catch (error) {
+          if (!["SCHEDULE_CHANGED", "NOT_DUE", "NOT_ACTIONABLE"].includes(
+            error?.code
+          )) {
+            await markJoinSchedulerSchedules(
+              matchesPendingRevision,
+              "failed",
+              normalizeJoinSchedulerResultCode(
+                String(error?.code || "failed").toLowerCase().replaceAll("_", "-")
+              ) || "failed",
+              joinSchedulerNow()
+            );
+          }
+        }
+        processed += 1;
+      } else if (current.mode === "notify" &&
+        joinSchedulerNow() >= current.startAt + JOIN_SCHEDULER_LATE_GRACE_MS) {
+        await markJoinSchedulerSchedules(
+          matchesPendingRevision,
+          "missed",
+          "missed",
+          joinSchedulerNow()
+        );
+        processed += 1;
+      }
+    }
+    await ensureJoinSchedulerCoordinatorAlarm(joinSchedulerNow());
+    return { processed, code: "OK" };
+  })().finally(() => {
+    joinSchedulerCoordinatorPromise = null;
+  });
+  return joinSchedulerCoordinatorPromise;
+}
+
+async function getJoinSchedulerStateResponse(message) {
+  if (!joinSchedulerFeatureReady) await syncJoinSchedulerFeatureFromStorage();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const state = await readJoinSchedulerAccountState(viewerUserId);
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    ...state
+  };
+}
+
+async function validateJoinSchedulerDestinationResponse(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const checked = await validateJoinSchedulerDestination(message);
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    destination: {
+      type: checked.type,
+      universeId: checked.universeId,
+      placeId: checked.placeId,
+      verified: checked.verified,
+      requiresConfirmation: checked.requiresConfirmation,
+      label: checked.label
+    }
+  };
+}
+
+async function joinNowJoinSchedulerResponse(message) {
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  if (message?.testOnly === true) {
+    const destinationId = normalizeJoinSchedulerRecordId(
+      message?.destinationId,
+      "d"
+    );
+    if (!destinationId) throw new JoinSchedulerError("INVALID", 400);
+    const code = await attemptJoinSchedulerDestination(viewerUserId, destinationId);
+    return {
+      ok: code === "started",
+      requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+      viewerUserId,
+      destinationId,
+      code
+    };
+  }
+  const scheduleId = normalizeJoinSchedulerRecordId(message?.scheduleId, "s");
+  const expectedRevision = normalizeJoinSchedulerRevision(
+    message?.expectedRevision
+  );
+  if (!scheduleId || !expectedRevision) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  const result = await attemptJoinSchedulerSchedule(viewerUserId, scheduleId, {
+    automatic: false,
+    expectedRevision
+  });
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return {
+    ok: ["started", "already-in-game"].includes(result.code),
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    scheduleId,
+    code: result.code,
+    schedule: result.schedule
+      ? sanitizeJoinSchedulerSchedule(result.schedule)
+      : null
+  };
+}
+
+async function dispatchJoinSchedulerContentMessage(message) {
+  const operations = new Map([
+    [JOIN_SCHEDULER_MESSAGE_TYPES.getState,
+      () => getJoinSchedulerStateResponse(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.searchGames,
+      () => getJoinSchedulerSearchResponse(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.validateDestination,
+      () => validateJoinSchedulerDestinationResponse(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.saveDestination,
+      () => saveJoinSchedulerDestination(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.deleteDestination,
+      () => deleteJoinSchedulerDestination(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.createSchedule,
+      () => createJoinSchedulerSchedule(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.cancelSchedule,
+      () => cancelJoinSchedulerSchedule(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.deleteSchedule,
+      () => deleteJoinSchedulerSchedule(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.joinNow,
+      () => joinNowJoinSchedulerResponse(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.setEnabled,
+      () => setJoinSchedulerAccountEnabled(message)]
+  ]);
+  const operation = operations.get(message?.type);
+  if (!operation) throw new JoinSchedulerError("INVALID", 400);
+  return operation();
+}
+
+function getJoinSchedulerErrorCode(error) {
+  if (error instanceof JoinSchedulerError && typeof error.code === "string") {
+    return error.code;
+  }
+  if (error?.status === 401) return "UNAUTHENTICATED";
+  if (error?.status === 429) return "RATE_LIMITED";
+  if (error?.name === "AbortError" || error instanceof TypeError) return "NETWORK";
+  return "UNAVAILABLE";
+}
+
+function sendJoinSchedulerError(message, error, sendResponse) {
+  const code = getJoinSchedulerErrorCode(error);
+  if (["UNAUTHENTICATED", "ACCOUNT_CHANGED"].includes(code)) {
+    authenticatedUserRequest = null;
+  }
+  sendResponse({
+    ok: false,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    enabled: code === "DISABLED" ? false : joinSchedulerFeatureEnabled,
+    code,
+    viewerUserId: normalizeId(error?.details?.viewerUserId)
+  });
+}
+
+function getTrustedJoinSchedulerContentTabId(sender) {
+  if (sender?.id !== chrome.runtime.id || sender?.tab?.incognito === true) {
+    return null;
+  }
+  return getTrustedRobloxTopFrameTabId(sender);
+}
+
+function handleJoinSchedulerNotificationPermissionRequest(
+  message,
+  sender,
+  sendResponse
+) {
+  if (message?.type !== JOIN_SCHEDULER_MESSAGE_TYPES.requestNotificationPermission) {
+    return false;
+  }
+  const messageKeys = message && typeof message === "object" && !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const hasExactMessageShape =
+    messageKeys.length === 2 &&
+    messageKeys[0] === "requestId" &&
+    messageKeys[1] === "type";
+  const requestId = normalizeJoinSchedulerRequestId(message?.requestId);
+  const tabId = getTrustedJoinSchedulerContentTabId(sender);
+  if (!hasExactMessageShape || requestId === null || tabId === null) {
+    sendResponse({
+      ok: false,
+      requestId: requestId || 0,
+      enabled: joinSchedulerFeatureEnabled,
+      code: "INVALID"
+    });
+    return false;
+  }
+  // permissions.request must be invoked in this synchronous onMessage turn so
+  // Chromium can propagate the submit button's user activation from the
+  // content script. Do not insert storage reads or another awaited task here.
+  if (!joinSchedulerFeatureReady) {
+    sendResponse({
+      ok: false,
+      requestId,
+      enabled: joinSchedulerFeatureEnabled,
+      code: "UNAVAILABLE"
+    });
+    return false;
+  }
+  if (!joinSchedulerFeatureEnabled) {
+    sendResponse({
+      ok: false,
+      requestId,
+      enabled: false,
+      code: "DISABLED"
+    });
+    return false;
+  }
+  if (typeof chrome.permissions?.request !== "function") {
+    sendResponse({
+      ok: false,
+      requestId,
+      enabled: true,
+      code: "UNAVAILABLE"
+    });
+    return false;
+  }
+
+  let settled = false;
+  const finish = (granted, code = null) => {
+    if (settled) return;
+    settled = true;
+    const allowed = granted === true;
+    sendResponse({
+      ok: allowed,
+      requestId,
+      enabled: true,
+      granted: allowed,
+      ...(allowed ? {} : { code: code || "PERMISSION_DENIED" })
+    });
+  };
+  try {
+    const returned = chrome.permissions.request(
+      { permissions: ["notifications"] },
+      (granted) => {
+        const runtimeError = chrome.runtime?.lastError;
+        finish(granted, runtimeError ? "UNAVAILABLE" : null);
+      }
+    );
+    if (returned && typeof returned.then === "function") {
+      returned.then(
+        (granted) => finish(granted),
+        () => finish(false, "UNAVAILABLE")
+      );
+    }
+  } catch {
+    finish(false, "UNAVAILABLE");
+  }
+  return true;
+}
+
+function handleJoinSchedulerContentMessage(message, sender, sendResponse) {
+  if (!Object.values(JOIN_SCHEDULER_MESSAGE_TYPES).includes(message?.type)) {
+    return false;
+  }
+  const requestId = normalizeJoinSchedulerRequestId(message?.requestId);
+  const tabId = getTrustedJoinSchedulerContentTabId(sender);
+  if (
+    requestId === null ||
+    tabId === null ||
+    message.type === JOIN_SCHEDULER_MESSAGE_TYPES.requestNotificationPermission
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId || 0,
+      enabled: joinSchedulerFeatureEnabled,
+      code: "INVALID"
+    });
+    return false;
+  }
+  dispatchJoinSchedulerContentMessage({ ...message, requestId })
+    .then(sendResponse)
+    .catch((error) => sendJoinSchedulerError(message, error, sendResponse));
+  return true;
+}
+
+function parseJoinSchedulerNotificationId(notificationId) {
+  if (typeof notificationId !== "string" ||
+    !notificationId.startsWith(JOIN_SCHEDULER_NOTIFICATION_PREFIX)) {
+    return null;
+  }
+  const value = notificationId.slice(JOIN_SCHEDULER_NOTIFICATION_PREFIX.length);
+  const match = /^(s_[0-9a-f]{32}):r([1-9]\d*)$/.exec(value);
+  if (!match) return null;
+  const scheduleId = normalizeJoinSchedulerRecordId(match[1], "s");
+  const revision = normalizeJoinSchedulerRevision(match[2]);
+  return scheduleId && revision ? { scheduleId, revision } : null;
+}
+
+function getJoinSchedulerScheduleIdFromNotification(notificationId) {
+  return parseJoinSchedulerNotificationId(notificationId)?.scheduleId || null;
+}
+
+async function getJoinSchedulerScheduleOwner(scheduleId, expectedRevision) {
+  const snapshot = await readJoinSchedulerSnapshot();
+  return snapshot.schedules.find((record) =>
+    record.id === scheduleId && record.revision === expectedRevision
+  ) || null;
+}
+
+function sendJoinSchedulerShowMessageToTab(
+  tabId,
+  timeoutMs = JOIN_SCHEDULER_SHOW_MESSAGE_TIMEOUT_MS
+) {
+  if (!Number.isSafeInteger(tabId) || tabId < 0 || !chrome.tabs?.sendMessage) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (response, runtimeFailed = false) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(
+        !runtimeFailed &&
+        response?.ok === true &&
+        response?.type === JOIN_SCHEDULER_SHOW_MESSAGE_TYPE
+      );
+    };
+    const timeoutId = setTimeout(
+      () => finish(null, true),
+      Math.max(100, timeoutMs)
+    );
+    try {
+      const returned = chrome.tabs.sendMessage(
+        tabId,
+        { type: JOIN_SCHEDULER_SHOW_MESSAGE_TYPE },
+        { frameId: 0 },
+        (response) => finish(response, Boolean(chrome.runtime?.lastError))
+      );
+      if (returned && typeof returned.then === "function") {
+        returned.then(
+          (response) => finish(response),
+          () => finish(null, true)
+        );
+      }
+    } catch {
+      finish(null, true);
+    }
+  });
+}
+
+async function focusJoinSchedulerRobloxTab(tab) {
+  if (!Number.isSafeInteger(tab?.id) || tab.id < 0) return false;
+  let focused = false;
+  if (typeof chrome.tabs?.update === "function") {
+    try {
+      await chrome.tabs.update(tab.id, { active: true });
+      focused = true;
+    } catch {
+      // The tab may have closed between query and focus.
+    }
+  }
+  if (Number.isSafeInteger(tab.windowId) &&
+    typeof chrome.windows?.update === "function") {
+    try {
+      await chrome.windows.update(tab.windowId, { focused: true });
+      focused = true;
+    } catch {
+      // Showing the modal is still useful when window focus is unavailable.
+    }
+  }
+  return focused;
+}
+
+function isSafeJoinSchedulerRobloxTab(tab, expectedUrl = "") {
+  const reportedUrls = [tab?.url, tab?.pendingUrl].filter((url) =>
+    typeof url === "string" && url.length > 0
+  );
+  if (reportedUrls.length === 0 && expectedUrl) reportedUrls.push(expectedUrl);
+  return (
+    Number.isSafeInteger(tab?.id) &&
+    tab.id >= 0 &&
+    tab.incognito !== true &&
+    reportedUrls.length > 0 &&
+    reportedUrls.every(isTrustedRobloxPageUrl)
+  );
+}
+
+async function createJoinSchedulerRobloxTabInNormalWindow(
+  targetUrl,
+  { requireKnownNormalWindow = false } = {}
+) {
+  if (!isTrustedRobloxPageUrl(targetUrl)) return null;
+
+  const createInKnownWindow = async (windowId) => {
+    if (!Number.isSafeInteger(windowId) || !chrome.tabs?.create) return null;
+    try {
+      const created = await chrome.tabs.create({
+        windowId,
+        url: targetUrl,
+        active: true
+      });
+      return isSafeJoinSchedulerRobloxTab(created, targetUrl) &&
+        (!Number.isSafeInteger(created.windowId) || created.windowId === windowId)
+        ? created
+        : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let normalWindowId;
+  if (typeof chrome.windows?.getAll === "function") {
+    normalWindowId = null;
+    try {
+      const windows = await runJoinSchedulerBrowserApi(() =>
+        chrome.windows.getAll({ windowTypes: ["normal"] })
+      );
+      const normalWindows = (Array.isArray(windows) ? windows : [])
+        .filter((window) =>
+          Number.isSafeInteger(window?.id) &&
+          window.id >= 0 &&
+          window.incognito !== true &&
+          (window.type === undefined || window.type === "normal")
+        )
+        .sort((left, right) => Number(right.focused) - Number(left.focused));
+      normalWindowId = normalWindows[0]?.id ?? null;
+    } catch {
+      normalWindowId = null;
+    }
+  }
+
+  if (Number.isSafeInteger(normalWindowId)) {
+    return createInKnownWindow(normalWindowId);
+  }
+
+  if (normalWindowId === null && typeof chrome.windows?.create === "function") {
+    try {
+      const bootstrapUrl = requireKnownNormalWindow
+        ? "https://www.roblox.com/home"
+        : targetUrl;
+      const createdWindow = await runJoinSchedulerBrowserApi(() =>
+        chrome.windows.create({
+          url: bootstrapUrl,
+          type: "normal",
+          focused: true,
+          incognito: false
+        })
+      );
+      if (
+        !Number.isSafeInteger(createdWindow?.id) ||
+        createdWindow.id < 0 ||
+        createdWindow.incognito === true ||
+        (createdWindow.type !== undefined && createdWindow.type !== "normal")
+      ) {
+        return null;
+      }
+      let initialTab = Array.isArray(createdWindow?.tabs)
+        ? createdWindow.tabs.find((tab) =>
+          tab?.windowId === createdWindow.id &&
+          isSafeJoinSchedulerRobloxTab(tab, bootstrapUrl)
+        )
+        : null;
+      if (!initialTab && chrome.tabs?.query) {
+        const tabs = await runJoinSchedulerBrowserApi(() =>
+          chrome.tabs.query({ windowId: createdWindow.id })
+        );
+        initialTab = (Array.isArray(tabs) ? tabs : []).find((tab) =>
+          tab?.windowId === createdWindow.id &&
+          isSafeJoinSchedulerRobloxTab(tab, bootstrapUrl)
+        ) || null;
+      }
+      if (bootstrapUrl === targetUrl && initialTab) return initialTab;
+      if (initialTab && typeof chrome.tabs?.update === "function") {
+        try {
+          const updated = await chrome.tabs.update(initialTab.id, {
+            url: targetUrl,
+            active: true
+          });
+          if (
+            isSafeJoinSchedulerRobloxTab(updated, targetUrl) &&
+            (!Number.isSafeInteger(updated.windowId) ||
+              updated.windowId === createdWindow.id)
+          ) {
+            return updated;
+          }
+        } catch {
+          return null;
+        }
+      }
+      return createInKnownWindow(createdWindow.id);
+    } catch {
+      return null;
+    }
+  }
+
+  // Old Chromium-shaped mocks may omit windows.getAll. Production Chromium
+  // exposes it. Never pass a bearer URL through this fallback because its
+  // destination window cannot be proven non-incognito before navigation.
+  if (
+    normalWindowId === undefined &&
+    !requireKnownNormalWindow &&
+    chrome.tabs?.create
+  ) {
+    try {
+      const created = await chrome.tabs.create({
+        url: targetUrl,
+        active: true
+      });
+      return isSafeJoinSchedulerRobloxTab(created, targetUrl) ? created : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function createJoinSchedulerRobloxHomeTab() {
+  return createJoinSchedulerRobloxTabInNormalWindow(
+    "https://www.roblox.com/home"
+  );
+}
+
+async function sendJoinSchedulerShowMessageUntilReady(tabId) {
+  const deadline = Date.now() + JOIN_SCHEDULER_NEW_TAB_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (await sendJoinSchedulerShowMessageToTab(tabId, Math.min(750, remaining))) {
+      return true;
+    }
+    const delay = Math.min(250, deadline - Date.now());
+    if (delay <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  return false;
+}
+
+async function showJoinSchedulerInRobloxTab(accountId = null) {
+  if (typeof joinSchedulerRuntimeOverrides?.showDialog === "function") {
+    const shown = await joinSchedulerRuntimeOverrides.showDialog({
+      type: JOIN_SCHEDULER_SHOW_MESSAGE_TYPE
+    });
+    if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+      return false;
+    }
+    return shown === true;
+  }
+  if (!chrome.tabs?.query || !chrome.tabs?.sendMessage) return false;
+
+  let candidates = [];
+  try {
+    const tabs = await runJoinSchedulerBrowserApi(() =>
+      chrome.tabs.query({ url: "https://www.roblox.com/*" })
+    );
+    candidates = (Array.isArray(tabs) ? tabs : [])
+      .filter((tab) =>
+        Number.isSafeInteger(tab?.id) &&
+        tab.id >= 0 &&
+        tab.incognito !== true &&
+        isTrustedRobloxPageUrl(tab.url)
+      )
+      .sort((left, right) => {
+        if (left.active !== right.active) return left.active ? -1 : 1;
+        return (Number(right.lastAccessed) || 0) -
+          (Number(left.lastAccessed) || 0);
+      })
+      .slice(0, JOIN_SCHEDULER_SHOW_TAB_CANDIDATE_LIMIT);
+  } catch {
+    candidates = [];
+  }
+
+  for (const tab of candidates) {
+    if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+      return false;
+    }
+    await focusJoinSchedulerRobloxTab(tab);
+    if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+      return false;
+    }
+    if (await sendJoinSchedulerShowMessageToTab(tab.id)) {
+      if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+        return false;
+      }
+      return true;
+    }
+  }
+
+  if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+    return false;
+  }
+  const created = await createJoinSchedulerRobloxHomeTab();
+  if (
+    !Number.isSafeInteger(created?.id) ||
+    created.id < 0 ||
+    created.incognito === true
+  ) {
+    return false;
+  }
+  await focusJoinSchedulerRobloxTab(created);
+  if (accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+    return false;
+  }
+  const shown = await sendJoinSchedulerShowMessageUntilReady(created.id);
+  if (shown && accountId && !await hasJoinSchedulerNotificationAuthority(accountId)) {
+    return false;
+  }
+  return shown;
+}
+
+async function handleJoinSchedulerNotificationButtonClicked(
+  notificationId,
+  buttonIndex
+) {
+  const parsed = parseJoinSchedulerNotificationId(notificationId);
+  if (!parsed || ![0, 1].includes(buttonIndex)) return false;
+  const { scheduleId, revision } = parsed;
+  const schedule = await getJoinSchedulerScheduleOwner(scheduleId, revision);
+  if (!schedule) {
+    await clearJoinSchedulerNotification(scheduleId, revision);
+    return false;
+  }
+  if (!await hasJoinSchedulerNotificationAuthority(schedule.accountId)) {
+    await clearJoinSchedulerNotification(scheduleId, revision);
+    return false;
+  }
+  if (buttonIndex === 1) {
+    return deleteOwnedJoinSchedulerSchedule(
+      schedule.accountId,
+      scheduleId,
+      revision
+    );
+  }
+  try {
+    await attemptJoinSchedulerSchedule(schedule.accountId, scheduleId, {
+      automatic: false,
+      expectedRevision: revision
+    });
+  } finally {
+    await ensureJoinSchedulerCoordinatorAlarm();
+  }
+  return true;
+}
+
+async function handleJoinSchedulerNotificationClicked(notificationId) {
+  const parsed = parseJoinSchedulerNotificationId(notificationId);
+  if (!parsed) return false;
+  const schedule = await getJoinSchedulerScheduleOwner(
+    parsed.scheduleId,
+    parsed.revision
+  );
+  if (!schedule) {
+    await clearJoinSchedulerNotification(parsed.scheduleId, parsed.revision);
+    return false;
+  }
+  if (!await hasJoinSchedulerNotificationAuthority(schedule.accountId)) {
+    await clearJoinSchedulerNotification(parsed.scheduleId, parsed.revision);
+    return false;
+  }
+  const shown = (await showJoinSchedulerInRobloxTab(schedule.accountId)) === true;
+  if (!shown && !await hasJoinSchedulerNotificationAuthority(schedule.accountId)) {
+    await clearJoinSchedulerNotification(parsed.scheduleId, parsed.revision);
+  }
+  return shown;
+}
+
+async function handleJoinSchedulerNotificationsPermissionRemoved(permissions) {
+  if (!Array.isArray(permissions?.permissions) ||
+    !permissions.permissions.includes("notifications")) {
+    return false;
+  }
+  joinSchedulerPermissionGeneration += 1;
+  await cancelAllJoinSchedulerSchedules("notifications-permission-removed");
+  await ensureJoinSchedulerCoordinatorAlarm();
+  return true;
+}
+
+function resetJoinSchedulerStateForTests() {
+  joinSchedulerFeatureEnabled = true;
+  joinSchedulerFeatureReady = true;
+  joinSchedulerFeatureSyncPromise = null;
+  joinSchedulerDbPromise = null;
+  joinSchedulerStorageWriteTail = Promise.resolve();
+  joinSchedulerStorageOverride = null;
+  joinSchedulerRuntimeOverrides = null;
+  joinSchedulerCoordinatorPromise = null;
+  joinSchedulerPermissionGeneration = 0;
+}
+
+const JOIN_SCHEDULER_TEST_HOOKS = {
+  constants: Object.freeze({
+    featureKey: JOIN_SCHEDULER_FEATURE_KEY,
+    showMessageType: JOIN_SCHEDULER_SHOW_MESSAGE_TYPE,
+    messageTypes: JOIN_SCHEDULER_MESSAGE_TYPES,
+    alarmName: JOIN_SCHEDULER_ALARM_NAME,
+    notificationPrefix: JOIN_SCHEDULER_NOTIFICATION_PREFIX,
+    notificationLeadMs: JOIN_SCHEDULER_NOTIFICATION_LEAD_MS,
+    lateGraceMs: JOIN_SCHEDULER_LATE_GRACE_MS,
+    collisionMs: JOIN_SCHEDULER_AUTO_COLLISION_MS,
+    maxDestinations: JOIN_SCHEDULER_MAX_DESTINATIONS,
+    maxSchedules: JOIN_SCHEDULER_MAX_SCHEDULES,
+    maxAccounts: JOIN_SCHEDULER_MAX_ACCOUNTS,
+    maxPrivateUrlLength: JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH
+  }),
+  messageTypes: JOIN_SCHEDULER_MESSAGE_TYPES,
+  parseDestinationUrl: parseJoinSchedulerDestinationUrl,
+  parseJoinSchedulerDestinationUrl,
+  parseTrustedShareResolveUrl: parseTrustedJoinSchedulerShareResolveUrl,
+  resolveModernDestination: resolveJoinSchedulerModernDestination,
+  normalizeSnapshot: normalizeJoinSchedulerSnapshot,
+  normalizeJoinSchedulerSnapshot,
+  normalizeJoinSchedulerDestinationRecord,
+  normalizeJoinSchedulerScheduleRecord,
+  createMemoryStorage: createJoinSchedulerMemoryStorageForTests,
+  createJoinSchedulerMemoryStorageForTests,
+  readState: readJoinSchedulerAccountState,
+  validateDestination: validateJoinSchedulerDestination,
+  saveDestination: saveJoinSchedulerDestination,
+  createSchedule: createJoinSchedulerSchedule,
+  cancelSchedule: cancelJoinSchedulerSchedule,
+  deleteSchedule: deleteJoinSchedulerSchedule,
+  deleteDestination: deleteJoinSchedulerDestination,
+  joinNow: joinNowJoinSchedulerResponse,
+  claimSchedule: claimJoinSchedulerSchedule,
+  attemptSchedule: attemptJoinSchedulerSchedule,
+  runCoordinator: runJoinSchedulerCoordinator,
+  runJoinSchedulerCoordinator,
+  ensureAlarm: ensureJoinSchedulerCoordinatorAlarm,
+  clearAlarm: clearJoinSchedulerAlarm,
+  showDialog: showJoinSchedulerInRobloxTab,
+  showJoinSchedulerInRobloxTab,
+  sendShowMessage: sendJoinSchedulerShowMessageToTab,
+  getRobloxTab: getJoinSchedulerRobloxTab,
+  getTrustedLaunchTab: getTrustedJoinSchedulerLaunchTab,
+  createRobloxTabInNormalWindow: createJoinSchedulerRobloxTabInNormalWindow,
+  executePreparedDestination: executePreparedJoinSchedulerDestination,
+  handleContentMessage: handleJoinSchedulerContentMessage,
+  dispatchContentMessage: dispatchJoinSchedulerContentMessage,
+  handlePermissionRequest: handleJoinSchedulerNotificationPermissionRequest,
+  handleNotificationClick: handleJoinSchedulerNotificationClicked,
+  handleNotificationButton: handleJoinSchedulerNotificationButtonClicked,
+  handlePermissionRemoved: handleJoinSchedulerNotificationsPermissionRemoved,
+  getTrustedContentTabId: getTrustedJoinSchedulerContentTabId,
+  getNotificationId: getJoinSchedulerNotificationId,
+  getErrorCode: getJoinSchedulerErrorCode,
+  applyFeatureValue: applyJoinSchedulerFeatureValue,
+  syncFeature: syncJoinSchedulerFeatureFromStorage,
+  cancelAll: cancelAllJoinSchedulerSchedules,
+  reset: resetJoinSchedulerStateForTests,
+  resetJoinSchedulerStateForTests,
+  setStorageOverride(override) {
+    joinSchedulerStorageOverride = override;
+    joinSchedulerStorageWriteTail = Promise.resolve();
+  },
+  setRuntimeOverrides(overrides) {
+    joinSchedulerRuntimeOverrides = overrides;
+  },
+  setFeatureState(enabled, ready = true) {
+    joinSchedulerFeatureEnabled = enabled !== false;
+    joinSchedulerFeatureReady = ready === true;
+  },
+  async getSnapshot() {
+    await joinSchedulerStorageWriteTail.catch(() => undefined);
+    return readJoinSchedulerSnapshot();
+  },
+  waitForWrites() {
+    return joinSchedulerStorageWriteTail.catch(() => undefined);
+  }
+};
+
+if (globalThis.__rslJoinSchedulerTestHooks) {
+  Object.assign(globalThis.__rslJoinSchedulerTestHooks, JOIN_SCHEDULER_TEST_HOOKS);
+}
+
+if (globalThis.__rslBackgroundTestHooks) {
+  Object.assign(globalThis.__rslBackgroundTestHooks, JOIN_SCHEDULER_TEST_HOOKS);
+}
+
 function normalizePrivateServerPlaceId(value) {
   return normalizeRandomServerPlaceId(value);
 }
@@ -9843,12 +13240,14 @@ chrome.runtime.onInstalled?.addListener(() => {
   syncGameCcuHistoryFeatureFromStorage(true);
   syncServerHistoryFeatureFromStorage(true);
   syncGameEventsFeatureFromStorage();
+  syncJoinSchedulerFeatureFromStorage("startup");
 });
 
 chrome.runtime.onStartup?.addListener(() => {
   syncGameCcuHistoryFeatureFromStorage("stale");
   syncServerHistoryFeatureFromStorage("startup");
   syncGameEventsFeatureFromStorage();
+  syncJoinSchedulerFeatureFromStorage("startup");
 });
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
@@ -9864,6 +13263,9 @@ chrome.alarms?.onAlarm?.addListener((alarm) => {
     serverHistoryFeatureEnabled
   ) {
     void runServerHistoryPoll();
+  }
+  if (alarm?.name === JOIN_SCHEDULER_ALARM_NAME) {
+    void runJoinSchedulerCoordinator();
   }
 });
 
@@ -9885,7 +13287,30 @@ chrome.storage?.onChanged?.addListener((changes, areaName) => {
   applyGameEventsFeatureValue(
     changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
   );
+  applyJoinSchedulerFeatureValue(
+    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
+    true
+  );
   setupContextMenus();
+});
+
+chrome.permissions?.onRemoved?.addListener((permissions) => {
+  void handleJoinSchedulerNotificationsPermissionRemoved(permissions).catch(
+    () => undefined
+  );
+});
+
+chrome.notifications?.onButtonClicked?.addListener((notificationId, buttonIndex) => {
+  void handleJoinSchedulerNotificationButtonClicked(
+    notificationId,
+    buttonIndex
+  ).catch(() => undefined);
+});
+
+chrome.notifications?.onClicked?.addListener((notificationId) => {
+  void handleJoinSchedulerNotificationClicked(notificationId).catch(
+    () => undefined
+  );
 });
 
 chrome.contextMenus?.onClicked?.addListener((info, tab) => {
@@ -9895,6 +13320,17 @@ chrome.contextMenus?.onClicked?.addListener((info, tab) => {
 function handleRuntimeMessage(message, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) {
     return false;
+  }
+
+  if (
+    message?.type ===
+    JOIN_SCHEDULER_MESSAGE_TYPES.requestNotificationPermission
+  ) {
+    return handleJoinSchedulerNotificationPermissionRequest(message, sender, sendResponse);
+  }
+
+  if (Object.values(JOIN_SCHEDULER_MESSAGE_TYPES).includes(message?.type)) {
+    return handleJoinSchedulerContentMessage(message, sender, sendResponse);
   }
 
   if (message?.type === FRIEND_FILTER_MESSAGE_TYPE) {
@@ -10047,3 +13483,4 @@ chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 syncGameCcuHistoryFeatureFromStorage("stale");
 syncServerHistoryFeatureFromStorage("startup");
 syncGameEventsFeatureFromStorage();
+syncJoinSchedulerFeatureFromStorage("startup");

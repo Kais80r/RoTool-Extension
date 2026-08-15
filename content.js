@@ -20,6 +20,9 @@
   const GAME_EVENTS_ADD_MESSAGE_TYPE = "rsl:add-game-event-favorite";
   const GAME_EVENTS_REMOVE_MESSAGE_TYPE = "rsl:remove-game-event-favorite";
   const GAME_EVENTS_LAUNCH_SURFACE_ATTRIBUTE = "data-rsl-game-events-launch-surface";
+  const JOIN_SCHEDULER_ROW_ID = "rsl-join-scheduler-row";
+  const JOIN_SCHEDULER_MODAL_GLOBAL = "__rslJoinSchedulerModal";
+  const GAME_EVENTS_SCHEDULE_ATTRIBUTE = "data-rsl-game-events-schedule";
   const SERVER_HISTORY_DIALOG_ID = "rsl-server-history-dialog";
   const SERVER_HISTORY_ROW_ID = "rsl-server-history-row";
   const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
@@ -541,6 +544,12 @@
           section: "RoTool"
         }),
         Object.freeze({
+          key: "sidebarJoinScheduler",
+          label: "Join Scheduler",
+          description: "Show RoTool's Join Scheduler sidebar button.",
+          section: "RoTool"
+        }),
+        Object.freeze({
           key: "sidebarServerHistory",
           label: "Server History",
           description: "Show RoTool's Server History sidebar button.",
@@ -703,6 +712,12 @@
       description: "Follow official events from games you choose."
     }),
     Object.freeze({
+      key: "joinScheduler",
+      group: "Tools",
+      label: "Join Scheduler",
+      description: "Plan one-time reminders or consented join attempts."
+    }),
+    Object.freeze({
       key: "serverHistory",
       group: "Tools",
       label: "Server History",
@@ -762,6 +777,7 @@
     premium: '<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
     create: '<path d="m14 5 5 5M4 20l3.5-.8L20 6.7 17.3 4 4.8 16.5 4 20Z"/><path d="m13 6 5 5"/>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/><path d="M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/>',
+    schedule: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/><circle cx="13" cy="15" r="4"/><path d="M13 13v2.5l1.7 1"/>',
     history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7"/><path d="M3.5 4.5v5h5"/><path d="M12 7.5V12l3 2"/>',
     external: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>',
     link: '<path d="m9.5 14.5 5-5"/><path d="m7.5 16.5-1.7 1.7A3 3 0 0 1 1.6 14l3.2-3.2A3 3 0 0 1 9 10.7"/><path d="m16.5 7.5 1.7-1.7a3 3 0 0 1 4.2 4.2l-3.2 3.2a3 3 0 0 1-4.2.1"/>'
@@ -2139,6 +2155,13 @@
   }
 
   function placeGameEventsSidebarRow(list, row) {
+    const schedulerRow = document.getElementById(JOIN_SCHEDULER_ROW_ID);
+    if (schedulerRow?.parentElement === list && schedulerRow !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== schedulerRow) {
+        list.insertBefore(row, schedulerRow);
+      }
+      return;
+    }
     const historyRow = document.getElementById(SERVER_HISTORY_ROW_ID);
     if (historyRow?.parentElement === list && historyRow !== row) {
       if (row.parentElement !== list || row.nextElementSibling !== historyRow) {
@@ -2187,6 +2210,157 @@
     }
     placeGameEventsSidebarRow(native.list, row);
     return row;
+  }
+
+  function setJoinSchedulerSidebarIcon(icon) {
+    if (!icon) return;
+    icon.classList.remove(
+      "rsl-sidebar-icon--plus",
+      "rsl-sidebar-icon--link",
+      "rsl-sidebar-icon--thumbnail",
+      "rsl-sidebar-icon--thumbnail-profile",
+      "rsl-owned-thumbnail-frame"
+    );
+    icon.classList.add("rsl-sidebar-icon--shortcut");
+    icon.dataset.rslIconType = "schedule";
+    delete icon.dataset.rslThumbnailKey;
+    delete icon.dataset.rslThumbnailState;
+    icon.innerHTML =
+      `<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">` +
+      `${SHORTCUT_ICON_MARKUP.schedule}</svg>`;
+  }
+
+  async function openJoinScheduler(draft = null, trigger = null) {
+    if (!isFeatureEnabled("joinScheduler")) return false;
+    const button = typeof HTMLElement !== "undefined" &&
+      trigger instanceof HTMLElement
+      ? trigger
+      : null;
+    const originalDisabled = button?.disabled === true;
+    const originalText = button?.textContent || "";
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    let opened = false;
+    try {
+      const modalApi = globalThis[JOIN_SCHEDULER_MODAL_GLOBAL];
+      opened = modalApi && typeof modalApi.open === "function"
+        ? await modalApi.open(draft, button)
+        : false;
+    } catch {
+      opened = false;
+    }
+    if (button?.isConnected) {
+      button.disabled = originalDisabled;
+      button.removeAttribute("aria-busy");
+      if (!opened) {
+        const originalTitle = button.title;
+        button.title = "Join Scheduler could not be opened. Try again.";
+        if (typeof HTMLButtonElement !== "undefined" && button instanceof HTMLButtonElement) {
+          button.textContent = "Try Again";
+        }
+        window.setTimeout(() => {
+          if (button.isConnected) {
+            button.title = originalTitle;
+            if (
+              typeof HTMLButtonElement !== "undefined" &&
+              button instanceof HTMLButtonElement
+            ) {
+              button.textContent = originalText;
+            }
+          }
+        }, 2_500);
+      }
+    }
+    return opened;
+  }
+
+  function makeJoinSchedulerSidebarRow(templateRow) {
+    const { row, anchor, label, icon } = createNativeLookingRow(
+      templateRow,
+      "shortcut",
+      "/home"
+    );
+    row.id = JOIN_SCHEDULER_ROW_ID;
+    row.dataset.rslControl = "join-scheduler";
+    anchor.href = "#";
+    anchor.setAttribute("role", "button");
+    anchor.setAttribute("aria-haspopup", "dialog");
+    anchor.setAttribute("aria-label", "Open Join Scheduler");
+    anchor.title = "Join Scheduler";
+    if (label) label.textContent = "Join Scheduler";
+    setJoinSchedulerSidebarIcon(icon);
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (event.isTrusted !== true) return;
+      void openJoinScheduler(null, anchor);
+    });
+    anchor.addEventListener("keydown", (event) => {
+      if (event.isTrusted !== true || event.key !== " ") return;
+      event.preventDefault();
+      void openJoinScheduler(null, anchor);
+    });
+    return row;
+  }
+
+  function placeJoinSchedulerSidebarRow(list, row) {
+    const historyRow = document.getElementById(SERVER_HISTORY_ROW_ID);
+    if (historyRow?.parentElement === list && historyRow !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== historyRow) {
+        list.insertBefore(row, historyRow);
+      }
+      return;
+    }
+    const customRows = Array.from(list.querySelectorAll(`[${ROW_ATTRIBUTE}]`));
+    const addRow = document.getElementById(ADD_ROW_ID);
+    const firstOwnedCustomRow = customRows[0] ||
+      (addRow?.parentElement === list ? addRow : null);
+    if (firstOwnedCustomRow && firstOwnedCustomRow !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== firstOwnedCustomRow) {
+        list.insertBefore(row, firstOwnedCustomRow);
+      }
+      return;
+    }
+    const boundary = findSidebarInsertBoundary(list, row);
+    if (boundary && boundary !== row) {
+      if (row.parentElement !== list || row.nextElementSibling !== boundary) {
+        list.insertBefore(row, boundary);
+      }
+    } else if (row.parentElement !== list || row !== list.lastElementChild) {
+      list.append(row);
+    }
+  }
+
+  function mountJoinSchedulerSidebarRow() {
+    if (
+      !isFeatureEnabled("joinScheduler") ||
+      !isFeatureEnabled("sidebarShortcuts") ||
+      !isFeatureEnabled("sidebarJoinScheduler")
+    ) {
+      document.getElementById(JOIN_SCHEDULER_ROW_ID)?.remove();
+      return null;
+    }
+    const native = findNativeRow();
+    if (!native) return null;
+    const duplicates = Array.from(
+      document.querySelectorAll(`#${JOIN_SCHEDULER_ROW_ID}`)
+    );
+    let row = duplicates.shift() || null;
+    duplicates.forEach((duplicate) => duplicate.remove());
+    if (!row || row._rslJoinSchedulerRowBound !== true) {
+      row?.remove();
+      row = makeJoinSchedulerSidebarRow(native.row);
+      row._rslJoinSchedulerRowBound = true;
+    }
+    placeJoinSchedulerSidebarRow(native.list, row);
+    return row;
+  }
+
+  function cleanupJoinSchedulerFeature() {
+    document.getElementById(JOIN_SCHEDULER_ROW_ID)?.remove();
+    const modalApi = globalThis[JOIN_SCHEDULER_MODAL_GLOBAL];
+    if (modalApi && typeof modalApi.destroy === "function") modalApi.destroy();
   }
 
   function setServerHistorySidebarIcon(icon) {
@@ -15862,6 +16036,36 @@
     accessibleTiming.setAttribute("data-rsl-game-events-accessible-timing", event.id);
     accessibleTiming.textContent = timingValue.fullText;
     main.append(titleRow, context, accessibleSubtitle, accessibleTiming);
+    if (!livePanel && status === "upcoming" && isFeatureEnabled("joinScheduler")) {
+      const schedule = document.createElement("button");
+      schedule.type = "button";
+      schedule.className =
+        "rsl-button rsl-button--secondary rsl-game-events__schedule";
+      schedule.textContent = "Schedule";
+      schedule.setAttribute(GAME_EVENTS_SCHEDULE_ATTRIBUTE, event.id);
+      schedule.setAttribute(
+        "aria-label",
+        `Schedule ${event.title} in Join Scheduler`
+      );
+      schedule.setAttribute("aria-haspopup", "dialog");
+      schedule.title = `Schedule ${event.title} in Join Scheduler`;
+      schedule.addEventListener("click", (clickEvent) => {
+        if (clickEvent.isTrusted !== true) return;
+        void openJoinScheduler(
+          {
+            universeId: event.universeId,
+            placeId: event.placeId,
+            gameName: event.gameName,
+            title: event.title,
+            startAt: event.startAt,
+            endAt: event.endAt,
+            eventId: event.id
+          },
+          schedule
+        );
+      });
+      main.append(schedule);
+    }
 
     const actions = document.createElement("div");
     actions.className = "rsl-game-events__actions";
@@ -18006,6 +18210,7 @@
     if (isFeatureEnabled("sidebarShortcuts")) {
       syncNativeSidebarVisibility();
       mountGameEventsSidebarRow();
+      mountJoinSchedulerSidebarRow();
       mountServerHistorySidebarRow();
       if (isFeatureEnabled("sidebarCustomShortcuts")) {
         mountSidebar();
@@ -18015,6 +18220,7 @@
     } else {
       cleanupSidebarFeature();
       document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
+      document.getElementById(JOIN_SCHEDULER_ROW_ID)?.remove();
       document.getElementById(SERVER_HISTORY_ROW_ID)?.remove();
       cleanupNativeSidebarVisibility();
     }
@@ -18023,6 +18229,9 @@
     }
     if (!isFeatureEnabled("gameEvents")) {
       cleanupGameEventsFeature();
+    }
+    if (!isFeatureEnabled("joinScheduler")) {
+      cleanupJoinSchedulerFeature();
     }
     mountOnlineFriendsFilter();
     mountBestFriendsCarousel();
@@ -18183,6 +18392,13 @@
     ) {
       document.getElementById(GAME_EVENTS_ROW_ID)?.remove();
     }
+    if (
+      previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
+      previousSettings.sidebarJoinScheduler !==
+        nextSettings.sidebarJoinScheduler
+    ) {
+      document.getElementById(JOIN_SCHEDULER_ROW_ID)?.remove();
+    }
     const sidebarVisibilityKeys = [
       "sidebarShortcuts",
       "sidebarHome",
@@ -18290,20 +18506,30 @@
     ) {
       cleanupGameEventsFeature();
     }
+    if (previousSettings.joinScheduler !== nextSettings.joinScheduler) {
+      if (nextSettings.joinScheduler === false) {
+        cleanupJoinSchedulerFeature();
+      }
+      const eventsDialog = document.getElementById(GAME_EVENTS_DIALOG_ID);
+      if (eventsDialog?.open) renderGameEventsDialog();
+    }
 
     const onlySidebarChanged = sidebarVisibilityChanged ||
       previousSettings.sidebarCustomShortcuts !==
         nextSettings.sidebarCustomShortcuts ||
       previousSettings.sidebarServerHistory !==
         nextSettings.sidebarServerHistory ||
-      previousSettings.sidebarGameEvents !== nextSettings.sidebarGameEvents;
+      previousSettings.sidebarGameEvents !== nextSettings.sidebarGameEvents ||
+      previousSettings.sidebarJoinScheduler !==
+        nextSettings.sidebarJoinScheduler;
     const anyNonSidebarChange = FEATURE_SETTING_DEFINITIONS.some(
       ({ key }) =>
         ![
           ...sidebarVisibilityKeys,
           "sidebarCustomShortcuts",
           "sidebarServerHistory",
-          "sidebarGameEvents"
+          "sidebarGameEvents",
+          "sidebarJoinScheduler"
         ].includes(key) &&
         previousSettings[key] !== nextSettings[key]
     );
@@ -18311,6 +18537,7 @@
       if (isFeatureEnabled("sidebarShortcuts")) {
         syncNativeSidebarVisibility();
         mountGameEventsSidebarRow();
+        mountJoinSchedulerSidebarRow();
         mountServerHistorySidebarRow();
         if (isFeatureEnabled("sidebarCustomShortcuts")) {
           mountSidebar();
@@ -19090,6 +19317,11 @@
         remove: GAME_EVENTS_REMOVE_MESSAGE_TYPE
       })
     });
+    contentTestHooks.joinSchedulerConstants = Object.freeze({
+      rowId: JOIN_SCHEDULER_ROW_ID,
+      modalGlobal: JOIN_SCHEDULER_MODAL_GLOBAL,
+      gameEventScheduleAttribute: GAME_EVENTS_SCHEDULE_ATTRIBUTE
+    });
     contentTestHooks.normalizeGameEventId = normalizeGameEventId;
     contentTestHooks.normalizeGameEventTimestamp = normalizeGameEventTimestamp;
     contentTestHooks.normalizeGameEventFavorite = normalizeGameEventFavorite;
@@ -19119,6 +19351,10 @@
     contentTestHooks.makeGameEventsSidebarRow = makeGameEventsSidebarRow;
     contentTestHooks.placeGameEventsSidebarRow = placeGameEventsSidebarRow;
     contentTestHooks.mountGameEventsSidebarRow = mountGameEventsSidebarRow;
+    contentTestHooks.makeJoinSchedulerSidebarRow = makeJoinSchedulerSidebarRow;
+    contentTestHooks.placeJoinSchedulerSidebarRow = placeJoinSchedulerSidebarRow;
+    contentTestHooks.mountJoinSchedulerSidebarRow = mountJoinSchedulerSidebarRow;
+    contentTestHooks.openJoinScheduler = openJoinScheduler;
     contentTestHooks.createGameEventsDialog = createGameEventsDialog;
     contentTestHooks.openGameEventsDialog = openGameEventsDialog;
     contentTestHooks.closeGameEventsDialog = closeGameEventsDialog;
