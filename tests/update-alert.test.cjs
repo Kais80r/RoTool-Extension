@@ -107,11 +107,13 @@ assert.match(updateReadme, /press \*\*Reload\*\* on the existing RoTool card/i);
 assert.match(updateReadme, /Refresh Roblox/);
 assert.match(updateReadme, /\[RoTool Updater guide\]\(updater\/README\.md\)/);
 
-// Native-like markup, green success state, accessible action/close controls,
-// one owned instance, trusted dismissal, and complete observer/RAF teardown.
+// Roblox's native system-feedback hierarchy/classes stay authoritative. RoTool
+// adds only ownership hooks, a real update link, accessibility, collision
+// deferral, and a narrowly gated fallback for pages missing StyleGuide CSS.
 assert.match(contentUpdateSource, /"sg-system-feedback rsl-extension-update-feedback"/);
 assert.match(contentUpdateSource, /"alert-system-feedback rsl-extension-update-feedback__inner"/);
 assert.match(contentUpdateSource, /"alert alert-success on rsl-extension-update-feedback__alert"/);
+assert.match(contentUpdateSource, /"alert-content rsl-extension-update-feedback__content"/);
 assert.match(contentUpdateSource, /alert\.setAttribute\("role", "status"\)/);
 assert.match(contentUpdateSource, /alert\.setAttribute\("aria-live", "polite"\)/);
 assert.match(contentUpdateSource, /alert\.setAttribute\("aria-atomic", "true"\)/);
@@ -119,12 +121,34 @@ assert.match(contentUpdateSource, /document\.createElement\("a"\)/);
 assert.match(contentUpdateSource, /howToUpdate\.textContent = "How to update"/);
 assert.match(contentUpdateSource, /howToUpdate\.target = "_blank"/);
 assert.match(contentUpdateSource, /howToUpdate\.rel = "noopener noreferrer"/);
-assert.match(contentUpdateSource, /document\.createElement\("button"\)/);
+assert.match(contentUpdateSource, /const closeControl = document\.createElement\("span"\)/);
+assert.match(contentUpdateSource, /closeControl\.setAttribute\("role", "button"\)/);
+assert.match(contentUpdateSource, /closeControl\.setAttribute\("tabindex", "0"\)/);
 assert.match(contentUpdateSource, /if \(!event\.isTrusted\)\s*\{\s*return;/);
+assert.match(
+  contentUpdateSource,
+  /closeControl\.addEventListener\("keydown",[\s\S]*?event\.key !== "Enter"[\s\S]*?event\.key !== " "[\s\S]*?event\.preventDefault\(\)/
+);
 assert.match(contentUpdateSource, /`Dismiss RoTool \$\{latest\} update notice`/);
 assert.match(
   contentUpdateSource,
   /existing\?\.dataset\.rslExtensionUpdateVersion === latest[\s\S]*?return existing;/
+);
+assert.match(
+  contentUpdateSource,
+  /hasNativeExtensionUpdateFeedbackStyles\(inner, alert, closeControl\)[\s\S]*?EXTENSION_UPDATE_FEEDBACK_FALLBACK_CLASS/
+);
+assert.match(
+  contentUpdateSource,
+  /document\.querySelectorAll\("\.alert-system-feedback"\)[\s\S]*?extensionUpdateFeedbackNativeObserver\.observe\(surface, \{[\s\S]*?attributeFilter: \["class", "hidden", "style"\][\s\S]*?subtree: true/
+);
+assert.match(
+  contentUpdateSource,
+  /"\.alert-system-feedback \.alert\.on"[\s\S]*?\.some\(isActiveNativeSystemFeedbackAlert\)[\s\S]*?feedback\.hidden = shouldDefer/
+);
+assert.match(
+  contentSource,
+  /new MutationObserver\(\(mutations\) => \{[\s\S]*?document\.getElementById\(EXTENSION_UPDATE_FEEDBACK_ID\)[\s\S]*?queueExtensionUpdateFeedbackPositionSync\(\)[\s\S]*?observer\.observe\(document\.documentElement, \{[\s\S]*?childList: true[\s\S]*?subtree: true/
 );
 assert.match(contentUpdateSource, /window\.cancelAnimationFrame\(extensionUpdateFeedbackPositionFrame\)/);
 assert.match(contentUpdateSource, /extensionUpdateFeedbackNativeObserver\?\.disconnect\(\)/);
@@ -139,19 +163,26 @@ assert.match(
   contentUpdateSource,
   /document\.visibilityState !== "visible"[\s\S]*?return;[\s\S]*?requestExtensionUpdateStatusWhenVisible/
 );
+const normalUpdateFeedbackStyles = stylesSource.split("/* Fail safe only:")[0];
+assert.doesNotMatch(
+  normalUpdateFeedbackStyles,
+  /position:\s*fixed|background(?:-color)?:|box-shadow|max-width:\s*970px|z-index:/,
+  "native StyleGuide geometry, color, and stacking must win in the normal path"
+);
+assert.doesNotMatch(stylesSource, /#007f52|2147483200|width:\s*min\(560px/);
 assert.match(
   stylesSource,
-  /#rsl-extension-update-feedback \.rsl-extension-update-feedback__alert\s*\{[\s\S]*?background:\s*#007f52\s*!important/
+  /#rsl-extension-update-feedback\.rsl-extension-update-feedback--fallback[\s\S]*?\.rsl-extension-update-feedback__alert\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?max-width:\s*970px;[\s\S]*?height:\s*48px;[\s\S]*?background-color:\s*#01854b;/
 );
 assert.match(
   stylesSource,
-  /#rsl-extension-update-feedback \.rsl-extension-update-feedback__close\s*\{[\s\S]*?background-image:\s*none !important;/
+  /#rsl-extension-update-feedback\.rsl-extension-update-feedback--fallback[\s\S]*?\.rsl-extension-update-feedback__close\s*\{[\s\S]*?width:\s*18px;[\s\S]*?height:\s*18px;/
 );
 assert.match(
   stylesSource,
-  /\.rsl-extension-update-feedback__close::before,[\s\S]*?\.rsl-extension-update-feedback__close::after\s*\{[\s\S]*?content:\s*none !important;/
+  /\.rsl-extension-update-feedback--fallback[\s\S]*?\.rsl-extension-update-feedback__close::before,[\s\S]*?\.rsl-extension-update-feedback__close::after\s*\{[\s\S]*?background:\s*currentColor;[\s\S]*?content:\s*"";/
 );
-assert.equal((contentUpdateSource.match(/textContent = "×"/g) || []).length, 1);
+assert.doesNotMatch(contentUpdateSource, /closeControl\.textContent/);
 
 // Settings gets one non-toggle, accessible update row directly below its title
 // and before all feature groups. The link is a fixed local-code destination,
@@ -792,6 +823,7 @@ function runtimeMessage(message, sender) {
   const timeouts = new Map();
   const clearedTimeouts = [];
   const mutationObservers = [];
+  let nativeFeedbackStylesAvailable = true;
   let contentMessages = 0;
   let contentMessageHandler = () => {
     contentMessages += 1;
@@ -812,6 +844,7 @@ function runtimeMessage(message, sender) {
       this.className = "";
       this.textContent = "";
       this.hidden = false;
+      this.rect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
     }
     append(...nodes) {
       for (const node of nodes) {
@@ -829,6 +862,25 @@ function runtimeMessage(message, sender) {
     removeAttribute(name) { this.attributes.delete(name); }
     hasAttribute(name) { return this.attributes.has(name); }
     addEventListener(type, listener) { this.listeners.set(type, listener); }
+    closest(selector) {
+      let current = this;
+      while (current) {
+        if (matchesSelector(current, selector)) return current;
+        current = current.parentElement;
+      }
+      return null;
+    }
+    contains(candidate) {
+      return walk(this, (node) => node === candidate).length > 0;
+    }
+    get isConnected() {
+      let current = this;
+      while (current) {
+        if (current === fakeDocument.documentElement) return true;
+        current = current.parentElement;
+      }
+      return false;
+    }
     querySelector(selector) {
       return walk(this, (node) => node !== this && matchesSelector(node, selector))[0] || null;
     }
@@ -836,7 +888,7 @@ function runtimeMessage(message, sender) {
       return walk(this, (node) => node !== this && matchesSelector(node, selector));
     }
     getBoundingClientRect() {
-      return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+      return this.rect;
     }
   }
 
@@ -872,7 +924,16 @@ function runtimeMessage(message, sender) {
       if (selector === ".sg-system-feedback") {
         return walk(this.documentElement, (node) => node.className.split(/\s+/).includes("sg-system-feedback"));
       }
-      if (selector.includes(":not(#rsl-extension-update-feedback) .alert.on")) return [];
+      if (selector === ".alert-system-feedback") {
+        return walk(this.documentElement, (node) => matchesSelector(node, selector));
+      }
+      if (selector === ".alert-system-feedback .alert.on") {
+        return walk(this.documentElement, (node) =>
+          node.className.split(/\s+/).includes("alert") &&
+          node.className.split(/\s+/).includes("on") &&
+          Boolean(node.parentElement?.closest?.(".alert-system-feedback"))
+        );
+      }
       return [];
     }
   };
@@ -896,6 +957,33 @@ function runtimeMessage(message, sender) {
     clearTimeout(id) {
       clearedTimeouts.push(id);
       timeouts.delete(id);
+    },
+    getComputedStyle(node) {
+      const classes = node.className.split(/\s+/);
+      const style = {
+        display: node.hidden ? "none" : "block",
+        visibility: "visible",
+        position: "static",
+        height: "0px",
+        fontSize: "0px",
+        backgroundColor: "transparent",
+        backgroundImage: "none",
+        width: "0px"
+      };
+      if (!nativeFeedbackStylesAvailable) return style;
+      if (classes.includes("alert-system-feedback")) style.position = "relative";
+      if (classes.includes("alert")) {
+        style.position = "fixed";
+        style.height = "48px";
+        style.fontSize = "20px";
+        style.backgroundColor = "rgb(1, 133, 75)";
+      }
+      if (classes.includes("icon-close-white")) {
+        style.backgroundImage = "url(roblox-styleguide-sprite.svg)";
+        style.width = "18px";
+        style.height = "18px";
+      }
+      return style;
     }
   };
   fakeWindow.top = fakeWindow;
@@ -913,9 +1001,10 @@ function runtimeMessage(message, sender) {
     constructor(callback) {
       this.callback = callback;
       this.disconnectCount = 0;
+      this.observations = [];
       mutationObservers.push(this);
     }
-    observe() {}
+    observe(target, options) { this.observations.push({ target, options }); }
     disconnect() { this.disconnectCount += 1; }
   };
   globalThis.__rslContentTestHooks = { skipInitialize: true };
@@ -924,6 +1013,7 @@ function runtimeMessage(message, sender) {
   const contentHooks = globalThis.__rslContentTestHooks;
   assert.deepEqual(contentHooks.extensionUpdateFeedbackConstants, {
     feedbackId: "rsl-extension-update-feedback",
+    fallbackClass: "rsl-extension-update-feedback--fallback",
     howToUpdateUrl: UPDATE_GUIDE,
     statusRetryMs: 60 * 60_000,
     statusMinTimerMs: 60_000,
@@ -941,49 +1031,130 @@ function runtimeMessage(message, sender) {
   };
   const feedback = contentHooks.renderExtensionUpdateFeedback(renderStatus);
   assert.equal(feedback.className, "sg-system-feedback rsl-extension-update-feedback");
+  assert.equal(feedback.hidden, false);
+  assert.equal(feedback.children.length, 1);
   assert.equal(feedback.children[0].className, "alert-system-feedback rsl-extension-update-feedback__inner");
+  assert.equal(feedback.children[0].children.length, 1);
   const alert = feedback.children[0].children[0];
   assert.equal(alert.className, "alert alert-success on rsl-extension-update-feedback__alert");
+  assert.equal(alert.children.length, 2);
   assert.equal(alert.getAttribute("role"), "status");
   assert.equal(alert.getAttribute("aria-live"), "polite");
   assert.equal(alert.getAttribute("aria-atomic"), "true");
+  const content = alert.children[0];
+  assert.equal(content.className, "alert-content rsl-extension-update-feedback__content");
+  assert.equal(content.children[0].textContent, `RoTool ${AVAILABLE_VERSION} is available. `);
   const link = walk(feedback, (node) => node.tagName === "A")[0];
   assert.equal(link.href, UPDATE_GUIDE);
   assert.equal(link.textContent, "How to update");
   assert.equal(link.target, "_blank");
   assert.equal(link.rel, "noopener noreferrer");
-  const close = walk(feedback, (node) => node.tagName === "BUTTON")[0];
-  assert.equal(close.type, "button");
-  assert.equal(close.textContent, "×");
+  assert.equal(link.referrerPolicy, "no-referrer");
+  const close = walk(feedback, (node) => node.getAttribute("role") === "button")[0];
+  assert.equal(close.tagName, "SPAN");
+  assert.equal(close.className, "icon-close-white rsl-extension-update-feedback__close");
+  assert.equal(close.getAttribute("tabindex"), "0");
+  assert.equal(close.textContent, "");
   assert.equal(
     close.getAttribute("aria-label"),
     `Dismiss RoTool ${AVAILABLE_VERSION} update notice`
   );
+  assert.equal(
+    contentHooks.hasNativeExtensionUpdateFeedbackStyles(
+      feedback.children[0],
+      alert,
+      close
+    ),
+    true
+  );
   assert.strictEqual(contentHooks.renderExtensionUpdateFeedback(renderStatus), feedback);
+  assert.equal(animationFrames.size, 1, "same-version rerenders coalesce position work");
+  contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  assert.equal(animationFrames.size, 1, "position work stays RAF-deduplicated");
   assert.equal(
     walk(fakeDocument.documentElement, (node) => node.id === "rsl-extension-update-feedback").length,
     1
   );
 
   close.listeners.get("click")({ isTrusted: false });
+  close.listeners.get("keydown")({ isTrusted: false, key: "Enter" });
+  close.listeners.get("keydown")({ isTrusted: true, key: "Escape" });
   assert.strictEqual(fakeDocument.getElementById("rsl-extension-update-feedback"), feedback);
   assert.equal(contentMessages, 0);
   const pendingFrameId = [...animationFrames.keys()][0];
   close.listeners.get("click")({ isTrusted: true });
   assert.equal(fakeDocument.getElementById("rsl-extension-update-feedback"), null);
   assert.ok(canceledFrames.includes(pendingFrameId));
+  assert.equal(mutationObservers.at(-1).disconnectCount, 1);
   assert.equal(contentMessages, 0);
 
-  const observedFeedback = contentHooks.renderExtensionUpdateFeedback(renderStatus);
-  const observedFrameId = [...animationFrames.keys()][0];
-  const observedFrameCallback = animationFrames.get(observedFrameId);
-  animationFrames.delete(observedFrameId);
-  observedFrameCallback();
-  assert.equal(mutationObservers.length, 1);
+  nativeFeedbackStylesAvailable = false;
+  const fallbackFeedback = contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  assert.equal(
+    fallbackFeedback.className,
+    "sg-system-feedback rsl-extension-update-feedback rsl-extension-update-feedback--fallback"
+  );
+  assert.equal(fallbackFeedback.hidden, false);
   contentHooks.removeExtensionUpdateFeedback();
   assert.equal(mutationObservers.at(-1).disconnectCount, 1);
+  nativeFeedbackStylesAvailable = true;
 
-  const oldFeedback = contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  const nativeSurface = new FakeNode("div");
+  nativeSurface.className = "sg-system-feedback";
+  const nativeInner = new FakeNode("div");
+  nativeInner.className = "alert-system-feedback";
+  const nativeAlert = new FakeNode("div");
+  nativeAlert.className = "alert alert-warning on";
+  nativeAlert.rect = { top: 40, bottom: 88, left: 0, right: 970, width: 970, height: 48 };
+  nativeInner.append(nativeAlert);
+  nativeSurface.append(nativeInner);
+  fakeDocument.body.append(nativeSurface);
+
+  const collisionFeedback = contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  assert.equal(collisionFeedback.hidden, true, "an active Roblox alert takes precedence");
+  assert.equal(contentHooks.isActiveNativeSystemFeedbackAlert(nativeAlert), true);
+  const collisionObserver = mutationObservers.at(-1);
+  assert.ok(
+    collisionObserver.observations.some(({ target }) => target === nativeSurface),
+    "the native surface is observed for class/visibility lifecycle changes"
+  );
+  assert.equal(
+    collisionObserver.observations.some(({ target }) => target === collisionFeedback),
+    false,
+    "the owned surface is never observed as a native collision"
+  );
+
+  nativeAlert.className = "alert alert-warning";
+  collisionObserver.callback([]);
+  const clearCollisionFrameId = [...animationFrames.keys()][0];
+  const clearCollisionFrame = animationFrames.get(clearCollisionFrameId);
+  animationFrames.delete(clearCollisionFrameId);
+  clearCollisionFrame();
+  assert.equal(collisionFeedback.hidden, false, "the notice returns after native feedback closes");
+
+  nativeAlert.className = "alert alert-warning on";
+  collisionObserver.callback([]);
+  collisionObserver.callback([]);
+  assert.equal(animationFrames.size, 1, "collision mutations coalesce into one frame");
+  const restoreCollisionFrameId = [...animationFrames.keys()][0];
+  const restoreCollisionFrame = animationFrames.get(restoreCollisionFrameId);
+  animationFrames.delete(restoreCollisionFrameId);
+  restoreCollisionFrame();
+  assert.equal(collisionFeedback.hidden, true);
+
+  nativeSurface.hidden = true;
+  collisionObserver.callback([]);
+  const hiddenNativeFrameId = [...animationFrames.keys()][0];
+  const hiddenNativeFrame = animationFrames.get(hiddenNativeFrameId);
+  animationFrames.delete(hiddenNativeFrameId);
+  hiddenNativeFrame();
+  assert.equal(collisionFeedback.hidden, false, "hidden native surfaces do not block RoTool");
+  nativeSurface.hidden = false;
+  nativeSurface.remove();
+  contentHooks.syncExtensionUpdateFeedbackPosition();
+  assert.equal(collisionFeedback.hidden, false, "native surface removal cannot strand the notice hidden");
+
+  const oldFeedback = collisionFeedback;
   const replacement = contentHooks.renderExtensionUpdateFeedback({
     ...renderStatus,
     latest: REPLACEMENT_VERSION
@@ -995,6 +1166,20 @@ function runtimeMessage(message, sender) {
     walk(fakeDocument.documentElement, (node) => node.id === "rsl-extension-update-feedback").length,
     1
   );
+
+  const replacementClose = walk(
+    replacement,
+    (node) => node.getAttribute("role") === "button"
+  )[0];
+  let spacePrevented = 0;
+  replacementClose.listeners.get("keydown")({
+    isTrusted: true,
+    key: " ",
+    preventDefault() { spacePrevented += 1; }
+  });
+  assert.equal(spacePrevented, 1);
+  assert.equal(fakeDocument.getElementById("rsl-extension-update-feedback"), null);
+  assert.equal(contentMessages, 0, "mouse and keyboard dismissal remain local");
 
   const settingsDialog = new FakeNode("dialog");
   settingsDialog.id = "rsl-feature-settings-dialog";
@@ -1174,7 +1359,7 @@ function runtimeMessage(message, sender) {
 
   const settingsPopupClose = walk(
     settingsPopup,
-    (node) => node.tagName === "BUTTON"
+    (node) => node.getAttribute("role") === "button"
   )[0];
   settingsPopupClose.listeners.get("click")({ isTrusted: true });
   assert.equal(fakeDocument.getElementById("rsl-extension-update-feedback"), null);

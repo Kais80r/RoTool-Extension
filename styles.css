@@ -1,83 +1,9 @@
-/* RoTool's update feedback follows Roblox's system-feedback structure while
-   remaining independently positioned and styled if Roblox changes its CSS. */
-#rsl-extension-update-feedback.rsl-extension-update-feedback {
-  --rsl-extension-update-feedback-top: 48px;
-  position: fixed !important;
-  inset: auto auto auto 50% !important;
-  top: max(
-    var(--rsl-extension-update-feedback-top),
-    env(safe-area-inset-top, 0px)
-  ) !important;
-  left: 50% !important;
-  z-index: 2147483200 !important;
-  display: block !important;
-  width: min(560px, calc(100vw - 24px)) !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  height: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  transform: translateX(-50%) !important;
-  color: #fff !important;
-  font-family: var(--font-family-body, "Builder Sans", Arial, sans-serif);
-  pointer-events: none !important;
-}
-
-#rsl-extension-update-feedback .rsl-extension-update-feedback__inner {
-  position: static !important;
-  display: block !important;
-  width: 100% !important;
-  height: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  pointer-events: none !important;
-  animation: rsl-extension-update-feedback-in 140ms ease-out both;
-}
-
-#rsl-extension-update-feedback .rsl-extension-update-feedback__alert {
-  position: relative !important;
-  display: grid !important;
-  box-sizing: border-box !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  min-height: 44px !important;
-  margin: 0 !important;
-  padding: 10px 44px 10px 14px !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  align-items: center !important;
-  overflow: hidden !important;
-  color: #fff !important;
-  background: #007f52 !important;
-  border: 1px solid rgb(255 255 255 / 20%) !important;
-  border-radius: var(--radius-medium, 6px) !important;
-  box-shadow: 0 5px 18px rgb(0 0 0 / 32%) !important;
-  font: inherit !important;
-  line-height: 20px !important;
-  text-align: center !important;
-  pointer-events: none !important;
-}
-
-#rsl-extension-update-feedback .rsl-extension-update-feedback__content {
-  display: block !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  color: inherit !important;
-  font: inherit !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  overflow-wrap: anywhere;
-}
-
+/* Roblox's StyleGuide owns the normal system-feedback geometry, color,
+   typography, and close sprite. RoTool adds only link/focus affordances. */
 #rsl-extension-update-feedback .rsl-extension-update-feedback__link {
-  color: inherit !important;
-  font: inherit !important;
-  font-weight: 700 !important;
   text-decoration: underline !important;
   text-decoration-thickness: 1px !important;
   text-underline-offset: 2px !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
 }
 
 #rsl-extension-update-feedback .rsl-extension-update-feedback__link:hover {
@@ -89,85 +15,107 @@
     .rsl-extension-update-feedback__link,
     .rsl-extension-update-feedback__close
   ):focus-visible {
-  border-radius: 2px !important;
   outline: 2px solid currentColor !important;
   outline-offset: 2px !important;
 }
 
-#rsl-extension-update-feedback .rsl-extension-update-feedback__close {
-  position: absolute !important;
-  top: 50% !important;
-  right: 8px !important;
-  display: inline-flex !important;
-  box-sizing: border-box !important;
-  width: 28px !important;
-  height: 28px !important;
-  min-width: 28px !important;
-  min-height: 28px !important;
-  margin: 0 !important;
-  padding: 0 0 2px !important;
-  transform: translateY(-50%) !important;
-  align-items: center !important;
-  justify-content: center !important;
-  color: inherit !important;
-  background: transparent !important;
-  background-image: none !important;
-  border: 0 !important;
-  border-radius: 50% !important;
-  appearance: none !important;
-  font: inherit !important;
-  font-size: 24px !important;
-  font-weight: 300 !important;
-  line-height: 1 !important;
-  text-indent: 0 !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-}
-
-#rsl-extension-update-feedback .rsl-extension-update-feedback__close::before,
-#rsl-extension-update-feedback .rsl-extension-update-feedback__close::after {
+#rsl-extension-update-feedback[hidden] {
   display: none !important;
-  content: none !important;
 }
 
-#rsl-extension-update-feedback .rsl-extension-update-feedback__close:hover {
-  background: rgb(0 0 0 / 14%) !important;
+/* Fail safe only: these declarations reproduce Roblox's current system
+   feedback contract when that StyleGuide surface is unavailable. */
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__inner {
+  position: relative;
+  width: 100%;
 }
 
-@keyframes rsl-extension-update-feedback-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__alert {
+  position: fixed;
+  top: 40px;
+  right: 0;
+  left: 0;
+  z-index: 1029;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 970px;
+  height: 48px;
+  margin: 0 auto;
+  padding: 15px;
+  color: #fff;
+  background-color: #01854b;
+  border: 0;
+  font-size: 20px;
+  line-height: 1em;
+  text-align: center;
+  transition: top 0.4s ease;
 }
 
-@media (max-width: 600px) {
-  #rsl-extension-update-feedback.rsl-extension-update-feedback {
-    width: calc(100vw - 16px) !important;
-  }
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__content {
+  display: inline-block;
+  float: left;
+  width: calc(100% - 30px);
+}
 
-  #rsl-extension-update-feedback .rsl-extension-update-feedback__alert {
-    padding-left: 12px !important;
-    text-align: left !important;
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close {
+  position: relative;
+  display: inline-block;
+  float: right;
+  width: 18px;
+  height: 18px;
+  margin: auto 0 auto auto;
+  color: #fff;
+  background: none;
+  cursor: pointer;
+}
+
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::before,
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::after {
+  position: absolute;
+  top: 8px;
+  left: 1px;
+  width: 16px;
+  height: 2px;
+  background: currentColor;
+  content: "";
+}
+
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::before {
+  transform: rotate(45deg);
+}
+
+#rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::after {
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 991px) {
+  #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert {
+    top: 80px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #rsl-extension-update-feedback .rsl-extension-update-feedback__inner {
-    animation: none !important;
+  #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert {
+    transition: none !important;
   }
 }
 
 @media (forced-colors: active) {
-  #rsl-extension-update-feedback .rsl-extension-update-feedback__alert {
+  #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert {
     color: CanvasText !important;
     background: Canvas !important;
     border: 2px solid ButtonText !important;
-    box-shadow: none !important;
     forced-color-adjust: auto;
   }
 
@@ -176,7 +124,33 @@
   }
 
   #rsl-extension-update-feedback .rsl-extension-update-feedback__close {
+    position: relative !important;
     color: ButtonText !important;
+    background-image: none !important;
+    forced-color-adjust: auto;
+  }
+
+  #rsl-extension-update-feedback
+    .rsl-extension-update-feedback__close::before,
+  #rsl-extension-update-feedback
+    .rsl-extension-update-feedback__close::after {
+    position: absolute;
+    top: 8px;
+    left: 1px;
+    width: 16px;
+    height: 2px;
+    background: ButtonText;
+    content: "";
+  }
+
+  #rsl-extension-update-feedback
+    .rsl-extension-update-feedback__close::before {
+    transform: rotate(45deg);
+  }
+
+  #rsl-extension-update-feedback
+    .rsl-extension-update-feedback__close::after {
+    transform: rotate(-45deg);
   }
 }
 

@@ -8,6 +8,8 @@
   const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
   const QUICK_SETTINGS_COLLAPSED_STORAGE_KEY = "rslQuickSettingsCollapsedV1";
   const EXTENSION_UPDATE_FEEDBACK_ID = "rsl-extension-update-feedback";
+  const EXTENSION_UPDATE_FEEDBACK_FALLBACK_CLASS =
+    "rsl-extension-update-feedback--fallback";
   const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
     "rsl:get-extension-update-status";
   const EXTENSION_UPDATE_HOW_TO_URL =
@@ -19827,7 +19829,8 @@
       });
     }
 
-    document.querySelectorAll(".sg-system-feedback").forEach((surface) => {
+    document.querySelectorAll(".alert-system-feedback").forEach((inner) => {
+      const surface = inner.closest?.(".sg-system-feedback") || inner;
       if (
         surface.id === EXTENSION_UPDATE_FEEDBACK_ID ||
         extensionUpdateFeedbackObservedNativeSurfaces.has(surface)
@@ -19844,6 +19847,90 @@
     });
   }
 
+  function hasNativeExtensionUpdateFeedbackStyles(inner, alert, closeControl) {
+    if (typeof window.getComputedStyle !== "function") {
+      return false;
+    }
+
+    try {
+      const innerStyle = window.getComputedStyle(inner);
+      const alertStyle = window.getComputedStyle(alert);
+      const closeStyle = window.getComputedStyle(closeControl);
+      const alertHeight = Number.parseFloat(alertStyle.height);
+      const alertFontSize = Number.parseFloat(alertStyle.fontSize);
+      const closeWidth = Number.parseFloat(closeStyle.width);
+      const closeHeight = Number.parseFloat(closeStyle.height);
+      return (
+        innerStyle.position === "relative" &&
+        alertStyle.position === "fixed" &&
+        Number.isFinite(alertHeight) &&
+        alertHeight >= 44 &&
+        alertHeight <= 52 &&
+        Number.isFinite(alertFontSize) &&
+        alertFontSize >= 18 &&
+        typeof alertStyle.backgroundColor === "string" &&
+        alertStyle.backgroundColor !== "" &&
+        alertStyle.backgroundColor !== "transparent" &&
+        alertStyle.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+        typeof closeStyle.backgroundImage === "string" &&
+        closeStyle.backgroundImage !== "" &&
+        closeStyle.backgroundImage !== "none" &&
+        Number.isFinite(closeWidth) &&
+        closeWidth >= 16 &&
+        closeWidth <= 24 &&
+        Number.isFinite(closeHeight) &&
+        closeHeight >= 16 &&
+        closeHeight <= 24
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function isActiveNativeSystemFeedbackAlert(nativeAlert) {
+    if (!nativeAlert || nativeAlert.isConnected === false) {
+      return false;
+    }
+    const nativeSurface =
+      nativeAlert.closest?.(".sg-system-feedback") ||
+      nativeAlert.closest?.(".alert-system-feedback");
+    if (
+      !nativeSurface ||
+      nativeSurface.id === EXTENSION_UPDATE_FEEDBACK_ID ||
+      nativeAlert.closest?.(`#${EXTENSION_UPDATE_FEEDBACK_ID}`) ||
+      nativeSurface.isConnected === false ||
+      nativeSurface.hidden ||
+      nativeAlert.hidden ||
+      nativeAlert.closest?.("[hidden]")
+    ) {
+      return false;
+    }
+
+    try {
+      if (typeof window.getComputedStyle === "function") {
+        const surfaceStyle = window.getComputedStyle(nativeSurface);
+        const alertStyle = window.getComputedStyle(nativeAlert);
+        if (
+          surfaceStyle.display === "none" ||
+          surfaceStyle.visibility === "hidden" ||
+          alertStyle.display === "none" ||
+          alertStyle.visibility === "hidden"
+        ) {
+          return false;
+        }
+      }
+      const alertRect = nativeAlert.getBoundingClientRect();
+      return (
+        alertRect.width > 0 &&
+        alertRect.height > 0 &&
+        alertRect.bottom > 0 &&
+        alertRect.top < window.innerHeight
+      );
+    } catch {
+      return false;
+    }
+  }
+
   function syncExtensionUpdateFeedbackPosition() {
     const feedback = document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID);
     if (!feedback) {
@@ -19851,42 +19938,27 @@
     }
 
     observeNativeSystemFeedback();
-    let nextTop = 48;
-    const pageHeader = document.querySelector(
-      "#header, .navbar-fixed-top, header[role='banner']"
-    );
-    if (pageHeader) {
-      const headerRect = pageHeader.getBoundingClientRect();
-      if (
-        headerRect.height > 0 &&
-        headerRect.bottom > 0 &&
-        headerRect.bottom < Math.min(window.innerHeight, 160)
-      ) {
-        nextTop = Math.max(nextTop, Math.ceil(headerRect.bottom + 8));
-      }
-    }
-
-    document
-      .querySelectorAll(
-        ".sg-system-feedback:not(#rsl-extension-update-feedback) .alert.on"
+    const shouldDefer = Array.from(
+      document.querySelectorAll(
+        ".alert-system-feedback .alert.on"
       )
-      .forEach((nativeAlert) => {
-        const alertRect = nativeAlert.getBoundingClientRect();
-        if (
-          alertRect.width > 0 &&
-          alertRect.height > 0 &&
-          alertRect.bottom > 0 &&
-          alertRect.top < Math.min(window.innerHeight, 200)
-        ) {
-          nextTop = Math.max(nextTop, Math.ceil(alertRect.bottom + 8));
-        }
-      });
+    ).some(isActiveNativeSystemFeedbackAlert);
+    if (feedback.hidden !== shouldDefer) {
+      feedback.hidden = shouldDefer;
+    }
+  }
 
-    const maximumTop = Math.max(8, window.innerHeight - 64);
-    feedback.style.setProperty(
-      "--rsl-extension-update-feedback-top",
-      `${Math.min(nextTop, maximumTop)}px`
-    );
+  function enableExtensionUpdateFeedbackFallback(
+    feedback,
+    inner,
+    alert,
+    closeControl
+  ) {
+    if (
+      !hasNativeExtensionUpdateFeedbackStyles(inner, alert, closeControl)
+    ) {
+      feedback.className += ` ${EXTENSION_UPDATE_FEEDBACK_FALLBACK_CLASS}`;
+    }
   }
 
   function queueExtensionUpdateFeedbackPositionSync() {
@@ -19961,28 +20033,47 @@
     howToUpdate.textContent = "How to update";
     content.append(howToUpdate);
 
-    const closeButton = document.createElement("button");
-    closeButton.className =
+    const closeControl = document.createElement("span");
+    closeControl.className =
       "icon-close-white rsl-extension-update-feedback__close";
-    closeButton.type = "button";
-    closeButton.title = "Dismiss";
-    closeButton.setAttribute(
+    closeControl.setAttribute("role", "button");
+    closeControl.setAttribute("tabindex", "0");
+    closeControl.title = "Dismiss";
+    closeControl.setAttribute(
       "aria-label",
       `Dismiss RoTool ${latest} update notice`
     );
-    closeButton.textContent = "×";
-    closeButton.addEventListener("click", (event) => {
+    closeControl.addEventListener("click", (event) => {
       if (!event.isTrusted) {
         return;
       }
       removeExtensionUpdateFeedback();
     });
+    closeControl.addEventListener("keydown", (event) => {
+      if (
+        !event.isTrusted ||
+        (event.key !== "Enter" && event.key !== " ")
+      ) {
+        return;
+      }
+      if (event.key === " ") {
+        event.preventDefault();
+      }
+      removeExtensionUpdateFeedback();
+    });
 
-    alert.append(content, closeButton);
+    alert.append(content, closeControl);
     inner.append(alert);
     feedback.append(inner);
+    feedback.hidden = true;
     (document.body || document.documentElement).append(feedback);
-    queueExtensionUpdateFeedbackPositionSync();
+    enableExtensionUpdateFeedbackFallback(
+      feedback,
+      inner,
+      alert,
+      closeControl
+    );
+    syncExtensionUpdateFeedbackPosition();
     return feedback;
   }
 
@@ -20408,6 +20499,7 @@
   if (contentTestHooks && typeof contentTestHooks === "object") {
     contentTestHooks.extensionUpdateFeedbackConstants = Object.freeze({
       feedbackId: EXTENSION_UPDATE_FEEDBACK_ID,
+      fallbackClass: EXTENSION_UPDATE_FEEDBACK_FALLBACK_CLASS,
       howToUpdateUrl: EXTENSION_UPDATE_HOW_TO_URL,
       statusRetryMs: EXTENSION_UPDATE_STATUS_RETRY_MS,
       statusMinTimerMs: EXTENSION_UPDATE_STATUS_MIN_TIMER_MS,
@@ -20422,6 +20514,12 @@
       compareExtensionUpdateVersions;
     contentTestHooks.renderExtensionUpdateFeedback =
       renderExtensionUpdateFeedback;
+    contentTestHooks.hasNativeExtensionUpdateFeedbackStyles =
+      hasNativeExtensionUpdateFeedbackStyles;
+    contentTestHooks.isActiveNativeSystemFeedbackAlert =
+      isActiveNativeSystemFeedbackAlert;
+    contentTestHooks.syncExtensionUpdateFeedbackPosition =
+      syncExtensionUpdateFeedbackPosition;
     contentTestHooks.removeExtensionUpdateFeedback =
       removeExtensionUpdateFeedback;
     contentTestHooks.refreshExtensionUpdateFeedback =
