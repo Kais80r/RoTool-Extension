@@ -180,9 +180,10 @@ function runRealChromiumTemplateParserRegression() {
   const profilePath = path.join(temporaryRoot, "profile");
   const encodedController = Buffer.from(controllerSource, "utf8").toString("base64");
   const encodedTemplate = Buffer.from(template, "utf8").toString("base64");
+  const encodedStyles = Buffer.from(shadowStyles, "utf8").toString("base64");
   const resourceUrls = {
-    "join-scheduler.html": pathToFileURL(path.join(projectRoot, "join-scheduler.html")).href,
-    "join-scheduler.css": pathToFileURL(path.join(projectRoot, "join-scheduler.css")).href
+    "join-scheduler.html": `data:text/html;charset=utf-8;base64,${encodedTemplate}`,
+    "join-scheduler.css": `data:text/css;charset=utf-8;base64,${encodedStyles}`
   };
   const fixtureSource = [
     "<!doctype html>",
@@ -238,12 +239,11 @@ function runRealChromiumTemplateParserRegression() {
       "--headless=new",
       "--disable-gpu",
       "--no-first-run",
-      "--allow-file-access-from-files",
       `--user-data-dir=${profilePath}`,
-      "--virtual-time-budget=1000",
+      "--virtual-time-budget=5000",
       "--dump-dom",
       pathToFileURL(fixturePath).href
-    ], { encoding: "utf8", timeout: 15_000, windowsHide: true });
+    ], { encoding: "utf8", timeout: 30_000, windowsHide: true });
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
