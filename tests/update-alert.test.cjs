@@ -80,7 +80,11 @@ assert.doesNotMatch(
   /chrome\.(?:downloads|notifications|permissions)\.|connectNative|sendNativeMessage|nativeMessaging/i
 );
 assert.match(contentUpdateSource, /howToUpdate\.href = EXTENSION_UPDATE_HOW_TO_URL/);
-assert.doesNotMatch(contentUpdateSource, /status\?*\.howToUpdateUrl|innerHTML|insertAdjacentHTML|DOMParser/);
+assert.doesNotMatch(
+  contentUpdateSource,
+  /(?:href|src)\s*=\s*status\?*\.howToUpdateUrl|innerHTML|insertAdjacentHTML|DOMParser/,
+  "a response URL may be validated against the fixed constant but never assigned to DOM"
+);
 assert.doesNotMatch(contentUpdateSource, /chrome\.(?:downloads|notifications|permissions)\.|connectNative|sendNativeMessage/i);
 
 // The checker adds no GitHub host grant and promotes no native/download/
@@ -193,28 +197,68 @@ assert.match(
 );
 assert.match(
   contentUpdateSource,
-  /const popupEnabled = isExtensionUpdatePopupEnabled\(\)[\s\S]*?claimNotice: popupEnabled/,
-  "the automatic request must claim popup cooldown only when Update popups is enabled"
+  /const onVisibleHome = Boolean\([\s\S]*?const popupEnabled = isExtensionUpdatePopupEnabled\(\)[\s\S]*?let claimNotice = popupEnabled && onVisibleHome && allowNoticeClaim/,
+  "automatic presentation claims require the master switch, visible Home, and a claiming trigger"
 );
 assert.match(
   contentUpdateSource,
-  /status\?\.updateAvailable && isExtensionUpdatePopupEnabled\(\)[\s\S]*?candidates\.push\(status\.nextNoticeAt\)/,
-  "a disabled popup must not turn a due reminder into a one-minute polling loop"
+  /status\?\.updateAvailable[\s\S]*?isExtensionUpdatePopupEnabled\(\)[\s\S]*?extensionUpdateReminderFrequency !== "home"[\s\S]*?status\.nextNoticeAt/,
+  "disabled and per-Home popups must not turn a due reminder into a one-minute polling loop"
 );
 assert.match(
   contentUpdateSource,
-  /installed === current &&\s*isExtensionUpdatePopupEnabled\(\) &&\s*window\.top === window/,
-  "DOM creation must re-check the current popup setting"
+  /installed === current &&[\s\S]*?isExtensionUpdatePopupEnabled\(\)[\s\S]*?Boolean\(extensionUpdateHomeVisitId\)[\s\S]*?isHomePage\(\)[\s\S]*?document\.visibilityState === "visible"[\s\S]*?window\.top === window/,
+  "DOM creation must re-check the master switch and live visible Home route"
 );
 assert.match(
   contentUpdateSource,
-  /function invalidateExtensionUpdateFeedbackRequest\([\s\S]*?extensionUpdateFeedbackRequestId \+= 1[\s\S]*?extensionUpdateFeedbackRequestPromise = null[\s\S]*?function applyExtensionUpdatePopupPreferenceTransition\([\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)/,
+  /function invalidateExtensionUpdateFeedbackRequest\([\s\S]*?extensionUpdateFeedbackRequestId \+= 1[\s\S]*?extensionUpdateActiveClaimContextId = null[\s\S]*?function applyExtensionUpdatePopupPreferenceTransition\([\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)/,
   "a popup preference change must make every older in-flight response stale"
 );
 assert.match(
   contentUpdateSource,
   /const forceRequest = force \|\| extensionUpdateFeedbackClaimWhenVisible[\s\S]*?if \(forceRequest\) \{\s*invalidateExtensionUpdateFeedbackRequest\(\);[\s\S]*?refreshExtensionUpdateFeedback\(\)/,
   "an authoritative re-enable must start a fresh claiming request immediately"
+);
+const contentHomePathSource = sourceBetween(
+  contentSource,
+  "  function isRobloxHomePathname(rawPathname)",
+  "  function isHomePage()"
+);
+assert.ok(
+  contentHomePathSource.includes('if (/^\\/home\\/?$/.test(pathname))') &&
+    contentHomePathSource.includes("NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has"),
+  "content route matching uses the same exact/localized Home contract"
+);
+assert.match(
+  contentUpdateSource,
+  /function handleExtensionUpdateNavigationStart[\s\S]*?extensionUpdateNavigationAwayFromHome =[\s\S]*?if \(extensionUpdateHomeVisitClaimRequestPending\) \{[\s\S]*?extensionUpdateHomeVisitClaimAttempted = false;[\s\S]*?extensionUpdateHomeVisitAttemptedLatest = null;[\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)/,
+  "starting a real away navigation invalidates an in-flight claim and makes a canceled navigation retryable"
+);
+assert.match(
+  contentUpdateSource,
+  /function handleExtensionUpdateNavigationError\(\)[\s\S]*?extensionUpdateNavigationAwayFromHome = false;[\s\S]*?syncExtensionUpdateHomeVisitState\(\);[\s\S]*?requestExtensionUpdateStatusWhenVisible\(true\)/,
+  "a canceled Navigation API transition preserves the Home visit and retries"
+);
+assert.match(
+  contentSource,
+  /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*?extensionUpdatePageSuspended = true;[\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\);[\s\S]*?extensionUpdateHomeVisitClaimAttempted = false;[\s\S]*?removeExtensionUpdateFeedback\(\);[\s\S]*?window\.addEventListener\("pageshow", \(event\) => \{[\s\S]*?if \(event\.persisted === true\) \{[\s\S]*?extensionUpdateNavigationAwayFromHome = false;[\s\S]*?freshVisit: restoredHomeVisit[\s\S]*?document\.visibilityState === "visible" && !restoredHomeVisit/,
+  "pagehide invalidates the old document; a persisted Home restore clears stale away state and starts exactly one fresh visit"
+);
+assert.match(
+  contentSource,
+  /globalThis\.navigation\.addEventListener\(\s*"navigate",\s*handleExtensionUpdateNavigationStart[\s\S]*?"navigatesuccess",\s*handleExtensionUpdateNavigationSettled[\s\S]*?"navigateerror",\s*handleExtensionUpdateNavigationError/,
+  "Navigation API success and cancellation have distinct lifecycle handlers"
+);
+assert.match(
+  contentSource,
+  /function handleExtensionUpdatePreferencesStorageChange\(rawValue\)[\s\S]*?extensionUpdatePreferencesDeferredStorageValue = nextPreferences[\s\S]*?chrome\.storage\.onChanged\.addListener[\s\S]*?handleExtensionUpdatePreferencesStorageChange\([\s\S]*?\.newValue/,
+  "the real cross-tab listener is routed through the behaviorally tested preference handler"
+);
+assert.doesNotMatch(
+  sourceBetween(contentSource, "function serializeFeatureSettings", "function featureSettingsStorageGet"),
+  /updateReminderFrequency|rslExtensionUpdatePreferenceV1/,
+  "the dedicated reminder preference must not alter the flags serializer schema"
 );
 const normalUpdateFeedbackStyles = stylesSource.split("/* Fail safe only:")[0];
 assert.doesNotMatch(
@@ -288,9 +332,12 @@ assert.match(
 
 assert.match(readme, /caches successful checks for 24 hours/i);
 assert.match(readme, /failed check, it waits at least one hour/i);
-assert.match(readme, /reminded at most once every six hours across tabs and reloads/i);
-assert.match(readme, /Settings shows the known update independently/i);
-assert.match(readme, /Closing the notice removes only its current page copy/i);
+assert.match(readme, /Reminder frequency[^\n]*defaults to \*\*Every 6 hours\*\*/i);
+assert.match(readme, /Timed choices share one cooldown across tabs/i);
+assert.match(readme, /Every Home visit[^\n]*at most once during the current Home document\/SPA visit/i);
+assert.match(readme, /Game-page navigation never claims or shows a banner/i);
+assert.match(readme, /RoTool Settings continues to show a known update[^\n]*without consuming a reminder/i);
+assert.match(readme, /closing a banner removes only its current page copy/i);
 
 // Run the background logic in an isolated MV3 fixture so parser, comparison,
 // cache/single-flight, presentation claim, trust, and failure behavior are
@@ -300,6 +347,15 @@ const storageWrites = [];
 const fetchCalls = [];
 let fetchHandler = async () => { throw new Error("Unexpected network request"); };
 let runtimeMessageListener = null;
+const backgroundTabMessages = [];
+let backgroundTabGetHandler = (tabId, callback) => {
+  callback({ id: tabId, active: true, url: "https://www.roblox.com/home" });
+};
+let backgroundTabMessageHandler = (_tabId, message, _options, callback) => {
+  callback?.({
+    ok: message?.type === "rsl:verify-extension-update-claim-context"
+  });
+};
 
 function makeStorageArea(data) {
   return {
@@ -356,7 +412,26 @@ const backgroundChrome = {
     onClicked: { addListener() {} }
   },
   scripting: { executeScript: async () => [] },
-  tabs: { sendMessage() {} }
+  tabs: {
+    get(tabId, callback) {
+      return backgroundTabGetHandler(tabId, callback);
+    },
+    sendMessage(tabId, message, options, callback) {
+      if (typeof options === "function") callback = options;
+      const normalizedOptions = typeof options === "function" ? undefined : options;
+      backgroundTabMessages.push({
+        tabId,
+        message: plain(message),
+        options: plain(normalizedOptions)
+      });
+      return backgroundTabMessageHandler(
+        tabId,
+        message,
+        normalizedOptions,
+        callback
+      );
+    }
+  }
 };
 
 const sandbox = {
@@ -390,15 +465,30 @@ const hooks = sandbox.__rslBackgroundTestHooks;
 const constants = plain(hooks.extensionUpdateConstants);
 assert.deepEqual(constants, {
   messageType: "rsl:get-extension-update-status",
+  preferencesGetMessageType: "rsl:get-extension-update-preferences",
+  preferencesSetMessageType: "rsl:set-extension-update-preferences",
+  contextChallengeMessageType: "rsl:verify-extension-update-claim-context",
   storageKey: "rslExtensionUpdateStatusV1",
   storageVersion: 1,
+  preferencesStorageKey: "rslExtensionUpdatePreferenceV1",
+  preferencesStorageVersion: 1,
+  defaultReminderFrequency: "6h",
+  reminderFrequencies: {
+    home: null,
+    "30m": 30 * 60_000,
+    "1h": 60 * 60_000,
+    "6h": 6 * 60 * 60_000,
+    "24h": 24 * 60 * 60_000
+  },
+  maxPresentationMarkerAgeMs: 24 * 60 * 60_000,
   latestReleaseUrl: RELEASE_API,
   howToUpdateUrl: UPDATE_GUIDE,
   cacheTtlMs: 24 * 60 * 60_000,
   presentationTtlMs: 6 * 60 * 60_000,
   fetchTimeoutMs: 8_000,
   maxResponseBytes: 256 * 1_024,
-  failureRetryMs: 60 * 60_000
+  failureRetryMs: 60 * 60_000,
+  contextChallengeTimeoutMs: 2_000
 });
 
 for (const valid of ["0.0.0", "0.19.1", "10.2.300", "999999999.999999999.999999999"]) {
@@ -481,6 +571,7 @@ function memoryStorage(initial = null) {
     writes,
     read() { return plain(value); },
     write(next) { value = plain(next); writes.push(plain(next)); },
+    replace(next) { value = plain(next); },
     get value() { return plain(value); }
   };
 }
@@ -514,11 +605,230 @@ function runtimeMessage(message, sender) {
     }
     timeoutId = setTimeout(() => {
       if (!settled) reject(new Error("runtime message timed out"));
-    }, 2_000);
+    }, 5_000);
   });
 }
 
+function directPresentationClaim(tabId, overrides = {}) {
+  return {
+    tabId,
+    pageVisible: true,
+    tabActive: true,
+    claimNotice: true,
+    homePage: true,
+    homeVisitId: `visit-${tabId}-abcdef`,
+    claimContextId: `context-${tabId}-abcdef`,
+    expectedFrequency: "6h",
+    presentationContextVerified: true,
+    ...overrides
+  };
+}
+
+function statusMessage(claimNotice, overrides = {}) {
+  return {
+    type: constants.messageType,
+    pageVisible: true,
+    claimNotice,
+    claimContextId: claimNotice ? "context-runtime-abcdef" : null,
+    homeVisitId: "visit-runtime-abcdef",
+    expectedFrequency: "6h",
+    ...overrides
+  };
+}
+
 (async () => {
+  // The frequency preference is a dedicated, versioned record. Invalid or
+  // legacy values reset to 6h, valid values round-trip exactly, and writes
+  // serialize through a monotonically increasing revision.
+  for (const frequency of ["home", "30m", "1h", "6h", "24h"]) {
+    assert.equal(
+      hooks.normalizeExtensionUpdateReminderFrequency(frequency),
+      frequency
+    );
+  }
+  for (const invalidFrequency of [null, undefined, "", "HOME", "6H", "reload", 6]) {
+    assert.equal(
+      hooks.normalizeExtensionUpdateReminderFrequency(invalidFrequency),
+      null
+    );
+  }
+  assert.deepEqual(plain(hooks.createDefaultExtensionUpdatePreferences()), {
+    version: 1,
+    frequency: "6h",
+    revision: 0
+  });
+  for (const invalidPreferences of [
+    null,
+    {},
+    { version: 0, frequency: "30m", revision: 4 },
+    { version: 1, frequency: "reload", revision: 4 },
+    { version: 1, frequency: "30m", revision: -1 },
+    { version: 1, frequency: "30m", revision: 1.5 },
+    { version: 1, updatePopups: false, updateReminderFrequency: "30m" }
+  ]) {
+    assert.deepEqual(plain(hooks.normalizeExtensionUpdatePreferences(invalidPreferences)), {
+      version: 1,
+      frequency: "6h",
+      revision: 0
+    });
+  }
+  assert.deepEqual(
+    plain(hooks.normalizeExtensionUpdatePreferences({
+      version: 1,
+      frequency: "30m",
+      revision: 7,
+      ignored: "not serialized"
+    })),
+    { version: 1, frequency: "30m", revision: 7 }
+  );
+
+  hooks.resetExtensionUpdateStateForTests();
+  const preferenceStorage = memoryStorage({
+    version: 1,
+    frequency: "30m",
+    revision: 7
+  });
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(preferenceStorage);
+  assert.deepEqual(plain(await hooks.getExtensionUpdatePreferences()), {
+    version: 1,
+    frequency: "30m",
+    revision: 7
+  });
+  assert.deepEqual(plain(await hooks.setExtensionUpdateReminderFrequency("30m")), {
+    version: 1,
+    frequency: "30m",
+    revision: 7
+  });
+  assert.equal(preferenceStorage.writes.length, 0, "an unchanged selection is not rewritten");
+  assert.deepEqual(plain(await hooks.setExtensionUpdateReminderFrequency("1h")), {
+    version: 1,
+    frequency: "1h",
+    revision: 8
+  });
+  assert.deepEqual(preferenceStorage.writes, [{
+    version: 1,
+    frequency: "1h",
+    revision: 8
+  }]);
+
+  hooks.resetExtensionUpdateStateForTests();
+  let failedPreferenceValue = {
+    version: 1,
+    frequency: "24h",
+    revision: 9
+  };
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests({
+    read() { return plain(failedPreferenceValue); },
+    write() { throw new Error("preference storage unavailable"); }
+  });
+  await assert.rejects(
+    hooks.setExtensionUpdateReminderFrequency("home"),
+    /storage unavailable/
+  );
+  assert.deepEqual(plain(await hooks.getExtensionUpdatePreferences()), failedPreferenceValue,
+    "a failed preference write leaves the confirmed value intact");
+  assert.equal(await hooks.setExtensionUpdateReminderFrequency("bogus"), null);
+
+  // Only the exact root/localized Home route is presentation-eligible.
+  for (const pathname of ["/home", "/home/", "/de/home", "/pt-br/home/"]) {
+    assert.equal(
+      hooks.isTrustedRobloxHomePageUrl(`https://www.roblox.com${pathname}`),
+      true,
+      pathname
+    );
+  }
+  for (const pathname of [
+    "/games/home", "/home/foo", "/xx/home", "//home", "/en/home/extra"
+  ]) {
+    assert.equal(
+      hooks.isTrustedRobloxHomePageUrl(`https://www.roblox.com${pathname}`),
+      false,
+      pathname
+    );
+  }
+  for (const rawUrl of [
+    "http://www.roblox.com/home",
+    "https://roblox.com/home",
+    "https://www.roblox.com:444/home",
+    "https://user@www.roblox.com/home",
+    "not a URL"
+  ]) {
+    assert.equal(hooks.isTrustedRobloxHomePageUrl(rawUrl), false, rawUrl);
+  }
+  backgroundTabGetHandler = (tabId, callback) => callback({
+    id: tabId,
+    active: true,
+    url: "https://www.roblox.com/pt-br/home/"
+  });
+  assert.equal(
+    await hooks.verifyTrustedActiveRobloxHomeTab(
+      42,
+      "https://www.roblox.com/de/home"
+    ),
+    true
+  );
+  backgroundTabGetHandler = (tabId, callback) => callback({
+    id: tabId,
+    active: false,
+    url: "https://www.roblox.com/home"
+  });
+  assert.equal(
+    await hooks.verifyTrustedActiveRobloxHomeTab(
+      42,
+      "https://www.roblox.com/home"
+    ),
+    false
+  );
+  backgroundTabGetHandler = (tabId, callback) => callback({
+    id: tabId,
+    active: true,
+    url: "https://www.roblox.com/home"
+  });
+
+  // Preference runtime routes accept only their exact request schemas and
+  // return only {ok, frequency, revision}.
+  hooks.resetExtensionUpdateStateForTests();
+  const routedPreferenceStorage = memoryStorage(null);
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(
+    routedPreferenceStorage
+  );
+  for (const malformed of [
+    { type: constants.preferencesGetMessageType, extra: true },
+    { type: constants.preferencesSetMessageType },
+    { type: constants.preferencesSetMessageType, frequency: "bogus" },
+    { type: constants.preferencesSetMessageType, frequency: "30m", extra: true }
+  ]) {
+    assert.equal(
+      runtimeMessageListener(
+        malformed,
+        trustedSender(41),
+        () => assert.fail("malformed preference request must not respond")
+      ),
+      false
+    );
+  }
+  const routedDefaultPreference = await runtimeMessage(
+    { type: constants.preferencesGetMessageType },
+    trustedSender(41)
+  );
+  assert.deepEqual(routedDefaultPreference, {
+    ok: true,
+    frequency: "6h",
+    revision: 0
+  });
+  const routedSavedPreference = await runtimeMessage({
+    type: constants.preferencesSetMessageType,
+    frequency: "30m"
+  }, trustedSender(41));
+  assert.deepEqual(routedSavedPreference, {
+    ok: true,
+    frequency: "30m",
+    revision: 1
+  });
+  assert.deepEqual(Object.keys(routedSavedPreference).sort(), [
+    "frequency", "ok", "revision"
+  ]);
+
   // Strict GitHub release payload and fixed request contract.
   fetchCalls.length = 0;
   fetchHandler = async () => releaseResponse("v0.19.2", {
@@ -578,7 +888,8 @@ function runtimeMessage(message, sender) {
   assert.equal(freshOne.latest, AVAILABLE_VERSION);
   assert.equal(freshTwo.latest, AVAILABLE_VERSION);
   assert.deepEqual(Object.keys(plain(freshOne)).sort(), [
-    "checkedAt", "lastPresentedAt", "lastPresentedVersion", "latest",
+    "checkedAt", "lastPresentedAt", "lastPresentedHomeVisitId",
+    "lastPresentedVersion", "latest", "presentedHomeVisits",
     "retryNotBefore", "version"
   ]);
   await hooks.ensureFreshExtensionUpdateState();
@@ -588,18 +899,8 @@ function runtimeMessage(message, sender) {
   // claim for that release. Reloads/tabs remain suppressed for six hours, while
   // a newer cached release bypasses the previous-version marker immediately.
   const concurrentStatuses = await Promise.all([
-    hooks.getExtensionUpdateStatus({
-      tabId: 1,
-      pageVisible: true,
-      tabActive: true,
-      claimNotice: true
-    }),
-    hooks.getExtensionUpdateStatus({
-      tabId: 2,
-      pageVisible: true,
-      tabActive: true,
-      claimNotice: true
-    })
+    hooks.getExtensionUpdateStatus(directPresentationClaim(1)),
+    hooks.getExtensionUpdateStatus(directPresentationClaim(2))
   ]);
   assert.equal(
     concurrentStatuses.filter((status) => status.showNotice).length,
@@ -608,8 +909,9 @@ function runtimeMessage(message, sender) {
   );
   const first = concurrentStatuses.find((status) => status.showNotice);
   assert.deepEqual(Object.keys(plain(first)).sort(), [
-    "checkedAt", "current", "howToUpdateUrl", "latest", "nextCheckAt",
-    "nextNoticeAt", "ok", "showNotice", "updateAvailable"
+    "checkedAt", "current", "frequency", "howToUpdateUrl", "latest",
+    "nextCheckAt", "nextNoticeAt", "ok", "preferenceRevision",
+    "showNotice", "updateAvailable"
   ]);
   assert.equal(first.howToUpdateUrl, UPDATE_GUIDE);
   assert.ok(
@@ -636,13 +938,9 @@ function runtimeMessage(message, sender) {
       presentationNow - constants.presentationTtlMs + 60_000
   });
   hooks.setExtensionUpdateStorageOverrideForTests(recentPresentationStorage);
-  const stillSuppressed = await hooks.getExtensionUpdateStatus({
-    tabId: 11,
-    pageVisible: true,
-    tabActive: true,
-    claimNotice: true,
-    now: presentationNow
-  });
+  const stillSuppressed = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(11, { now: presentationNow })
+  );
   assert.equal(stillSuppressed.showNotice, false);
   assert.equal(stillSuppressed.nextNoticeAt, presentationNow + 60_000);
   assert.equal(recentPresentationStorage.writes.length, 0);
@@ -657,13 +955,9 @@ function runtimeMessage(message, sender) {
     lastPresentedAt: presentationNow - constants.presentationTtlMs
   });
   hooks.setExtensionUpdateStorageOverrideForTests(expiredPresentationStorage);
-  const reminded = await hooks.getExtensionUpdateStatus({
-    tabId: 12,
-    pageVisible: true,
-    tabActive: true,
-    claimNotice: true,
-    now: presentationNow
-  });
+  const reminded = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(12, { now: presentationNow })
+  );
   assert.equal(reminded.showNotice, true);
   assert.equal(reminded.nextNoticeAt, presentationNow + constants.presentationTtlMs);
   assert.equal(expiredPresentationStorage.value.lastPresentedVersion, AVAILABLE_VERSION);
@@ -680,15 +974,256 @@ function runtimeMessage(message, sender) {
     lastPresentedAt: newerNow
   });
   hooks.setExtensionUpdateStorageOverrideForTests(newerStorage);
-  const newer = await hooks.getExtensionUpdateStatus({
-    tabId: 3,
-    pageVisible: true,
-    tabActive: true,
-    claimNotice: true,
-    now: newerNow
-  });
+  const newer = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(3, { now: newerNow })
+  );
   assert.equal(newer.latest, REPLACEMENT_VERSION);
   assert.equal(newer.showNotice, true, "a newer release bypasses the old marker");
+
+  // Every timed choice shares one atomic global cooldown. The millisecond
+  // immediately before the boundary is suppressed; the exact boundary is due.
+  for (const [frequency, interval] of Object.entries({
+    "30m": 30 * 60_000,
+    "1h": 60 * 60_000,
+    "6h": 6 * 60 * 60_000,
+    "24h": 24 * 60 * 60_000
+  })) {
+    hooks.resetExtensionUpdateStateForTests();
+    // Keep the test clock slightly ahead of wall time so the 24h marker is not
+    // pruned by real-time milliseconds while the fixture is loading it.
+    const boundaryNow = Date.now() + 60_000;
+    const timedPreferenceStorage = memoryStorage({
+      version: 1,
+      frequency,
+      revision: 10
+    });
+    const timedStateStorage = memoryStorage({
+      version: 1,
+      latest: AVAILABLE_VERSION,
+      checkedAt: boundaryNow,
+      retryNotBefore: 0,
+      lastPresentedVersion: AVAILABLE_VERSION,
+      lastPresentedAt: boundaryNow - interval + 1,
+      lastPresentedHomeVisitId: "visit-boundary-before",
+      presentedHomeVisits: []
+    });
+    hooks.setExtensionUpdatePreferencesStorageOverrideForTests(
+      timedPreferenceStorage
+    );
+    hooks.setExtensionUpdateStorageOverrideForTests(timedStateStorage);
+    const beforeBoundary = await hooks.getExtensionUpdateStatus(
+      directPresentationClaim(51, {
+        expectedFrequency: frequency,
+        homeVisitId: `visit-${frequency}-before`,
+        claimContextId: `context-${frequency}-before`,
+        now: boundaryNow
+      })
+    );
+    assert.equal(beforeBoundary.frequency, frequency);
+    assert.equal(beforeBoundary.preferenceRevision, 10);
+    assert.equal(beforeBoundary.showNotice, false, `${frequency} before boundary`);
+    assert.equal(beforeBoundary.nextNoticeAt, boundaryNow + 1);
+    assert.equal(timedStateStorage.writes.length, 0);
+
+    timedStateStorage.replace({
+      ...timedStateStorage.value,
+      lastPresentedAt: boundaryNow - interval
+    });
+    hooks.setExtensionUpdateStorageOverrideForTests(timedStateStorage);
+    const atBoundary = await Promise.all([
+      hooks.getExtensionUpdateStatus(directPresentationClaim(52, {
+        expectedFrequency: frequency,
+        homeVisitId: `visit-${frequency}-at-a`,
+        claimContextId: `context-${frequency}-at-a`,
+        now: boundaryNow
+      })),
+      hooks.getExtensionUpdateStatus(directPresentationClaim(53, {
+        expectedFrequency: frequency,
+        homeVisitId: `visit-${frequency}-at-b`,
+        claimContextId: `context-${frequency}-at-b`,
+        now: boundaryNow
+      }))
+    ]);
+    assert.equal(
+      atBoundary.filter(({ showNotice }) => showNotice).length,
+      1,
+      `${frequency} boundary must grant one global claim`
+    );
+    assert.ok(
+      atBoundary.every(({ nextNoticeAt }) => nextNoticeAt === boundaryNow + interval),
+      `${frequency} returns its exact next boundary`
+    );
+    assert.equal(timedStateStorage.value.lastPresentedAt, boundaryNow);
+  }
+
+  // Every Home visit is timer-free and deduplicated by (version, visit), not
+  // by a global cooldown. It also retains per-version history across A-B-A.
+  hooks.resetExtensionUpdateStateForTests();
+  const homeNow = Date.now();
+  const homePreferenceStorage = memoryStorage({
+    version: 1,
+    frequency: "home",
+    revision: 20
+  });
+  const homeStateStorage = memoryStorage({
+    version: 1,
+    latest: AVAILABLE_VERSION,
+    checkedAt: homeNow,
+    retryNotBefore: 0,
+    lastPresentedVersion: null,
+    lastPresentedAt: 0,
+    lastPresentedHomeVisitId: null,
+    presentedHomeVisits: []
+  });
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(
+    homePreferenceStorage
+  );
+  hooks.setExtensionUpdateStorageOverrideForTests(homeStateStorage);
+  const homeVisitA = "visit-home-stable-abcdef";
+  const firstHomeClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(61, {
+      expectedFrequency: "home",
+      homeVisitId: homeVisitA,
+      claimContextId: "context-home-a-first",
+      now: homeNow
+    })
+  );
+  assert.equal(firstHomeClaim.showNotice, true);
+  assert.equal(firstHomeClaim.nextNoticeAt, null);
+  const repeatedHomeClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(61, {
+      expectedFrequency: "home",
+      homeVisitId: homeVisitA,
+      claimContextId: "context-home-a-repeat",
+      now: homeNow + 1
+    })
+  );
+  assert.equal(repeatedHomeClaim.showNotice, false,
+    "refreshes within one Home visit cannot replay a version");
+  const secondHomeVisit = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(61, {
+      expectedFrequency: "home",
+      homeVisitId: "visit-home-new-abcdef",
+      claimContextId: "context-home-new-abcdef",
+      now: homeNow + 2
+    })
+  );
+  assert.equal(secondHomeVisit.showNotice, true,
+    "returning to Home with a new visit may present immediately");
+
+  homeStateStorage.replace({
+    ...homeStateStorage.value,
+    latest: REPLACEMENT_VERSION,
+    checkedAt: homeNow + 3
+  });
+  hooks.setExtensionUpdateStorageOverrideForTests(homeStateStorage);
+  const replacementHomeClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(61, {
+      expectedFrequency: "home",
+      homeVisitId: homeVisitA,
+      claimContextId: "context-home-b-abcdef",
+      now: homeNow + 3
+    })
+  );
+  assert.equal(replacementHomeClaim.showNotice, true);
+  homeStateStorage.replace({
+    ...homeStateStorage.value,
+    latest: AVAILABLE_VERSION,
+    checkedAt: homeNow + 4
+  });
+  hooks.setExtensionUpdateStorageOverrideForTests(homeStateStorage);
+  const abaHomeClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(61, {
+      expectedFrequency: "home",
+      homeVisitId: homeVisitA,
+      claimContextId: "context-home-a-return",
+      now: homeNow + 4
+    })
+  );
+  assert.equal(abaHomeClaim.showNotice, false,
+    "A -> B -> A cannot replay A within one Home visit");
+
+  const manyHomeMarkers = Array.from({ length: 300 }, (_, index) => ({
+    version: `${Math.floor(index / 100) + 1}.0.${index % 100}`,
+    visitId: `visit-retention-${index.toString(36)}-abcdef`,
+    presentedAt: homeNow - (300 - index)
+  }));
+  manyHomeMarkers.unshift({
+    version: AVAILABLE_VERSION,
+    visitId: "visit-expired-abcdef",
+    presentedAt: homeNow - constants.maxPresentationMarkerAgeMs
+  });
+  const boundedHomeState = plain(hooks.normalizeExtensionUpdateState({
+    version: 1,
+    latest: AVAILABLE_VERSION,
+    checkedAt: homeNow,
+    retryNotBefore: 0,
+    lastPresentedVersion: null,
+    lastPresentedAt: 0,
+    presentedHomeVisits: manyHomeMarkers
+  }, homeNow));
+  assert.equal(boundedHomeState.presentedHomeVisits.length, 256);
+  assert.equal(
+    boundedHomeState.presentedHomeVisits.some(
+      ({ visitId }) => visitId === "visit-expired-abcdef"
+    ),
+    false,
+    "24-hour-old visit markers expire"
+  );
+  assert.equal(
+    boundedHomeState.presentedHomeVisits.at(-1).visitId,
+    manyHomeMarkers.at(-1).visitId,
+    "the newest 256 markers are retained"
+  );
+
+  // A failed marker write never grants a notice or mutates the in-memory
+  // marker; the same visit can claim successfully once persistence recovers.
+  hooks.resetExtensionUpdateStateForTests();
+  let failClaimWrite = true;
+  let claimWriteValue = {
+    version: 1,
+    latest: AVAILABLE_VERSION,
+    checkedAt: homeNow,
+    retryNotBefore: 0,
+    lastPresentedVersion: null,
+    lastPresentedAt: 0,
+    lastPresentedHomeVisitId: null,
+    presentedHomeVisits: []
+  };
+  const claimWriteStorage = {
+    read() { return plain(claimWriteValue); },
+    write(next) {
+      if (failClaimWrite) throw new Error("marker write failed");
+      claimWriteValue = plain(next);
+    }
+  };
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(memoryStorage({
+    version: 1,
+    frequency: "home",
+    revision: 21
+  }));
+  hooks.setExtensionUpdateStorageOverrideForTests(claimWriteStorage);
+  const failedMarkerClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(62, {
+      expectedFrequency: "home",
+      homeVisitId: "visit-write-retry-abcdef",
+      claimContextId: "context-write-failed",
+      now: homeNow + 10
+    })
+  );
+  assert.equal(failedMarkerClaim.showNotice, false);
+  assert.equal(claimWriteValue.presentedHomeVisits.length, 0);
+  failClaimWrite = false;
+  const retriedMarkerClaim = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(62, {
+      expectedFrequency: "home",
+      homeVisitId: "visit-write-retry-abcdef",
+      claimContextId: "context-write-retry",
+      now: homeNow + 11
+    })
+  );
+  assert.equal(retriedMarkerClaim.showNotice, true);
+  assert.equal(claimWriteValue.presentedHomeVisits.length, 1);
 
   // A Settings read may refresh stale release data, but claimNotice:false
   // cannot consume or rewrite the current popup presentation lease.
@@ -730,18 +1265,12 @@ function runtimeMessage(message, sender) {
   hooks.setExtensionUpdateStorageOverrideForTests(hiddenStorage);
   fetchCalls.length = 0;
   fetchHandler = async () => releaseResponse(`v${AVAILABLE_VERSION}`);
-  const hidden = await hooks.getExtensionUpdateStatus({
-    tabId: 4,
-    pageVisible: false,
-    tabActive: true,
-    claimNotice: true
-  });
-  const inactive = await hooks.getExtensionUpdateStatus({
-    tabId: 4,
-    pageVisible: true,
-    tabActive: false,
-    claimNotice: true
-  });
+  const hidden = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(4, { pageVisible: false })
+  );
+  const inactive = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(4, { tabActive: false })
+  );
   assert.equal(hidden.showNotice, false);
   assert.equal(inactive.showNotice, false);
   assert.equal(fetchCalls.length, 0);
@@ -757,7 +1286,7 @@ function runtimeMessage(message, sender) {
   ]) {
     assert.equal(
       runtimeMessageListener(
-        { type: constants.messageType, pageVisible: true, claimNotice: true },
+        statusMessage(true),
         sender,
         () => assert.fail("untrusted sender must not receive a response")
       ),
@@ -765,11 +1294,12 @@ function runtimeMessage(message, sender) {
     );
   }
   for (const message of [
-    { type: constants.messageType, pageVisible: true },
-    { type: constants.messageType, claimNotice: true },
-    { type: constants.messageType, pageVisible: "true", claimNotice: true },
-    { type: constants.messageType, pageVisible: true, claimNotice: 1 },
-    { type: constants.messageType, pageVisible: true, claimNotice: true, extra: true }
+    { ...statusMessage(true), pageVisible: "true" },
+    { ...statusMessage(true), claimNotice: 1 },
+    { ...statusMessage(true), claimContextId: null },
+    { ...statusMessage(false), claimContextId: "context-runtime-abcdef" },
+    { ...statusMessage(true), expectedFrequency: "bogus" },
+    { ...statusMessage(true), extra: true }
   ]) {
     assert.equal(
       runtimeMessageListener(
@@ -778,7 +1308,7 @@ function runtimeMessage(message, sender) {
         () => assert.fail("a malformed update-status message must not receive a response")
       ),
       false,
-      "the runtime route accepts exactly type/pageVisible/claimNotice"
+      "the runtime route accepts exactly the six typed status fields"
     );
   }
 
@@ -793,16 +1323,19 @@ function runtimeMessage(message, sender) {
     lastPresentedAt: 0
   });
   hooks.setExtensionUpdateStorageOverrideForTests(routeStorage);
+  backgroundTabMessages.length = 0;
   const settingsRouted = await runtimeMessage(
-    { type: constants.messageType, pageVisible: true, claimNotice: false },
+    statusMessage(false),
     trustedSender(6)
   );
   assert.equal(settingsRouted.showNotice, false);
   assert.equal(settingsRouted.updateAvailable, true);
   assert.equal(routeStorage.writes.length, 0,
     "claimNotice:false reads status without consuming presentation");
+  assert.equal(backgroundTabMessages.length, 0,
+    "status-only requests never send a context challenge");
   const routed = await runtimeMessage(
-    { type: constants.messageType, pageVisible: true, claimNotice: true },
+    statusMessage(true),
     trustedSender(6)
   );
   assert.equal(routed.showNotice, true);
@@ -811,6 +1344,196 @@ function runtimeMessage(message, sender) {
   assert.equal(Object.hasOwn(routed, "url"), false);
   assert.equal(routeStorage.writes.length, 1,
     "claimNotice:true atomically records the presentation");
+  assert.deepEqual(backgroundTabMessages, [{
+    tabId: 6,
+    message: {
+      type: constants.contextChallengeMessageType,
+      claimContextId: "context-runtime-abcdef",
+      homeVisitId: "visit-runtime-abcdef",
+      expectedFrequency: "6h"
+    },
+    options: { frameId: 0 }
+  }]);
+
+  // The final context challenge is strict and fail-closed. A live active Home
+  // tab plus the exact one-key acknowledgement is required.
+  backgroundTabMessages.length = 0;
+  backgroundTabMessageHandler = (_tabId, _message, _options, callback) => {
+    callback({ ok: true, extra: true });
+  };
+  assert.equal(await hooks.challengeExtensionUpdateClaimContext(70, {
+    claimContextId: "context-strict-extra",
+    homeVisitId: "visit-strict-extra",
+    expectedFrequency: "6h"
+  }), false);
+  backgroundTabMessageHandler = (_tabId, _message, _options, callback) => {
+    callback({ ok: 1 });
+  };
+  assert.equal(await hooks.challengeExtensionUpdateClaimContext(70, {
+    claimContextId: "context-strict-type",
+    homeVisitId: "visit-strict-type",
+    expectedFrequency: "6h"
+  }), false);
+  backgroundTabMessageHandler = () => {
+    throw new Error("disconnected content script");
+  };
+  assert.equal(await hooks.challengeExtensionUpdateClaimContext(70, {
+    claimContextId: "context-strict-throw",
+    homeVisitId: "visit-strict-throw",
+    expectedFrequency: "6h"
+  }), false);
+  backgroundTabMessageHandler = (_tabId, _message, _options, callback) => {
+    callback({ ok: true });
+  };
+  assert.equal(await hooks.challengeExtensionUpdateClaimContext(70, {
+    claimContextId: "bad space",
+    homeVisitId: "visit-strict-invalid",
+    expectedFrequency: "6h"
+  }), false);
+  assert.equal(await hooks.challengeExtensionUpdateClaimContext(70, {
+    claimContextId: "context-strict-valid",
+    homeVisitId: "visit-strict-valid",
+    expectedFrequency: "6h"
+  }), true);
+
+  // A sender/tab route disagreement, inactive live tab, game route, expected
+  // frequency mismatch, or disabled master switch cannot challenge or mark.
+  hooks.resetExtensionUpdateStateForTests();
+  const deniedNow = Date.now();
+  const deniedStorage = memoryStorage({
+    version: 1,
+    latest: AVAILABLE_VERSION,
+    checkedAt: deniedNow,
+    retryNotBefore: 0,
+    lastPresentedVersion: null,
+    lastPresentedAt: 0,
+    lastPresentedHomeVisitId: null,
+    presentedHomeVisits: []
+  });
+  hooks.setExtensionUpdateStorageOverrideForTests(deniedStorage);
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(memoryStorage({
+    version: 1,
+    frequency: "6h",
+    revision: 30
+  }));
+  backgroundTabMessages.length = 0;
+  backgroundTabMessageHandler = () => undefined;
+  const challengeTimeoutStartedAt = Date.now();
+  const timedOutChallengeStatus = await runtimeMessage(
+    statusMessage(true),
+    trustedSender(71)
+  );
+  assert.equal(timedOutChallengeStatus.showNotice, false);
+  assert.ok(
+    Date.now() - challengeTimeoutStartedAt >= constants.contextChallengeTimeoutMs - 100,
+    "a missing content response waits only for the bounded challenge timeout"
+  );
+  assert.equal(deniedStorage.writes.length, 0,
+    "a timed-out challenge cannot record a presentation marker");
+  backgroundTabMessages.length = 0;
+  backgroundTabMessageHandler = (_tabId, _message, _options, callback) => {
+    callback({ ok: true });
+  };
+  const gameSender = trustedSender(71, {
+    url: "https://www.roblox.com/games/123/example",
+    tab: {
+      id: 71,
+      active: true,
+      url: "https://www.roblox.com/games/123/example"
+    }
+  });
+  const gameRouteStatus = await runtimeMessage(statusMessage(true), gameSender);
+  assert.equal(gameRouteStatus.showNotice, false);
+  assert.equal(backgroundTabMessages.length, 0);
+  assert.equal(deniedStorage.writes.length, 0);
+
+  const disagreeingSender = trustedSender(71, {
+    url: "https://www.roblox.com/games/123/example"
+  });
+  const disagreementStatus = await runtimeMessage(
+    statusMessage(true),
+    disagreeingSender
+  );
+  assert.equal(disagreementStatus.showNotice, false);
+  assert.equal(backgroundTabMessages.length, 0);
+  assert.equal(deniedStorage.writes.length, 0);
+
+  backgroundTabGetHandler = (tabId, callback) => callback({
+    id: tabId,
+    active: false,
+    url: "https://www.roblox.com/home"
+  });
+  const inactiveLiveStatus = await runtimeMessage(
+    statusMessage(true),
+    trustedSender(71)
+  );
+  assert.equal(inactiveLiveStatus.showNotice, false);
+  assert.equal(backgroundTabMessages.length, 0);
+  assert.equal(deniedStorage.writes.length, 0);
+  backgroundTabGetHandler = (tabId, callback) => callback({
+    id: tabId,
+    active: true,
+    url: "https://www.roblox.com/home"
+  });
+
+  hooks.resetExtensionUpdateStateForTests();
+  const mismatchStorage = memoryStorage(deniedStorage.value);
+  hooks.setExtensionUpdateStorageOverrideForTests(mismatchStorage);
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(memoryStorage({
+    version: 1,
+    frequency: "30m",
+    revision: 31
+  }));
+  backgroundTabMessages.length = 0;
+  const mismatchStatus = await runtimeMessage(
+    statusMessage(true, { expectedFrequency: "6h" }),
+    trustedSender(72)
+  );
+  assert.equal(mismatchStatus.frequency, "30m");
+  assert.equal(mismatchStatus.showNotice, false);
+  assert.equal(backgroundTabMessages.length, 0,
+    "a stale expected frequency is rejected before challenge");
+  assert.equal(mismatchStorage.writes.length, 0);
+
+  storageData.rslFeatureSettingsV1 = {
+    version: 1,
+    flags: { updatePopups: false, friendFilters: true }
+  };
+  hooks.resetExtensionUpdateStateForTests();
+  const masterOffStorage = memoryStorage(deniedStorage.value);
+  const retainedPreference = memoryStorage({
+    version: 1,
+    frequency: "30m",
+    revision: 31
+  });
+  hooks.setExtensionUpdateStorageOverrideForTests(masterOffStorage);
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(retainedPreference);
+  const masterOffStatus = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(73, {
+      expectedFrequency: "30m",
+      homeVisitId: "visit-master-off-abcdef",
+      claimContextId: "context-master-off-abcdef",
+      now: deniedNow
+    })
+  );
+  assert.equal(masterOffStatus.frequency, "30m");
+  assert.equal(masterOffStatus.showNotice, false);
+  assert.equal(masterOffStorage.writes.length, 0);
+  assert.deepEqual(retainedPreference.value, {
+    version: 1,
+    frequency: "30m",
+    revision: 31
+  }, "the parent switch disables presentation without erasing its submenu");
+  assert.deepEqual(storageData.rslFeatureSettingsV1, {
+    version: 1,
+    flags: { updatePopups: false, friendFilters: true }
+  }, "frequency state never leaks into the flags schema");
+  delete storageData.rslFeatureSettingsV1;
+  backgroundTabMessageHandler = (_tabId, message, _options, callback) => {
+    callback?.({
+      ok: message?.type === constants.contextChallengeMessageType
+    });
+  };
 
   // Network and persistence failures are silent/fail-safe. A stale known
   // release remains usable, and a failed empty check creates only bounded
@@ -828,12 +1551,9 @@ function runtimeMessage(message, sender) {
   hooks.setExtensionUpdateStorageOverrideForTests(staleStorage);
   fetchHandler = async () => { throw new Error("offline"); };
   const staleFailureStartedAt = Date.now();
-  const stale = await hooks.getExtensionUpdateStatus({
-    tabId: 7,
-    pageVisible: true,
-    tabActive: true,
-    claimNotice: true
-  });
+  const stale = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(7)
+  );
   assert.equal(stale.latest, AVAILABLE_VERSION);
   assert.equal(stale.updateAvailable, true);
   assert.equal(stale.showNotice, true);
@@ -846,12 +1566,9 @@ function runtimeMessage(message, sender) {
   hooks.resetExtensionUpdateStateForTests();
   const failedStorage = memoryStorage();
   hooks.setExtensionUpdateStorageOverrideForTests(failedStorage);
-  const failed = await hooks.getExtensionUpdateStatus({
-    tabId: 8,
-    pageVisible: true,
-    tabActive: true,
-    claimNotice: true
-  });
+  const failed = await hooks.getExtensionUpdateStatus(
+    directPresentationClaim(8)
+  );
   assert.equal(failed.latest, null);
   assert.equal(failed.updateAvailable, false);
   assert.equal(failed.showNotice, false);
@@ -865,6 +1582,7 @@ function runtimeMessage(message, sender) {
   const originalGlobals = {
     window: globalThis.window,
     document: globalThis.document,
+    location: globalThis.location,
     chrome: globalThis.chrome,
     MutationObserver: globalThis.MutationObserver,
     hooks: globalThis.__rslContentTestHooks
@@ -900,6 +1618,18 @@ function runtimeMessage(message, sender) {
       this.listeners = new Map();
       this.id = "";
       this.className = "";
+      this.classList = {
+        values: new Set(),
+        toggle: (name, force) => {
+          const enabled = force === undefined
+            ? !this.classList.values.has(name)
+            : Boolean(force);
+          if (enabled) this.classList.values.add(name);
+          else this.classList.values.delete(name);
+          return enabled;
+        },
+        contains: (name) => this.classList.values.has(name)
+      };
       this.textContent = "";
       this.hidden = false;
       this.rect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
@@ -1045,11 +1775,32 @@ function runtimeMessage(message, sender) {
     }
   };
   fakeWindow.top = fakeWindow;
+  const fakeLocation = {
+    href: "https://www.roblox.com/home",
+    origin: "https://www.roblox.com",
+    protocol: "https:",
+    hostname: "www.roblox.com",
+    pathname: "/home",
+    search: "",
+    hash: ""
+  };
+  function setFakeLocation(rawUrl) {
+    const url = new URL(rawUrl, fakeLocation.href);
+    fakeLocation.href = url.href;
+    fakeLocation.origin = url.origin;
+    fakeLocation.protocol = url.protocol;
+    fakeLocation.hostname = url.hostname;
+    fakeLocation.pathname = url.pathname;
+    fakeLocation.search = url.search;
+    fakeLocation.hash = url.hash;
+  }
 
   globalThis.window = fakeWindow;
   globalThis.document = fakeDocument;
+  globalThis.location = fakeLocation;
   globalThis.chrome = {
     runtime: {
+      id: "content-test-extension",
       lastError: null,
       getManifest() { return { version: manifest.version }; },
       sendMessage(message, callback) { return contentMessageHandler(message, callback); }
@@ -1100,26 +1851,45 @@ function runtimeMessage(message, sender) {
     true,
     "Reset defaults must restore update popups"
   );
+  contentMessageHandler = (message, callback) => {
+    assert.deepEqual(message, { type: constants.preferencesGetMessageType });
+    callback({ ok: true, frequency: "6h", revision: 0 });
+  };
+  assert.deepEqual(await contentHooks.loadExtensionUpdatePreferences(), {
+    frequency: "6h",
+    revision: 0
+  });
+  contentMessageHandler = () => {
+    contentMessages += 1;
+    throw new Error("close must stay local");
+  };
   const updatePopupsDefinition = contentHooks.featureDefinitions.find(
     ({ key }) => key === "updatePopups"
   );
   assert.deepEqual(plain(updatePopupsDefinition), {
     key: "updatePopups",
     group: "Interface",
-    label: "Update Popups",
+    label: "RoTool Update Popups",
     description:
-      "Show update reminders at the top of Roblox. Available updates still appear in RoTool Settings."
+      "Show RoTool update reminders at the top of Home. Updates still appear in RoTool Settings.",
+    advancedControl: {
+      type: "select",
+      key: "updateReminderFrequency",
+      label: "Reminder frequency",
+      description:
+        "Reminders appear only while Home is active and visible. Opening a game never shows one."
+    }
   });
   const topLevelFeatureKeys = contentHooks.featureDefinitions.map(({ key }) => key);
   assert.equal(
     topLevelFeatureKeys.indexOf("updatePopups"),
     topLevelFeatureKeys.indexOf("friendFilters") + 1,
-    "Update Popups must follow Friend Lists & Filters at the end of Interface"
+    "RoTool Update Popups must follow Friend Lists & Filters at the end of Interface"
   );
   assert.equal(
     topLevelFeatureKeys.indexOf("quickPlay"),
     topLevelFeatureKeys.indexOf("updatePopups") + 1,
-    "Experiences must begin directly after Update Popups"
+    "Experiences must begin directly after RoTool Update Popups"
   );
   contentHooks.setFeatureSettingsForTests({
     version: 1,
@@ -1128,6 +1898,12 @@ function runtimeMessage(message, sender) {
       updatePopups: true
     }
   });
+  fakeDocument.visibilityState = "hidden";
+  assert.equal(contentHooks.syncExtensionUpdateHomeVisitState(), true);
+  fakeDocument.visibilityState = "visible";
+  const activeHomeVisitId =
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId;
+  assert.equal(typeof activeHomeVisitId, "string");
   assert.deepEqual(contentHooks.extensionUpdateFeedbackConstants, {
     feedbackId: "rsl-extension-update-feedback",
     fallbackClass: "rsl-extension-update-feedback--fallback",
@@ -1135,8 +1911,100 @@ function runtimeMessage(message, sender) {
     statusRetryMs: 60 * 60_000,
     statusMinTimerMs: 60_000,
     statusMaxTimerMs: 24 * 60 * 60_000,
-    messageTypes: { status: constants.messageType }
+    preferencesStorageKey: "rslExtensionUpdatePreferenceV1",
+    preferencesStorageVersion: 1,
+    defaultReminderFrequency: "6h",
+    reminderFrequencyOptions: [
+      { value: "home", label: "Every Home visit" },
+      { value: "30m", label: "Every 30 minutes" },
+      { value: "1h", label: "Every hour" },
+      { value: "6h", label: "Every 6 hours (default)" },
+      { value: "24h", label: "Every 24 hours" }
+    ],
+    messageTypes: {
+      status: constants.messageType,
+      preferencesGet: constants.preferencesGetMessageType,
+      preferencesSet: constants.preferencesSetMessageType,
+      contextChallenge: constants.contextChallengeMessageType
+    }
   });
+  for (const frequency of ["home", "30m", "1h", "6h", "24h"]) {
+    assert.equal(
+      contentHooks.normalizeExtensionUpdateReminderFrequency(frequency),
+      frequency
+    );
+    assert.deepEqual(
+      plain(contentHooks.normalizeExtensionUpdatePreferences({
+        version: 1,
+        frequency,
+        revision: 12
+      })),
+      { frequency, revision: 12 }
+    );
+    assert.deepEqual(
+      plain(contentHooks.normalizeExtensionUpdatePreferencesResponse({
+        ok: true,
+        frequency,
+        revision: 12
+      })),
+      { frequency, revision: 12 }
+    );
+  }
+  for (const invalidPreferenceResponse of [
+    null,
+    { ok: false, frequency: "6h", revision: 0 },
+    { ok: true, frequency: "reload", revision: 0 },
+    { ok: true, frequency: "6h", revision: -1 },
+    { ok: true, frequency: "6h", revision: 0, extra: true }
+  ]) {
+    assert.equal(
+      contentHooks.normalizeExtensionUpdatePreferencesResponse(
+        invalidPreferenceResponse
+      ),
+      null
+    );
+  }
+  assert.deepEqual(
+    plain(contentHooks.normalizeExtensionUpdatePreferences({
+      version: 0,
+      frequency: "30m",
+      revision: 9
+    })),
+    { frequency: "6h", revision: 0 },
+    "invalid/legacy local records migrate to the default"
+  );
+  const serializedFlags = contentHooks.serializeFeatureSettings({
+    ...contentHooks.defaultFeatureSettings,
+    updateReminderFrequency: "30m"
+  });
+  assert.equal(Object.hasOwn(serializedFlags.flags, "updateReminderFrequency"), false);
+  assert.equal(Object.hasOwn(serializedFlags, "frequency"), false);
+
+  for (const pathname of ["/home", "/home/", "/de/home", "/pt-br/home/"]) {
+    assert.equal(contentHooks.isRobloxHomePathname(pathname), true, pathname);
+  }
+  for (const pathname of [
+    "/games/home", "/home/foo", "/xx/home", "//home", "/en/home/extra"
+  ]) {
+    assert.equal(contentHooks.isRobloxHomePathname(pathname), false, pathname);
+  }
+  assert.equal(
+    contentHooks.isExtensionUpdateNavigationDestinationHome(
+      "https://www.roblox.com/de/home?from=test#top"
+    ),
+    true
+  );
+  assert.equal(
+    contentHooks.isExtensionUpdateNavigationDestinationHome(
+      "https://www.roblox.com/games/home"
+    ),
+    false
+  );
+  assert.match(
+    contentHooks.makeExtensionUpdateClaimContextId(activeHomeVisitId, 35),
+    new RegExp(`^${activeHomeVisitId}-claim-z$`)
+  );
+  assert.equal(contentHooks.makeExtensionUpdateClaimContextId(null, 1), null);
 
   const renderStatus = {
     ok: true,
@@ -1339,12 +2207,17 @@ function runtimeMessage(message, sender) {
   assert.equal(settingsUpdateTitle.textContent, "Update available");
   assert.equal(settingsUpdateLink.textContent, "How to update");
   assert.equal(settingsUpdateLink.href, UPDATE_GUIDE);
+  const settingsSaveStatus = new FakeNode("p");
+  settingsSaveStatus.setAttribute("data-rsl-feature-settings-status", "");
+  settingsDialog.append(settingsSaveStatus);
 
   const statusNow = Date.now();
   const makeContentStatus = ({
     latest = AVAILABLE_VERSION,
     checkedAt = statusNow,
-    showNotice = false
+    showNotice = false,
+    frequency = "6h",
+    preferenceRevision = 0
   } = {}) => {
     const updateAvailable = Boolean(
       latest && contentHooks.compareExtensionUpdateVersions(latest, manifest.version) > 0
@@ -1355,10 +2228,15 @@ function runtimeMessage(message, sender) {
       latest,
       updateAvailable,
       showNotice: updateAvailable && showNotice,
+      frequency,
+      preferenceRevision,
       checkedAt,
-      nextNoticeAt: updateAvailable ? statusNow + constants.presentationTtlMs : null,
+      nextNoticeAt:
+        updateAvailable && frequency !== "home"
+          ? statusNow + constants.presentationTtlMs
+          : null,
       nextCheckAt: statusNow + constants.cacheTtlMs,
-      howToUpdateUrl: "https://evil.invalid/ignored"
+      howToUpdateUrl: UPDATE_GUIDE
     };
   };
 
@@ -1371,6 +2249,7 @@ function runtimeMessage(message, sender) {
     { ...knownStatus, updateAvailable: false },
     { ...knownStatus, nextCheckAt: 0 },
     { ...knownStatus, nextNoticeAt: null },
+    { ...knownStatus, howToUpdateUrl: "https://evil.invalid/ignored" },
     {
       ...makeContentStatus({ latest: manifest.version }),
       nextNoticeAt: statusNow + constants.presentationTtlMs
@@ -1384,6 +2263,8 @@ function runtimeMessage(message, sender) {
     latest: AVAILABLE_VERSION,
     updateAvailable: true,
     showNotice: false,
+    frequency: "6h",
+    preferenceRevision: 0,
     checkedAt: statusNow,
     nextNoticeAt: statusNow + constants.presentationTtlMs,
     nextCheckAt: statusNow + constants.cacheTtlMs
@@ -1461,7 +2342,10 @@ function runtimeMessage(message, sender) {
   assert.deepEqual(settingsMessages, [{
     type: constants.messageType,
     pageVisible: true,
-    claimNotice: false
+    claimNotice: false,
+    claimContextId: null,
+    homeVisitId: activeHomeVisitId,
+    expectedFrequency: "6h"
   }]);
   assert.strictEqual(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
@@ -1512,7 +2396,10 @@ function runtimeMessage(message, sender) {
   assert.deepEqual(disabledPopupMessages, [{
     type: constants.messageType,
     pageVisible: true,
-    claimNotice: false
+    claimNotice: false,
+    claimContextId: null,
+    homeVisitId: activeHomeVisitId,
+    expectedFrequency: "6h"
   }]);
   assert.equal(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
@@ -1561,11 +2448,17 @@ function runtimeMessage(message, sender) {
     });
   };
   const stalePopupRequest = contentHooks.refreshExtensionUpdateFeedback();
-  assert.deepEqual(stalePopupMessages, [{
-    type: constants.messageType,
-    pageVisible: true,
-    claimNotice: true
-  }]);
+  assert.equal(stalePopupMessages.length, 1);
+  assert.deepEqual(Object.keys(stalePopupMessages[0]).sort(), [
+    "claimContextId", "claimNotice", "expectedFrequency", "homeVisitId",
+    "pageVisible", "type"
+  ]);
+  assert.equal(stalePopupMessages[0].type, constants.messageType);
+  assert.equal(stalePopupMessages[0].pageVisible, true);
+  assert.equal(stalePopupMessages[0].claimNotice, true);
+  assert.equal(stalePopupMessages[0].homeVisitId, activeHomeVisitId);
+  assert.equal(stalePopupMessages[0].expectedFrequency, "6h");
+  assert.match(stalePopupMessages[0].claimContextId, /-claim-[a-z0-9]+$/);
 
   let finishPopupDisableSave = null;
   contentFeatureStorageSetHandler = (values, callback) => {
@@ -1589,8 +2482,8 @@ function runtimeMessage(message, sender) {
   assert.equal(disabledSavedValue.flags.updatePopups, false);
   assert.deepEqual(
     stalePopupMessages.map(({ claimNotice }) => claimNotice),
-    [true, false],
-    "switch-off must replace stale claiming work with a non-claiming status check"
+    [true],
+    "switch-off invalidates the in-flight claim before it can finish"
   );
   contentFeatureStorageSetHandler = (values, callback) => {
     contentFeatureStorageWrites.push(plain(values));
@@ -1605,6 +2498,14 @@ function runtimeMessage(message, sender) {
     showNotice: true
   });
   await stalePopupRequest;
+  for (let index = 0; index < 10 && stalePopupMessages.length < 2; index += 1) {
+    await Promise.resolve();
+  }
+  assert.deepEqual(
+    stalePopupMessages.map(({ claimNotice }) => claimNotice),
+    [true, false],
+    "after stale work settles, switch-off re-arms cadence with one non-claiming status read"
+  );
   assert.equal(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
     null,
@@ -1613,8 +2514,8 @@ function runtimeMessage(message, sender) {
   assert.equal(settingsUpdateRow.hidden, false,
     "the late status still updates Settings while its stale popup is suppressed");
 
-  // Re-enabling during an in-flight disabled read must invalidate it and start
-  // exactly one fresh claim instead of reusing the no-claim result or waiting.
+  // Re-enabling during an in-flight disabled read must invalidate it and queue
+  // exactly one fresh claim after the stale read settles.
   contentHooks.resetExtensionUpdateStatusForTests();
   const reenableMessages = [];
   let finishDisabledInFlight = null;
@@ -1641,13 +2542,31 @@ function runtimeMessage(message, sender) {
     updatePopups: true
   });
   assert.equal(enabledSavedValue.flags.updatePopups, true);
+  assert.deepEqual(
+    reenableMessages.map(({ claimNotice }) => claimNotice),
+    [false],
+    "re-enable must not overlap a pending no-claim read"
+  );
+  assert.equal(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    null,
+    "the invalidated no-claim read cannot render while it is pending"
+  );
+  finishDisabledInFlight({
+    ...knownStatus,
+    checkedAt: statusNow + 30,
+    nextNoticeAt: statusNow + 60_000,
+    nextCheckAt: statusNow + constants.cacheTtlMs + 30,
+    showNotice: false
+  });
+  await disabledInFlight;
   for (let index = 0; index < 10 && reenableMessages.length < 2; index += 1) {
     await Promise.resolve();
   }
   assert.deepEqual(
     reenableMessages.map(({ claimNotice }) => claimNotice),
     [false, true],
-    "re-enable must supersede a pending no-claim read with one fresh cooldown claim"
+    "re-enable queues one fresh cooldown claim after the stale read settles"
   );
   for (
     let index = 0;
@@ -1663,20 +2582,208 @@ function runtimeMessage(message, sender) {
   const freshReenabledBanner = fakeDocument.getElementById(
     "rsl-extension-update-feedback"
   );
-  finishDisabledInFlight({
-    ...knownStatus,
-    checkedAt: statusNow + 30,
-    nextNoticeAt: statusNow + 60_000,
-    nextCheckAt: statusNow + constants.cacheTtlMs + 30,
-    showNotice: false
-  });
-  await disabledInFlight;
   assert.strictEqual(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
     freshReenabledBanner,
-    "the invalidated no-claim response cannot remove the newer enabled banner"
+    "the fresh enabled banner remains after the invalidated read settled"
   );
   assert.equal(settingsUpdateRow.hidden, false);
+
+  // Preference revisions protect startup and save races. A delayed GET cannot
+  // roll back a newer cross-tab value, and rapid saves stay serialized.
+  contentHooks.resetExtensionUpdateStatusForTests();
+  fakeDocument.visibilityState = "hidden";
+  let finishStalePreferenceGet = null;
+  contentMessageHandler = (message, callback) => {
+    assert.deepEqual(plain(message), {
+      type: constants.preferencesGetMessageType
+    });
+    finishStalePreferenceGet = callback;
+  };
+  const stalePreferenceLoad = contentHooks.loadExtensionUpdatePreferences();
+  for (let index = 0; index < 6 && !finishStalePreferenceGet; index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(typeof finishStalePreferenceGet, "function");
+  contentHooks.handleExtensionUpdatePreferencesStorageChange({
+    version: 1,
+    frequency: "1h",
+    revision: 100
+  });
+  finishStalePreferenceGet({ ok: true, frequency: "6h", revision: 0 });
+  assert.deepEqual(await stalePreferenceLoad, {
+    frequency: "1h",
+    revision: 100
+  });
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().frequency,
+    "1h"
+  );
+
+  const rapidPreferenceMessages = [];
+  const rapidPreferenceCallbacks = [];
+  contentMessageHandler = (message, callback) => {
+    rapidPreferenceMessages.push(plain(message));
+    rapidPreferenceCallbacks.push(callback);
+  };
+  const rapidSave30m = contentHooks.saveExtensionUpdateReminderFrequency("30m");
+  const rapidSave1h = contentHooks.saveExtensionUpdateReminderFrequency("1h");
+  for (let index = 0; index < 8 && rapidPreferenceCallbacks.length < 1; index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(rapidPreferenceCallbacks.length, 1,
+    "only the first serialized preference write starts immediately");
+  rapidPreferenceCallbacks[0]({ ok: true, frequency: "30m", revision: 101 });
+  for (let index = 0; index < 8 && rapidPreferenceCallbacks.length < 2; index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(rapidPreferenceCallbacks.length, 2);
+  rapidPreferenceCallbacks[1]({ ok: true, frequency: "1h", revision: 102 });
+  assert.deepEqual(await Promise.all([rapidSave30m, rapidSave1h]), [
+    { frequency: "30m", revision: 101 },
+    { frequency: "1h", revision: 102 }
+  ]);
+  assert.deepEqual(rapidPreferenceMessages, [
+    { type: constants.preferencesSetMessageType, frequency: "30m" },
+    { type: constants.preferencesSetMessageType, frequency: "1h" }
+  ]);
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().frequency,
+    "1h"
+  );
+
+  // If SET is lost but a higher-revision storage event arrives, that event is
+  // adopted, promoted as the rollback base, and recomputes cadence even when
+  // its frequency matches the optimistic selection.
+  contentHooks.handleExtensionUpdatePreferencesStorageChange({
+    version: 1,
+    frequency: "6h",
+    revision: 200
+  });
+  fakeDocument.visibilityState = "visible";
+  const deferredRaceMessages = [];
+  let finishLostPreferenceSet = null;
+  contentMessageHandler = (message, callback) => {
+    deferredRaceMessages.push(plain(message));
+    if (message.type === constants.preferencesSetMessageType) {
+      finishLostPreferenceSet = callback;
+      return;
+    }
+    assert.equal(message.type, constants.messageType);
+    callback(makeContentStatus({
+      frequency: "home",
+      preferenceRevision: 201,
+      showNotice: false,
+      checkedAt: statusNow + 40
+    }));
+  };
+  const lostPreferenceSave =
+    contentHooks.saveExtensionUpdateReminderFrequency("home");
+  for (let index = 0; index < 8 && !finishLostPreferenceSet; index += 1) {
+    await Promise.resolve();
+  }
+  contentHooks.handleExtensionUpdatePreferencesStorageChange({
+    version: 1,
+    frequency: "home",
+    revision: 201
+  });
+  finishLostPreferenceSet(null);
+  assert.equal(await lostPreferenceSave, null);
+  for (
+    let index = 0;
+    index < 12 && !deferredRaceMessages.some(({ type }) => type === constants.messageType);
+    index += 1
+  ) {
+    await Promise.resolve();
+  }
+  const deferredCadenceRequest = deferredRaceMessages.find(
+    ({ type }) => type === constants.messageType
+  );
+  assert.ok(deferredCadenceRequest,
+    "the higher-revision deferred winner forces one cadence recompute");
+  assert.equal(deferredCadenceRequest.expectedFrequency, "home");
+  assert.equal(deferredCadenceRequest.claimNotice, true);
+  assert.deepEqual(
+    contentHooks.getExtensionUpdatePreferenceStateForTests(),
+    {
+      ...contentHooks.getExtensionUpdatePreferenceStateForTests(),
+      frequency: "home",
+      revision: 201
+    }
+  );
+
+  fakeDocument.visibilityState = "hidden";
+  contentMessageHandler = (message, callback) => {
+    assert.deepEqual(plain(message), {
+      type: constants.preferencesSetMessageType,
+      frequency: "24h"
+    });
+    callback(null);
+  };
+  assert.equal(
+    await contentHooks.saveExtensionUpdateReminderFrequency("24h"),
+    null
+  );
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().frequency,
+    "home",
+    "a later failed save rolls back to the promoted deferred winner"
+  );
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().revision,
+    201
+  );
+
+  // The Boolean and frequency persistence channels report one truthful final
+  // result: a later Boolean success cannot hide an earlier frequency failure.
+  let finishBooleanSave = null;
+  let finishFrequencyFailure = null;
+  contentFeatureStorageSetHandler = (values, callback) => {
+    contentFeatureStorageWrites.push(plain(values));
+    finishBooleanSave = callback;
+  };
+  contentMessageHandler = (message, callback) => {
+    assert.equal(message.type, constants.preferencesSetMessageType);
+    finishFrequencyFailure = callback;
+  };
+  const booleanSave = contentHooks.saveFeatureSettingsForTests({
+    friendFilters: !contentHooks.defaultFeatureSettings.friendFilters
+  });
+  const frequencyFailure =
+    contentHooks.saveExtensionUpdateReminderFrequency("30m");
+  for (
+    let index = 0;
+    index < 10 && (!finishBooleanSave || !finishFrequencyFailure);
+    index += 1
+  ) {
+    await Promise.resolve();
+  }
+  finishFrequencyFailure(null);
+  assert.equal(await frequencyFailure, null);
+  finishBooleanSave();
+  await booleanSave;
+  assert.equal(settingsSaveStatus.textContent, "That setting could not be saved.");
+  assert.equal(
+    settingsSaveStatus.classList.contains(
+      "rsl-feature-settings__status--error"
+    ),
+    true
+  );
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().frequency,
+    "home",
+    "the independent Boolean success does not alter the retained frequency"
+  );
+  contentFeatureStorageSetHandler = (values, callback) => {
+    contentFeatureStorageWrites.push(plain(values));
+    callback?.();
+  };
+  contentHooks.handleExtensionUpdatePreferencesStorageChange({
+    version: 1,
+    frequency: "6h",
+    revision: 202
+  });
+  fakeDocument.visibilityState = "visible";
 
   const originalDateNow = Date.now;
   let timerNow = originalDateNow();
@@ -1742,6 +2849,50 @@ function runtimeMessage(message, sender) {
     assert.equal([...timeouts.values()][0].delay, 24 * 60 * 60_000,
       "a corrupt far-future due time is capped at 24 hours");
 
+    const timedCadenceMessages = [];
+    contentMessageHandler = (message, callback) => {
+      timedCadenceMessages.push(plain(message));
+      callback(makeContentStatus({
+        latest: manifest.version,
+        checkedAt: timerNow
+      }));
+    };
+    contentHooks.scheduleExtensionUpdateStatusTimer({
+      updateAvailable: true,
+      nextNoticeAt: timerNow + 60_000,
+      nextCheckAt: timerNow + constants.cacheTtlMs
+    });
+    let [dueNoticeTimerId, dueNoticeTimer] = [...timeouts.entries()][0];
+    timerNow += 60_001;
+    timeouts.delete(dueNoticeTimerId);
+    dueNoticeTimer.callback();
+    for (let index = 0; index < 8 && timedCadenceMessages.length < 1; index += 1) {
+      await Promise.resolve();
+    }
+    assert.equal(timedCadenceMessages[0].claimNotice, true,
+      "a nextNoticeAt timer claims the due timed reminder instead of spinning");
+    for (let index = 0; index < 6; index += 1) {
+      await Promise.resolve();
+    }
+
+    contentHooks.scheduleExtensionUpdateStatusTimer({
+      updateAvailable: true,
+      nextNoticeAt: timerNow + 6 * 60 * 60_000,
+      nextCheckAt: timerNow + 60_000
+    });
+    let [dueCheckTimerId, dueCheckTimer] = [...timeouts.entries()][0];
+    timerNow += 60_001;
+    timeouts.delete(dueCheckTimerId);
+    dueCheckTimer.callback();
+    for (let index = 0; index < 8 && timedCadenceMessages.length < 2; index += 1) {
+      await Promise.resolve();
+    }
+    assert.equal(timedCadenceMessages[1].claimNotice, false,
+      "a nextCheckAt timer refreshes status without consuming a reminder");
+    for (let index = 0; index < 6; index += 1) {
+      await Promise.resolve();
+    }
+
     contentHooks.scheduleExtensionUpdateStatusTimer({
       updateAvailable: false,
       nextNoticeAt: null,
@@ -1769,11 +2920,13 @@ function runtimeMessage(message, sender) {
     };
     contentHooks.requestExtensionUpdateStatusWhenVisible();
     for (let index = 0; index < 6; index += 1) await Promise.resolve();
-    assert.deepEqual(settingsMessages.at(-1), {
-      type: constants.messageType,
-      pageVisible: true,
-      claimNotice: true
-    });
+    const visibleRequest = settingsMessages.at(-1);
+    assert.equal(visibleRequest.type, constants.messageType);
+    assert.equal(visibleRequest.pageVisible, true);
+    assert.equal(visibleRequest.claimNotice, true);
+    assert.equal(visibleRequest.homeVisitId, activeHomeVisitId);
+    assert.equal(visibleRequest.expectedFrequency, "6h");
+    assert.match(visibleRequest.claimContextId, /-claim-[a-z0-9]+$/);
     assert.equal(timeouts.size, 1,
       "becoming visible services the deferred due check and arms one timer");
     assert.equal([...timeouts.values()][0].delay, constants.failureRetryMs);
@@ -1781,8 +2934,202 @@ function runtimeMessage(message, sender) {
     Date.now = originalDateNow;
   }
 
+  // Home route lifecycle: same-Home URL churn is one visit; committed exits
+  // remove/invalidate and re-arm status-only cadence; returning creates one
+  // new claim-capable visit. Game pages never claim or render.
   contentHooks.resetExtensionUpdateStatusForTests();
-  assert.equal(timeouts.size, 0);
+  setFakeLocation("https://www.roblox.com/home");
+  contentHooks.syncExtensionUpdateHomeVisitState();
+  const stableHomeVisit =
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId;
+  setFakeLocation("https://www.roblox.com/home?tab=friends#top");
+  assert.equal(contentHooks.syncExtensionUpdateHomeVisitState(), false);
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId,
+    stableHomeVisit,
+    "query/hash changes on exact Home do not start another visit"
+  );
+
+  const routeLifecycleMessages = [];
+  contentMessageHandler = (message, callback) => {
+    routeLifecycleMessages.push(plain(message));
+    callback(makeContentStatus({
+      latest: manifest.version,
+      checkedAt: Date.now(),
+      frequency:
+        contentHooks.getExtensionUpdatePreferenceStateForTests().frequency,
+      preferenceRevision:
+        contentHooks.getExtensionUpdatePreferenceStateForTests().revision
+    }));
+  };
+  contentHooks.handleExtensionUpdateNavigationStart({
+    destination: { url: "https://www.roblox.com/games/123/example" }
+  });
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests()
+      .navigationAwayFromHome,
+    true
+  );
+  setFakeLocation("https://www.roblox.com/games/123/example");
+  contentHooks.handleExtensionUpdateNavigationSettled();
+  for (let index = 0; index < 10 && routeLifecycleMessages.length < 1; index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId,
+    null
+  );
+  assert.equal(routeLifecycleMessages[0].claimNotice, false,
+    "a committed Home exit performs one status-only cadence refresh");
+  assert.equal(routeLifecycleMessages[0].homeVisitId, null);
+  assert.equal(contentHooks.renderExtensionUpdateFeedback(renderStatus), null,
+    "a game route cannot render even a direct showNotice response");
+
+  routeLifecycleMessages.length = 0;
+  setFakeLocation("https://www.roblox.com/de/home");
+  contentHooks.handleExtensionUpdateNavigationSettled();
+  for (let index = 0; index < 10 && routeLifecycleMessages.length < 1; index += 1) {
+    await Promise.resolve();
+  }
+  const returnedHomeVisit =
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId;
+  assert.notEqual(returnedHomeVisit, stableHomeVisit);
+  assert.equal(routeLifecycleMessages[0].claimNotice, true);
+  assert.equal(routeLifecycleMessages[0].homeVisitId, returnedHomeVisit);
+  routeLifecycleMessages.length = 0;
+  setFakeLocation("https://www.roblox.com/de/home?same=visit#mutation");
+  assert.equal(contentHooks.syncExtensionUpdateHomeVisitState(), false);
+  await Promise.resolve();
+  assert.equal(routeLifecycleMessages.length, 0,
+    "same-Home mutations never enqueue another visit refresh");
+
+  // Known latest + in-flight Every-Home claim + canceled navigate-away: the
+  // old context is rejected, the visit token survives, and the same version is
+  // retryable in that preserved visit.
+  fakeDocument.visibilityState = "hidden";
+  contentHooks.handleExtensionUpdatePreferencesStorageChange({
+    version: 1,
+    frequency: "home",
+    revision: 203
+  });
+  fakeDocument.visibilityState = "visible";
+  contentHooks.resetExtensionUpdateStatusForTests();
+  contentHooks.applyExtensionUpdateStatus(makeContentStatus({
+    latest: AVAILABLE_VERSION,
+    checkedAt: Date.now() + 1,
+    frequency: "home",
+    preferenceRevision: 203
+  }));
+  let finishCanceledClaim = null;
+  const canceledClaimMessages = [];
+  contentMessageHandler = (message, callback) => {
+    canceledClaimMessages.push(plain(message));
+    finishCanceledClaim = callback;
+  };
+  const canceledClaimRequest = contentHooks.refreshExtensionUpdateFeedback();
+  assert.equal(canceledClaimMessages.length, 1);
+  const pendingCanceledClaim = canceledClaimMessages[0];
+  assert.equal(pendingCanceledClaim.claimNotice, true);
+  assert.equal(pendingCanceledClaim.expectedFrequency, "home");
+  const preservedCanceledVisit = pendingCanceledClaim.homeVisitId;
+
+  let exactChallengeResponse = null;
+  assert.equal(contentHooks.handleExtensionUpdateClaimContextChallenge({
+    type: constants.contextChallengeMessageType,
+    claimContextId: pendingCanceledClaim.claimContextId,
+    homeVisitId: preservedCanceledVisit,
+    expectedFrequency: "home"
+  }, { id: globalThis.chrome.runtime.id }, (response) => {
+    exactChallengeResponse = plain(response);
+  }), false);
+  assert.deepEqual(exactChallengeResponse, { ok: true });
+  for (const challengeMutation of [
+    { claimContextId: "context-stale-abcdef" },
+    { homeVisitId: "visit-wrong-abcdef" },
+    { expectedFrequency: "6h" }
+  ]) {
+    let rejectedResponse = null;
+    contentHooks.handleExtensionUpdateClaimContextChallenge({
+      type: constants.contextChallengeMessageType,
+      claimContextId: pendingCanceledClaim.claimContextId,
+      homeVisitId: preservedCanceledVisit,
+      expectedFrequency: "home",
+      ...challengeMutation
+    }, { id: globalThis.chrome.runtime.id }, (response) => {
+      rejectedResponse = plain(response);
+    });
+    assert.deepEqual(rejectedResponse, { ok: false });
+  }
+  let malformedChallengeResponse = null;
+  assert.equal(contentHooks.handleExtensionUpdateClaimContextChallenge({
+    type: constants.contextChallengeMessageType,
+    claimContextId: pendingCanceledClaim.claimContextId,
+    homeVisitId: preservedCanceledVisit,
+    expectedFrequency: "home",
+    extra: true
+  }, { id: globalThis.chrome.runtime.id }, (response) => {
+    malformedChallengeResponse = plain(response);
+  }), false);
+  assert.equal(malformedChallengeResponse, null,
+    "a malformed challenge is ignored without any response");
+
+  contentHooks.handleExtensionUpdateNavigationStart({
+    destination: { url: "https://www.roblox.com/games/123/example" }
+  });
+  const afterCanceledStart =
+    contentHooks.getExtensionUpdatePreferenceStateForTests();
+  assert.equal(afterCanceledStart.navigationAwayFromHome, true);
+  assert.equal(afterCanceledStart.homeVisitClaimAttempted, false);
+  assert.equal(afterCanceledStart.homeVisitAttemptedLatest, null);
+  let staleChallengeResponse = null;
+  contentHooks.handleExtensionUpdateClaimContextChallenge({
+    type: constants.contextChallengeMessageType,
+    claimContextId: pendingCanceledClaim.claimContextId,
+    homeVisitId: preservedCanceledVisit,
+    expectedFrequency: "home"
+  }, { id: globalThis.chrome.runtime.id }, (response) => {
+    staleChallengeResponse = plain(response);
+  });
+  assert.deepEqual(staleChallengeResponse, { ok: false });
+
+  // Directly settle against the unchanged URL; the source contract above
+  // locks navigateerror to the same settle+forced-retry semantics.
+  contentHooks.handleExtensionUpdateNavigationSettled();
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests().homeVisitId,
+    preservedCanceledVisit
+  );
+  finishCanceledClaim(makeContentStatus({
+    latest: AVAILABLE_VERSION,
+    checkedAt: Date.now() + 2,
+    frequency: "home",
+    preferenceRevision: 203
+  }));
+  await canceledClaimRequest;
+  canceledClaimMessages.length = 0;
+  let finishRetriedClaim = null;
+  contentMessageHandler = (message, callback) => {
+    canceledClaimMessages.push(plain(message));
+    finishRetriedClaim = callback;
+  };
+  const retriedCanceledClaim = contentHooks.refreshExtensionUpdateFeedback();
+  assert.equal(canceledClaimMessages[0].claimNotice, true);
+  assert.equal(canceledClaimMessages[0].homeVisitId, preservedCanceledVisit);
+  finishRetriedClaim(makeContentStatus({
+    latest: AVAILABLE_VERSION,
+    checkedAt: Date.now() + 3,
+    frequency: "home",
+    preferenceRevision: 203
+  }));
+  await retriedCanceledClaim;
+
+  contentHooks.resetExtensionUpdateStatusForTests();
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests()
+      .timerAllowsNoticeClaim,
+    false,
+    "update-status cleanup resets its claim-capable timer state"
+  );
 
   Object.assign(globalThis, originalGlobals);
   console.log(

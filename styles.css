@@ -154,82 +154,344 @@
   }
 }
 
-/* An official Roblox event stays the source of truth. RoTool only adds its
-   scheduler action after the native event card and action both exist. */
+/* Experience Places is an informational sibling immediately before Roblox's
+   Events container. Its links open Place pages; this surface never owns or
+   overlays a Roblox play control. */
 #game-details-about-tab-container
-  .virtual-event-game-details-container
-  .game-details-page-events-grid:has([data-rsl-native-event-schedule]) {
-  grid-auto-rows: auto !important;
-  align-items: stretch !important;
+  > .game-about-tab-container
+  > [data-rsl-experience-places] {
+  box-sizing: border-box;
+  min-width: 0;
+  margin-bottom: 24px;
 }
 
 #game-details-about-tab-container
+  > .game-about-tab-container
+  > [data-rsl-experience-places]
+  > .rsl-experience-places__content
+  > .container-header {
+  display: flex;
+  margin-bottom: 12px;
+  align-items: center;
+  gap: 5px;
+}
+
+#game-details-about-tab-container
+  > .game-about-tab-container
+  > [data-rsl-experience-places]
+  > .rsl-experience-places__content
+  > .container-header
+  > h3 {
+  margin: 0;
+}
+
+.rsl-experience-places__content {
+  min-width: 0;
+}
+
+.rsl-experience-places__info > .rsl-quick-setting-tooltip {
+  right: auto !important;
+  left: 0 !important;
+  transform: none;
+}
+
+.rsl-experience-places__info
+  > .rsl-quick-setting-tooltip
+  > .tooltip-arrow {
+  right: auto !important;
+  left: 8px !important;
+  margin-left: 0;
+}
+
+.rsl-experience-places__status,
+.rsl-experience-places__limit {
+  color: var(--color-content-muted, #b8b8bd);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.rsl-experience-places__status {
+  margin: 0;
+  padding: 12px 0;
+}
+
+.rsl-experience-places__status--visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rsl-experience-places__limit {
+  margin: 8px 0 0;
+}
+
+.rsl-experience-places__grid {
+  --rsl-experience-places-card-min-width: 150px;
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--rsl-experience-places-card-min-width), 1fr)
+  );
+  align-items: start;
+  gap: 24px 16px;
+  list-style: none;
+}
+
+.rsl-experience-places__item {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.rsl-experience-places__card {
+  display: block;
+  min-width: 0;
+  color: var(--color-content-emphasis, #f7f7f8);
+  text-decoration: none;
+}
+
+.rsl-experience-places__card:hover,
+.rsl-experience-places__card:focus {
+  color: var(--color-content-emphasis, #f7f7f8);
+  text-decoration: none;
+}
+
+.rsl-experience-places__card:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--color-system-emphasis, currentColor);
+  outline-offset: 3px;
+}
+
+.rsl-experience-places__thumbnail {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--color-surface-300, #272930);
+  border-radius: 8px;
+}
+
+.rsl-experience-places__thumbnail > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rsl-experience-places__name {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.rsl-experience-places__metadata {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--color-content-muted, #b8b8bd);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rsl-experience-places__skeleton-line {
+  display: block;
+  height: 12px;
+  background: var(--color-surface-300, #272930);
+  border-radius: 999px;
+}
+
+.rsl-experience-places__skeleton-line--name {
+  width: 82%;
+  margin-top: 10px;
+}
+
+.rsl-experience-places__skeleton-line--metadata {
+  width: 46%;
+  margin-top: 10px;
+}
+
+.rsl-experience-places__controls {
+  display: flex;
+  min-width: 0;
+  margin-top: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rsl-experience-places__more.btn-secondary-md {
+  box-sizing: border-box;
+  min-height: 36px;
+  margin-top: 12px;
+  padding-inline: 16px;
+}
+
+.rsl-experience-places__controls
+  > .rsl-experience-places__more.btn-secondary-md {
+  margin-top: 0;
+}
+
+.rsl-experience-places__more.btn-secondary-md:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, currentColor);
+  outline-offset: 2px;
+}
+
+.rsl-experience-places__more.btn-secondary-md[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 991px) {
+  #game-details-about-tab-container
+    > .game-about-tab-container
+    > [data-rsl-experience-places] {
+    width: auto;
+    margin-inline: 15px;
+  }
+
+  #game-details-about-tab-container
+    > .game-about-tab-container
+    > [data-rsl-experience-places]
+    > .rsl-experience-places__content
+    > .container-header {
+    padding-inline: 0 !important;
+  }
+}
+
+@media (max-width: 543px) {
+  .rsl-experience-places__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 12px;
+  }
+
+  .rsl-experience-places__controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rsl-experience-places__more.btn-secondary-md {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+@media (forced-colors: active) {
+  .rsl-experience-places__card:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .rsl-experience-places__thumbnail {
+    color: CanvasText;
+    background: Canvas;
+    border: 1px solid CanvasText;
+    forced-color-adjust: auto;
+  }
+}
+
+/* An official Roblox event stays the source of truth. RoTool only adds one
+   compact footer action after the native card link and never styles the
+   native event action inside that link. */
+#game-details-about-tab-container
+  .virtual-event-game-details-container
+  .game-details-page-events-grid:has(
+    > li.experience-events-tile.contained-tile[data-testid="wide-game-tile"]
+      > .featured-game-container.game-card-container
+      > a.game-card-link
+      + button[data-rsl-native-event-schedule]
+  ) {
+  grid-auto-rows: auto !important;
+}
+
+/* Only the verified card grows with its owned footer. A grid-wide percentage
+   height makes Roblox's link fill that height first, pushing this sibling out
+   below the card surface. Natural height keeps the intended eight-pixel gap. */
+#game-details-about-tab-container
   .virtual-event-game-details-container
   li.experience-events-tile.contained-tile[data-testid="wide-game-tile"]:has(
-    [data-rsl-native-event-schedule]
+    > .featured-game-container.game-card-container
+      > a.game-card-link
+      + button[data-rsl-native-event-schedule]
   ),
 #game-details-about-tab-container
   .virtual-event-game-details-container
   li.experience-events-tile.contained-tile[data-testid="wide-game-tile"]:has(
-    [data-rsl-native-event-schedule]
+    > .featured-game-container.game-card-container
+      > a.game-card-link
+      + button[data-rsl-native-event-schedule]
   )
-  .featured-game-container.game-card-container {
+  > .featured-game-container.game-card-container {
+  box-sizing: border-box !important;
   height: auto !important;
   max-height: none !important;
   overflow: visible !important;
 }
 
+/* Roblox paints a contained tile's dark/light surface on the link's inner
+   info area while this direct parent is transparent. Paint the same native
+   surface on the verified parent so the normal-flow footer and its margins
+   remain inside one continuous rounded card. */
+#game-details-about-tab-container
+  .virtual-event-game-details-container
+  li.experience-events-tile.contained-tile[data-testid="wide-game-tile"]:has(
+    > .featured-game-container.game-card-container
+      > a.game-card-link
+      + button[data-rsl-native-event-schedule]
+  )
+  > .featured-game-container.game-card-container {
+  background-color: var(--color-surface-300) !important;
+  border-radius: 8px !important;
+}
+
 #game-details-about-tab-container
   .virtual-event-game-details-container
   li.experience-events-tile.contained-tile[data-testid="wide-game-tile"]
-  [data-rsl-native-event-schedule] {
+  > .featured-game-container.game-card-container
+  > a.game-card-link
+  + button.btn-secondary-xs[data-rsl-native-event-schedule] {
   box-sizing: border-box !important;
+  display: inline-flex !important;
   width: calc(100% - 24px) !important;
   min-width: 0 !important;
-  margin: 8px 12px 12px !important;
-}
-
-#game-details-about-tab-container
-  .virtual-event-game-details-container
-  button[data-rsl-native-event-schedule] {
-  display: inline-flex !important;
-  min-height: 36px !important;
-  padding: 7px 12px !important;
+  min-height: 28px !important;
+  margin: 0 12px 12px !important;
+  padding: 4px 10px !important;
   align-items: center !important;
   justify-content: center !important;
-  color: var(
-    --color-action-standard-foreground,
-    var(--color-content-emphasis, #f7f7f8)
-  ) !important;
-  background: var(--color-action-standard-background, #34363f) !important;
-  border: var(--stroke-standard, 1px) solid
-    var(--color-action-standard-border, transparent) !important;
-  border-radius: var(--radius-medium, 8px) !important;
-  appearance: none !important;
   cursor: pointer !important;
-  font: inherit !important;
-  font-size: 14px !important;
-  font-weight: 700 !important;
   line-height: 20px !important;
   text-align: center !important;
+  white-space: nowrap !important;
 }
 
 #game-details-about-tab-container
   .virtual-event-game-details-container
-  button[data-rsl-native-event-schedule]:hover:not(:disabled) {
-  background: var(--color-action-standard-background-hover, #454750) !important;
-}
-
-#game-details-about-tab-container
-  .virtual-event-game-details-container
-  button[data-rsl-native-event-schedule]:focus-visible {
-  outline: 2px solid var(--color-system-emphasis, #6aa7ff) !important;
+  button.btn-secondary-xs[data-rsl-native-event-schedule]:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, currentColor) !important;
   outline-offset: 2px !important;
 }
 
 #game-details-about-tab-container
   .virtual-event-game-details-container
-  button[data-rsl-native-event-schedule]:disabled {
+  button.btn-secondary-xs[data-rsl-native-event-schedule]:disabled {
   cursor: wait !important;
   opacity: 0.65 !important;
 }
@@ -237,7 +499,7 @@
 @media (max-width: 480px) {
   #game-details-about-tab-container
     .virtual-event-game-details-container
-    button[data-rsl-native-event-schedule] {
+    button.btn-secondary-xs[data-rsl-native-event-schedule] {
     min-height: 44px !important;
   }
 }
@@ -245,7 +507,7 @@
 @media (forced-colors: active) {
   #game-details-about-tab-container
     .virtual-event-game-details-container
-    button[data-rsl-native-event-schedule] {
+    button.btn-secondary-xs[data-rsl-native-event-schedule] {
     color: ButtonText !important;
     background: ButtonFace !important;
     border-color: ButtonText !important;
@@ -5354,6 +5616,50 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.rsl-feature-settings__children .rsl-feature-settings__row--select {
+  min-height: 68px;
+  padding-block: 10px;
+}
+
+.rsl-feature-settings__children
+  .rsl-feature-settings__row--select
+  .rsl-feature-settings__copy
+  > span {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+.rsl-feature-settings__select {
+  box-sizing: border-box;
+  width: min(210px, 42vw);
+  min-height: 36px;
+  padding: 6px 30px 6px 10px;
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  background-color: var(--color-surface-100, var(--rsl-fallback-surface));
+  border: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+  border-radius: var(--radius-small, 6px);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.rsl-feature-settings__select:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, #6aa7ff);
+  outline-offset: 2px;
+}
+
+.rsl-feature-settings__select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .rsl-feature-settings__children-toolbar {

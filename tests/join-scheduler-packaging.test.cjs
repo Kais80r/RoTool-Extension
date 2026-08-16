@@ -22,7 +22,7 @@ const releaseBuilderSource = fs.readFileSync(
   "utf8"
 );
 
-assert.equal(manifest.version, "0.19.4", "the current release ships as RoTool 0.19.4");
+assert.equal(manifest.version, "0.19.5", "the current release ships as RoTool 0.19.5");
 assert.equal(
   manifest.minimum_chrome_version,
   "102",
@@ -40,6 +40,23 @@ assert.deepEqual(
   ["notifications"],
   "notifications are requested only when a user explicitly schedules a notification"
 );
+assert.deepEqual(manifest.permissions, [
+  "storage", "alarms", "contextMenus", "clipboardWrite", "scripting"
+], "game icons add no browser capability or install warning");
+assert.deepEqual(manifest.optional_permissions, ["notifications"],
+  "the game-icon path adds no optional capability");
+assert.deepEqual(manifest.host_permissions, [
+  "https://www.roblox.com/*",
+  "https://thumbnails.roblox.com/*",
+  "https://friends.roblox.com/*",
+  "https://users.roblox.com/*",
+  "https://presence.roblox.com/*",
+  "https://games.roblox.com/*",
+  "https://apis.roblox.com/*",
+  "https://economy.roblox.com/*",
+  "https://assetdelivery.roblox.com/*",
+  "https://*.rbxcdn.com/*"
+], "game icons reuse the already-declared Roblox thumbnail/CDN hosts");
 assert.equal(
   [...manifest.permissions, ...manifest.optional_permissions].includes("background"),
   false,

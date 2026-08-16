@@ -818,6 +818,137 @@ assert.match(initializeSource, /root\.replaceChildren\(\)/);
 assert.doesNotMatch(initializeSource, /data-action=['"]refresh['"]/,
   "state refreshes after mutations without a redundant manual Refresh control");
 
+// Schedule cards render immediately with an accessible adjacent game name and
+// a decorative initial, then repaint only from the validated read-only icon
+// response. Image failure must restore that same initial without hiding text.
+const addThumbnailSource = sourceBetween(
+  initializeSource,
+  "function addThumbnail",
+  "function sendRuntimeMessage"
+);
+assert.match(addThumbnailSource,
+  /const fallback = String\(label \|\| "\?"\)\.trim\(\)\.charAt\(0\)\.toUpperCase\(\) \|\| "\?"/);
+assert.match(addThumbnailSource,
+  /createElement\("img"\)[\s\S]*?image\.src = url[\s\S]*?image\.alt = ""[\s\S]*?image\.referrerPolicy = "no-referrer"/,
+  "game icons are decorative and never send a Roblox-page referrer");
+assert.match(addThumbnailSource,
+  /image\.addEventListener\("error"[\s\S]*?image\.parentElement === container[\s\S]*?container\.replaceChildren\(\)[\s\S]*?container\.textContent = fallback[\s\S]*?once:\s*true/,
+  "a broken image deterministically restores the game-name initial");
+assert.doesNotMatch(addThumbnailSource, /innerHTML|insertAdjacentHTML|onerror\s*=/i);
+
+const scheduleCardSource = sourceBetween(
+  initializeSource,
+  "function renderSchedule",
+  "function renderSchedules"
+);
+assert.match(scheduleCardSource,
+  /thumbnail\.setAttribute\("aria-hidden", "true"\)/,
+  "the adjacent strong game name remains the card's accessible identity");
+assert.match(scheduleCardSource,
+  /thumbnail\.dataset\.rslScheduleThumbnail = ""[\s\S]*?thumbnail\.dataset\.rslUniverseId = schedule\.universeId[\s\S]*?addThumbnail\(thumbnail, thumbnails\.get\(schedule\.universeId\), schedule\.gameName\)/);
+assert.match(scheduleCardSource,
+  /topLine\.append\(makeElement\("strong", "", schedule\.gameName\)\)/);
+
+const gameIconIdsSource = sourceBetween(
+  initializeSource,
+  "function getGameIconRequestUniverseIds",
+  "function repaintScheduleGameIcons"
+);
+assert.match(gameIconIdsSource, /const seen = new Set\(\)/);
+assert.match(gameIconIdsSource, /\^\[1-9\]\\d\{0,19\}\$/);
+assert.match(gameIconIdsSource, /seen\.has\(universeId\)/);
+assert.match(gameIconIdsSource, /universeIds\.length >= 50/);
+assert.match(gameIconIdsSource, /add\(selectedGame\?\.universeId\)/,
+  "an official Event draft requests its universe game icon");
+assert.match(gameIconIdsSource,
+  /for \(const schedule of Array\.isArray\(state\.schedules\)[\s\S]*?add\(schedule\?\.universeId\)/,
+  "reopened saved schedules hydrate through the same deduplicated batch");
+assert.doesNotMatch(gameIconIdsSource,
+  /placeId|gameName|title|startAt|destination|private|viewer/i,
+  "the icon payload builder collects only public universe IDs");
+
+const repaintGameIconsSource = sourceBetween(
+  initializeSource,
+  "function repaintScheduleGameIcons",
+  "async function hydrateGameIcons"
+);
+assert.match(repaintGameIconsSource,
+  /\[data-rsl-schedule-thumbnail\]\[data-rsl-universe-id\]/);
+assert.match(repaintGameIconsSource,
+  /state\.schedules\.find\([\s\S]*?item\.universeId === universeId[\s\S]*?addThumbnail\(thumbnail, thumbnails\.get\(universeId\), schedule\.gameName\)/);
+
+const hydrateGameIconsSource = sourceBetween(
+  initializeSource,
+  "async function hydrateGameIcons",
+  "function refreshScheduleCountdowns"
+);
+assert.match(hydrateGameIconsSource,
+  /const universeIds = getGameIconRequestUniverseIds\(\)[\s\S]*?const expectedViewerUserId = state\.viewerUserId/);
+assert.match(hydrateGameIconsSource,
+  /const sequence = \+\+gameIconLoadSequence[\s\S]*?const expectedStateLoadSequence = stateLoadSequence/);
+assert.match(hydrateGameIconsSource,
+  /selectedGame \? Object\.freeze\(\{[\s\S]*?universeId: selectedGame\.universeId[\s\S]*?placeId: selectedGame\.placeId[\s\S]*?viewEpoch,[\s\S]*?interactionEpoch/);
+assert.match(hydrateGameIconsSource,
+  /api\("get-game-icons", \{ universeIds \}\)/);
+for (const staleGuard of [
+  /sequence !== gameIconLoadSequence/,
+  /expectedStateLoadSequence !== stateLoadSequence/,
+  /destroyed/,
+  /root\.host\?\.isConnected !== true/,
+  /!elements\.schedulerDialog\.open/,
+  /state\.viewerUserId !== expectedViewerUserId/
+]) {
+  assert.match(hydrateGameIconsSource, staleGuard,
+    "a late icon batch cannot repaint a stale modal/account/state");
+}
+assert.match(hydrateGameIconsSource,
+  /const rawIcons = response\.gameIcons[\s\S]*?!Array\.isArray\(rawIcons\)[\s\S]*?rawIcons\.length > universeIds\.length[\s\S]*?return response/,
+  "the background cannot expand a bounded request or return a partial hostile shape");
+assert.match(hydrateGameIconsSource,
+  /const icon = normalizeGameIcon\(rawIcon\)[\s\S]*?!requested\.has\(icon\.universeId\)[\s\S]*?seen\.has\(icon\.universeId\)[\s\S]*?thumbnails\.set\(icon\.universeId, icon\.thumbnailUrl\)/,
+  "only unique requested and locally revalidated icons reach the map");
+assert.match(hydrateGameIconsSource, /repaintScheduleGameIcons\(\)/);
+for (const editorGuard of [
+  /activeView === "editor"/,
+  /viewEpoch === selectedSnapshot\.viewEpoch/,
+  /interactionEpoch === selectedSnapshot\.interactionEpoch/,
+  /selectedGame\?\.universeId === selectedSnapshot\.universeId/,
+  /selectedGame\?\.placeId === selectedSnapshot\.placeId/
+]) {
+  assert.match(hydrateGameIconsSource, editorGuard,
+    "a late official/search icon cannot replace another editor selection");
+}
+assert.doesNotMatch(hydrateGameIconsSource,
+  /destination|privateServer|accessCode|shareCode|canonicalUrl|startAt|eventId/i);
+
+const iconStateLoadSource = sourceBetween(
+  initializeSource,
+  "async function loadState",
+  "function modeValue"
+);
+const iconRenderIndex = iconStateLoadSource.indexOf("renderSchedules()");
+const iconHydrationIndex = iconStateLoadSource.indexOf(
+  "void hydrateGameIcons().catch(() => undefined)"
+);
+assert.ok(iconRenderIndex >= 0 && iconHydrationIndex > iconRenderIndex,
+  "text and letter cards render before best-effort icon networking begins");
+assert.match(iconStateLoadSource,
+  /void hydrateGameIcons\(\)\.catch\(\(\) => undefined\)/,
+  "unavailable/disabled icon hydration never suppresses state rendering");
+const officialDraftSource = sourceBetween(
+  initializeSource,
+  "function applyOfficialDraft",
+  "function openEditorForDraft"
+);
+assert.match(officialDraftSource,
+  /universeId: officialDraft\.universeId[\s\S]*?placeId: officialDraft\.placeId[\s\S]*?thumbnailUrl: thumbnails\.get\(officialDraft\.universeId\) \|\| null/);
+assert.match(initializeSource,
+  /destroyed = true[\s\S]*?stateLoadSequence \+= 1[\s\S]*?gameIconLoadSequence \+= 1/,
+  "destroy invalidates both pending state and pending icon work");
+assert.match(controllerSource,
+  /const READ_ONLY_OPERATIONS = new Set\(\[[\s\S]*?"get-state"[\s\S]*?"get-game-icons"[\s\S]*?"search-games"/,
+  "icon hydration uses the existing side-effect-free timeout policy");
+
 const viewSource = sourceBetween(
   controllerSource,
   "function setSchedulerView",
@@ -1362,8 +1493,8 @@ assert.match(
 );
 assert.doesNotMatch(
   nativePlacementSource,
-  /nativeAction\.(?:remove|replaceWith|replaceChildren|append|prepend|before|after)|link\.(?:remove|replaceWith|replaceChildren|append|prepend)/,
-  "RoTool must not move, replace, or rewrite Roblox's link/action subtree"
+  /(?:nativeAction|link)\.(?:remove|replaceWith|replaceChildren|append|prepend|before|after|addEventListener|removeEventListener|setAttribute|removeAttribute|toggleAttribute|classList|style)|(?:nativeAction|link)\.(?:className|textContent)\s*=/,
+  "RoTool must not move, restyle, listen to, or rewrite Roblox's link/action subtree"
 );
 const nativeButtonSource = sourceBetween(
   contentSource,
@@ -1372,9 +1503,23 @@ const nativeButtonSource = sourceBetween(
 );
 assert.match(nativeButtonSource, /document\.createElement\("button"\)/);
 assert.match(nativeButtonSource, /button\.type = "button"/);
+assert.match(
+  nativeButtonSource,
+  /button\.className = "btn-secondary-xs rsl-native-event-schedule"/,
+  "the owned action uses Roblox's compact secondary-control class"
+);
 assert.match(nativeButtonSource, /button\.textContent = "Schedule with RoTool"/);
 assert.match(nativeButtonSource, /setAttribute\("aria-haspopup", "dialog"\)/);
 assert.match(nativeButtonSource, /setAttribute\("aria-label", `Schedule \$\{event\.title\} with RoTool`\)/);
+assert.match(
+  nativeButtonSource,
+  /button\.title = "Set a RoTool reminder or automatic join for this event\."/
+);
+assert.doesNotMatch(
+  nativeButtonSource,
+  /innerHTML|insertAdjacentHTML|appendChild|replaceChildren/,
+  "the owned action keeps a text-only DOM; its calendar is decorative CSS"
+);
 const trustedClickIndex = nativeButtonSource.indexOf("clickEvent.isTrusted !== true");
 const preventClickIndex = nativeButtonSource.indexOf("clickEvent.preventDefault()", trustedClickIndex);
 const stopClickIndex = nativeButtonSource.indexOf("clickEvent.stopPropagation()", preventClickIndex);
@@ -1453,14 +1598,44 @@ const nativeEventStylesEnd = siteStyles.indexOf(
 );
 assert.ok(nativeEventStylesStart >= 0 && nativeEventStylesEnd > nativeEventStylesStart);
 const nativeEventStyles = siteStyles.slice(nativeEventStylesStart, nativeEventStylesEnd);
-assert.match(nativeEventStyles, /\.game-details-page-events-grid:has\(\[data-rsl-native-event-schedule\]\)[\s\S]*?grid-auto-rows:\s*auto\s*!important/);
-assert.match(nativeEventStyles, /experience-events-tile[\s\S]*?:has\([\s\S]*?data-rsl-native-event-schedule[\s\S]*?height:\s*auto\s*!important[\s\S]*?max-height:\s*none\s*!important[\s\S]*?overflow:\s*visible\s*!important/);
-assert.match(nativeEventStyles, /\[data-rsl-native-event-schedule\][\s\S]*?width:\s*calc\(100% - 24px\)\s*!important/);
-assert.match(nativeEventStyles, /button\[data-rsl-native-event-schedule\]:focus-visible[\s\S]*?outline:/);
-assert.match(nativeEventStyles, /@media\s*\(max-width:\s*480px\)[\s\S]*?min-height:\s*44px\s*!important/);
+const ownedEventDirectSibling =
+  />\s*a\.game-card-link\s*\+\s*button\[data-rsl-native-event-schedule\]/;
+assert.match(nativeEventStyles, ownedEventDirectSibling,
+  "layout activation requires the owned action to be the anchor's direct sibling");
+assert.match(nativeEventStyles, /\.game-details-page-events-grid:has\([\s\S]*?>\s*a\.game-card-link\s*\+\s*button\[data-rsl-native-event-schedule\][\s\S]*?\)\s*\{[\s\S]*?grid-auto-rows:\s*auto\s*!important[\s\S]*?\}/);
+const verifiedEventCardSelectorSource = String.raw`li\.experience-events-tile\.contained-tile\[data-testid="wide-game-tile"\]:has\(\s*>\s*\.featured-game-container\.game-card-container\s*>\s*a\.game-card-link\s*\+\s*button\[data-rsl-native-event-schedule\]\s*\)`;
+const affectedCardAutoHeightRule = nativeEventStyles.match(new RegExp(
+  `${verifiedEventCardSelectorSource}\\s*,[\\s\\S]*?${verifiedEventCardSelectorSource}` +
+    String.raw`\s*>\s*\.featured-game-container\.game-card-container\s*\{([^}]*)\}`
+));
+assert.ok(affectedCardAutoHeightRule,
+  "only the verified card and its direct featured surface receive the height override");
+for (const declaration of [
+  /height:\s*auto\s*!important/,
+  /max-height:\s*none\s*!important/,
+  /overflow:\s*visible\s*!important/
+]) {
+  assert.match(affectedCardAutoHeightRule[1], declaration);
+}
+assert.match(
+  nativeEventStyles,
+  new RegExp(
+    `${verifiedEventCardSelectorSource}\\s*>\\s*\\.featured-game-container\\.game-card-container\\s*\\{` +
+      String.raw`[^}]*background-color:\s*var\(--color-surface-300\)\s*!important` +
+      String.raw`[^}]*border-radius:\s*8px\s*!important[^}]*\}`
+  ),
+  "the footer margin stays inside one continuous rounded Roblox card surface"
+);
+assert.match(nativeEventStyles, /button\.btn-secondary-xs\[data-rsl-native-event-schedule\]\s*\{[\s\S]*?display:\s*inline-flex\s*!important[\s\S]*?width:\s*calc\(100% - 24px\)\s*!important[\s\S]*?min-height:\s*28px\s*!important[\s\S]*?margin:\s*0 12px 12px\s*!important[\s\S]*?white-space:\s*nowrap\s*!important/);
+assert.match(nativeEventStyles, /button\.btn-secondary-xs\[data-rsl-native-event-schedule\]:focus-visible[\s\S]*?outline:\s*2px[\s\S]*?outline-offset:\s*2px/);
+assert.match(nativeEventStyles, /button\.btn-secondary-xs\[data-rsl-native-event-schedule\]:disabled[\s\S]*?cursor:\s*wait\s*!important[\s\S]*?opacity:/);
+assert.match(nativeEventStyles, /@media\s*\(max-width:\s*480px\)[\s\S]*?button\.btn-secondary-xs\[data-rsl-native-event-schedule\][\s\S]*?min-height:\s*44px\s*!important/);
 assert.match(nativeEventStyles, /@media\s*\(forced-colors:\s*active\)[\s\S]*?ButtonText/);
-assert.doesNotMatch(nativeEventStyles, /grid-template-columns|\.event-(?:follow|unfollow)-button/,
-  "full-width RoTool layout must not resize or restyle the native action");
+assert.doesNotMatch(
+  nativeEventStyles,
+  /::(?:before|after)|grid-template-columns|height:\s*100%|overflow:\s*hidden|background(?:-color)?:\s*transparent|(?:align-items|align-self):\s*stretch|(?:align|justify)-content:\s*space-(?:between|around|evenly)|position:|transform:|margin(?:-(?:top|right|bottom|left|block(?:-start|-end)?|inline(?:-start|-end)?))?:\s*(?:auto\b|[^;]*-\d)|a\.game-card-link\s*\{|\.base-metadata\s*\{|\.event-(?:follow|unfollow)-button|\.wide-event-play-button/,
+  "the unified footer must stay in unclipped natural flow without a transparent gap, overlay, nesting, or native-descendant styling"
+);
 
 // Exported hooks make the pure input boundary and stable content API testable.
 globalThis.__rslJoinSchedulerTestHooks = { skipInitialize: true };
@@ -1469,7 +1644,7 @@ const hooks = globalThis.__rslJoinSchedulerTestHooks;
 for (const name of [
   "initialize", "loadModalAssets", "openJoinSchedulerModal",
   "destroyJoinSchedulerModal", "handleShowMessage", "parseOwnedTemplate",
-  "normalizeSchedulerDraft", "bindHelpTips"
+  "normalizeSchedulerDraft", "normalizeGameIcon", "bindHelpTips"
 ]) {
   assert.equal(typeof hooks[name], "function", `missing ${name} test hook`);
 }
@@ -1480,6 +1655,35 @@ assert.deepEqual(hooks.modalConstants, {
   showMessageType: "rsl:show-join-scheduler",
   privateUrlMaxLength: 2_048
 });
+assert.equal(hooks.timeoutContract.readOnlyOperations.includes("get-game-icons"), true);
+const normalizedGameIcon = hooks.normalizeGameIcon({
+  universeId: "2001",
+  thumbnailUrl: "https://images.rbxcdn.com/game.png?size=150"
+});
+assert.deepEqual(normalizedGameIcon, {
+  universeId: "2001",
+  thumbnailUrl: "https://images.rbxcdn.com/game.png?size=150"
+});
+assert.equal(Object.isFrozen(normalizedGameIcon), true);
+for (const invalidIcon of [
+  null,
+  [],
+  { universeId: "0", thumbnailUrl: "https://images.rbxcdn.com/game.png" },
+  { universeId: 2001, thumbnailUrl: "https://images.rbxcdn.com/game.png" },
+  { universeId: "2001", thumbnailUrl: "http://images.rbxcdn.com/game.png" },
+  { universeId: "2001", thumbnailUrl: "https://user@images.rbxcdn.com/game.png" },
+  { universeId: "2001", thumbnailUrl: "https://images.rbxcdn.com:444/game.png" },
+  { universeId: "2001", thumbnailUrl: "https://images.rbxcdn.com/game.png#fragment" },
+  { universeId: "2001", thumbnailUrl: "https://rbxcdn.com.evil.test/game.png" },
+  { universeId: "2001", thumbnailUrl: `https://images.rbxcdn.com/${"x".repeat(2_100)}` },
+  {
+    universeId: "2001",
+    thumbnailUrl: "https://images.rbxcdn.com/game.png",
+    privateServerLinkCode: "must-not-survive"
+  }
+]) {
+  assert.equal(hooks.normalizeGameIcon(invalidIcon), null);
+}
 assert.deepEqual(Object.keys(globalThis.__rslJoinSchedulerModal).sort(), [
   "close", "destroy", "isOpen", "open"
 ]);

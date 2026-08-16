@@ -70,7 +70,14 @@ class FakeButton {
   }
 }
 
-function makeCard(id, { href = `/de/events/${id}`, nativeLabel = "Notify Me" } = {}) {
+function makeCard(
+  id,
+  {
+    href = `/de/events/${id}`,
+    nativeLabel = "Notify Me",
+    nativeClassName = "wide-event-play-button event-follow-button"
+  } = {}
+) {
   const card = {
     id,
     matches(selector) { return selector === CARD_SELECTOR; },
@@ -82,9 +89,15 @@ function makeCard(id, { href = `/de/events/${id}`, nativeLabel = "Notify Me" } =
     card,
     children: [],
     closest(selector) { return selector === "li" ? card : null; },
-    contains(node) { return this.children.includes(node); },
+    contains(node) {
+      return this.children.some(
+        (child) => child === node || child.contains?.(node) === true
+      );
+    },
     querySelector(selector) {
-      return selector === ".event-follow-button, .event-unfollow-button"
+      if (selector !== ".event-follow-button, .event-unfollow-button") return null;
+      const classes = new Set(nativeAction.className.split(/\s+/).filter(Boolean));
+      return classes.has("event-follow-button") || classes.has("event-unfollow-button")
         ? nativeAction
         : null;
     },
@@ -98,13 +111,25 @@ function makeCard(id, { href = `/de/events/${id}`, nativeLabel = "Notify Me" } =
       return [];
     }
   };
+  const nativeLinkListener = () => {};
   const link = {
     parentElement: featured,
+    children: [],
+    className: "game-card-link",
+    style: {},
+    attributes: new Map([
+      ["class", "game-card-link"],
+      ["href", href]
+    ]),
+    listeners: new Map([["click", nativeLinkListener]]),
+    contains(node) { return this.children.includes(node); },
     get nextElementSibling() {
       const index = featured.children.indexOf(this);
       return featured.children[index + 1] || null;
     },
-    getAttribute(name) { return name === "href" ? href : null; },
+    getAttribute(name) {
+      return this.attributes.has(name) ? this.attributes.get(name) : null;
+    },
     closest(selector) { return selector === "li" ? card : null; },
     insertAdjacentElement(position, element) {
       assert.equal(position, "afterend");
@@ -116,13 +141,64 @@ function makeCard(id, { href = `/de/events/${id}`, nativeLabel = "Notify Me" } =
       return element;
     }
   };
+  const cardBody = {
+    parentElement: link,
+    marker: Symbol("native-card-body")
+  };
+  const nativeActionListener = () => {};
   const nativeAction = {
+    parentElement: link,
+    className: nativeClassName,
+    style: {},
+    attributes: new Map([
+      ["class", nativeClassName],
+      ["type", "button"]
+    ]),
+    listeners: new Map([["click", nativeActionListener]]),
     textContent: nativeLabel,
     marker: Symbol("native-action"),
     closest(selector) { return selector === "li" ? card : null; }
   };
-  featured.children.push(link, nativeAction);
-  return { card, featured, link, nativeAction };
+  const feedback = {
+    parentElement: featured,
+    className: "sg-system-feedback",
+    attributes: new Map([["class", "sg-system-feedback"]]),
+    listeners: new Map(),
+    marker: Symbol("native-system-feedback")
+  };
+  link.children.push(cardBody, nativeAction);
+  featured.children.push(link, feedback);
+  return {
+    card,
+    featured,
+    link,
+    cardBody,
+    nativeAction,
+    nativeActionListener,
+    nativeLinkListener,
+    feedback
+  };
+}
+
+function snapshotNativeCardNodes(fixture) {
+  return {
+    linkParent: fixture.link.parentElement,
+    linkChildren: fixture.link.children.slice(),
+    linkClassName: fixture.link.className,
+    linkStyle: { ...fixture.link.style },
+    linkAttributes: Array.from(fixture.link.attributes.entries()),
+    linkListeners: Array.from(fixture.link.listeners.entries()),
+    nativeActionParent: fixture.nativeAction.parentElement,
+    nativeActionClassName: fixture.nativeAction.className,
+    nativeActionText: fixture.nativeAction.textContent,
+    nativeActionStyle: { ...fixture.nativeAction.style },
+    nativeActionAttributes: Array.from(fixture.nativeAction.attributes.entries()),
+    nativeActionListeners: Array.from(fixture.nativeAction.listeners.entries()),
+    feedbackParent: fixture.feedback.parentElement,
+    feedbackClassName: fixture.feedback.className,
+    feedbackAttributes: Array.from(fixture.feedback.attributes.entries()),
+    feedbackListeners: Array.from(fixture.feedback.listeners.entries())
+  };
 }
 
 function ownedButtons() {
@@ -231,6 +307,7 @@ const previousGlobals = Object.fromEntries(
 
     const eventId = "123e4567-e89b-42d3-a456-426614174000";
     const firstCard = makeCard(eventId);
+    const firstCardNativeSnapshot = snapshotNativeCardNodes(firstCard);
     cards.push(firstCard.card);
     const requests = [];
     hooks.setNativeEventScheduleMessageSenderForTests(async (message) => {
@@ -251,6 +328,7 @@ const previousGlobals = Object.fromEntries(
     const button = ownedButtons()[0];
     assert.ok(button instanceof FakeButton);
     assert.equal(button.type, "button");
+    assert.equal(button.className, "btn-secondary-xs rsl-native-event-schedule");
     assert.equal(button.textContent, "Schedule with RoTool");
     assert.equal(button.getAttribute("aria-haspopup"), "dialog");
     assert.equal(
@@ -259,7 +337,16 @@ const previousGlobals = Object.fromEntries(
     );
     assert.equal(button.parentElement, firstCard.featured);
     assert.equal(firstCard.link.nextElementSibling, button);
-    assert.equal(firstCard.featured.children[2], firstCard.nativeAction);
+    assert.equal(firstCard.featured.children[0], firstCard.link);
+    assert.equal(firstCard.featured.children[1], button);
+    assert.equal(firstCard.featured.children[2], firstCard.feedback);
+    assert.equal(firstCard.link.contains(button), false);
+    assert.equal(firstCard.link.contains(firstCard.nativeAction), true);
+    assert.deepEqual(
+      snapshotNativeCardNodes(firstCard),
+      firstCardNativeSnapshot,
+      "mounting must not move or mutate Roblox's anchor, native action, or feedback"
+    );
     assert.equal(firstCard.nativeAction.textContent, "Notify Me");
 
     const duplicate = new FakeButton();
@@ -269,15 +356,24 @@ const previousGlobals = Object.fromEntries(
     hooks.reconcileNativeEventScheduleButtons();
     assert.deepEqual(ownedButtons(), [button]);
     assert.equal(duplicate.isConnected, false);
+    assert.equal(firstCard.featured.children[0], firstCard.link);
+    assert.equal(firstCard.featured.children[1], button);
+    assert.equal(firstCard.featured.children[2], firstCard.feedback);
+    assert.deepEqual(snapshotNativeCardNodes(firstCard), firstCardNativeSnapshot);
 
     const replacementCard = makeCard(eventId);
+    const replacementNativeSnapshot = snapshotNativeCardNodes(replacementCard);
     cards.splice(0, 1, replacementCard.card);
     hooks.mountNativeEventScheduleButtons();
     const replacementButton = ownedButtons()[0];
     assert.ok(replacementButton instanceof FakeButton);
     assert.notEqual(replacementButton, button);
     assert.equal(replacementCard.link.nextElementSibling, replacementButton);
-    assert.equal(replacementCard.featured.children[2], replacementCard.nativeAction);
+    assert.equal(replacementCard.featured.children[0], replacementCard.link);
+    assert.equal(replacementCard.featured.children[1], replacementButton);
+    assert.equal(replacementCard.featured.children[2], replacementCard.feedback);
+    assert.equal(replacementCard.link.contains(replacementButton), false);
+    assert.deepEqual(snapshotNativeCardNodes(replacementCard), replacementNativeSnapshot);
     assert.equal(requests.length, 1, "a React remount reuses verified Event data");
 
     const modalCalls = [];
@@ -346,6 +442,7 @@ const previousGlobals = Object.fromEntries(
     });
     const liveId = "777";
     const liveCard = makeCard(liveId, { nativeLabel: "Join Event" });
+    const liveCardNativeSnapshot = snapshotNativeCardNodes(liveCard);
     cards.splice(0, 1, liveCard.card);
     hooks.setNativeEventScheduleMessageSenderForTests(async (message) => {
       requests.push(JSON.parse(JSON.stringify(message)));
@@ -362,6 +459,10 @@ const previousGlobals = Object.fromEntries(
     assert.equal(liveCard.nativeAction.textContent, "Join Event");
     assert.equal(ownedButtons().length, 0,
       "a live native Join Event never receives a Scheduler action");
+    assert.equal(liveCard.featured.children[0], liveCard.link);
+    assert.equal(liveCard.featured.children[1], liveCard.feedback);
+    assert.equal(liveCard.link.contains(liveCard.nativeAction), true);
+    assert.deepEqual(snapshotNativeCardNodes(liveCard), liveCardNativeSnapshot);
 
     hooks.resetNativeEventScheduleStateForTests();
     currentPage = {
@@ -397,7 +498,12 @@ const previousGlobals = Object.fromEntries(
     hooks.mountNativeEventScheduleButtons();
     await Promise.resolve();
     await settle(hooks);
-    assert.equal(ownedButtons()[0]?.getAttribute(OWNED_ATTRIBUTE), "999");
+    const newCardButton = ownedButtons()[0];
+    assert.equal(newCardButton?.getAttribute(OWNED_ATTRIBUTE), "999");
+    assert.equal(newCard.featured.children[0], newCard.link);
+    assert.equal(newCard.featured.children[1], newCardButton);
+    assert.equal(newCard.featured.children[2], newCard.feedback);
+    assert.equal(newCard.link.contains(newCardButton), false);
 
     assert.equal(typeof resolveOldRequest, "function");
     resolveOldRequest({

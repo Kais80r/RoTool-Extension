@@ -13,6 +13,12 @@ const THUMBNAIL_SPECS = Object.freeze({
   },
   community: { path: "/v1/groups/icons", idParameter: "groupIds", circular: false }
 });
+const EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE =
+  "rsl:get-experience-place-thumbnails";
+const EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE =
+  "rsl:get-experience-places-eligibility";
+const EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX = 24;
+const EXPERIENCE_PLACE_THUMBNAIL_SIZE = "150x150";
 
 const CONTEXT_MENU_PREFIX = "rsl-context";
 const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
@@ -216,22 +222,54 @@ const DIRECT_QUICK_SETTING_ALIASES = Object.freeze([
 const RANDOM_SERVER_MESSAGE_TYPE = "rsl:get-random-public-server";
 const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
   "rsl:get-extension-update-status";
+const EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE =
+  "rsl:get-extension-update-preferences";
+const EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE =
+  "rsl:set-extension-update-preferences";
+const EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE =
+  "rsl:verify-extension-update-claim-context";
 const EXTENSION_UPDATE_STORAGE_KEY = "rslExtensionUpdateStatusV1";
 const EXTENSION_UPDATE_STORAGE_VERSION = 1;
+const EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY =
+  "rslExtensionUpdatePreferenceV1";
+const EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION = 1;
+const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "6h";
+const EXTENSION_UPDATE_REMINDER_FREQUENCIES = Object.freeze({
+  home: null,
+  "30m": 30 * 60_000,
+  "1h": 60 * 60_000,
+  "6h": 6 * 60 * 60_000,
+  "24h": 24 * 60 * 60_000
+});
+const EXTENSION_UPDATE_FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
+const EXTENSION_UPDATE_FEATURE_SETTINGS_STORAGE_VERSION = 1;
+const EXTENSION_UPDATE_MAX_PRESENTATION_MARKER_AGE_MS = 24 * 60 * 60_000;
+const EXTENSION_UPDATE_MAX_HOME_VISIT_MARKERS = 256;
+const EXTENSION_UPDATE_HOME_VISIT_ID_PATTERN =
+  /^[a-z0-9](?:[a-z0-9_-]{6,94}[a-z0-9])?$/i;
+const EXTENSION_UPDATE_CLAIM_CONTEXT_ID_PATTERN =
+  /^[a-z0-9](?:[a-z0-9_-]{6,126}[a-z0-9])?$/i;
 const EXTENSION_UPDATE_LATEST_RELEASE_URL =
   "https://api.github.com/repos/Kais80r/RoTool-Extension/releases/latest";
 const EXTENSION_UPDATE_HOW_TO_URL =
   "https://github.com/Kais80r/RoTool-Extension/blob/main/UPDATING.md";
 const EXTENSION_UPDATE_CACHE_TTL_MS = 24 * 60 * 60_000;
-const EXTENSION_UPDATE_PRESENTATION_TTL_MS = 6 * 60 * 60_000;
+const EXTENSION_UPDATE_PRESENTATION_TTL_MS =
+  EXTENSION_UPDATE_REMINDER_FREQUENCIES[
+    EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
+  ];
 const EXTENSION_UPDATE_FETCH_TIMEOUT_MS = 8_000;
 const EXTENSION_UPDATE_MAX_RESPONSE_BYTES = 256 * 1_024;
 const EXTENSION_UPDATE_FAILURE_RETRY_MS = 60 * 60_000;
+const EXTENSION_UPDATE_CONTEXT_CHALLENGE_TIMEOUT_MS = 2_000;
 let extensionUpdateCheckPromise = null;
 let extensionUpdateStateLoadPromise = null;
 let extensionUpdateStateMemory = null;
 let extensionUpdateStateMutationTail = Promise.resolve();
 let extensionUpdateStorageOverride = null;
+let extensionUpdatePreferencesLoadPromise = null;
+let extensionUpdatePreferencesMemory = null;
+let extensionUpdatePreferencesStorageOverride = null;
 const RANDOM_SERVER_CACHE_TTL_MS = 20_000;
 const RANDOM_SERVER_RATE_LIMIT_FALLBACK_MS = 60_000;
 const RANDOM_SERVER_FETCH_TIMEOUT_MS = 10_000;
@@ -309,6 +347,7 @@ const NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS = new Set([
 const JOIN_SCHEDULER_MESSAGE_PREFIX = "rsl:join-scheduler:";
 const JOIN_SCHEDULER_MESSAGE_TYPES = Object.freeze({
   getState: `${JOIN_SCHEDULER_MESSAGE_PREFIX}get-state`,
+  getGameIcons: `${JOIN_SCHEDULER_MESSAGE_PREFIX}get-game-icons`,
   searchGames: `${JOIN_SCHEDULER_MESSAGE_PREFIX}search-games`,
   validateDestination: `${JOIN_SCHEDULER_MESSAGE_PREFIX}validate-destination`,
   saveDestination: `${JOIN_SCHEDULER_MESSAGE_PREFIX}save-destination`,
@@ -332,6 +371,23 @@ const JOIN_SCHEDULER_NOTIFICATION_PREFIX = "rsl-join-scheduler-v1:";
 const JOIN_SCHEDULER_MAX_ACCOUNTS = 8;
 const JOIN_SCHEDULER_MAX_DESTINATIONS = 30;
 const JOIN_SCHEDULER_MAX_SCHEDULES = 50;
+const JOIN_SCHEDULER_GAME_ICON_MAX_IDS = JOIN_SCHEDULER_MAX_SCHEDULES;
+const JOIN_SCHEDULER_GAME_ICON_CACHE_MAX_ENTRIES = 128;
+const JOIN_SCHEDULER_GAME_ICON_CACHE_TTL_MS = 30 * 60_000;
+const JOIN_SCHEDULER_GAME_ICON_FAILURE_CACHE_TTL_MS = 60_000;
+const JOIN_SCHEDULER_GAME_ICON_URL_MAX_LENGTH = 2_048;
+const JOIN_SCHEDULER_GAME_ICON_RESPONSE_MAX_BYTES = 256 * 1_024;
+const JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_DEADLINE_MS = 2_500;
+const JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_CACHE_MAX_ENTRIES = 32;
+const JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_CACHE_TTL_MS = 30 * 60_000;
+const JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_FAILURE_CACHE_TTL_MS = 60_000;
+const JOIN_SCHEDULER_GAME_ICON_SPEC = Object.freeze({
+  path: "/v1/games/icons",
+  idParameter: "universeIds",
+  circular: false,
+  size: "150x150",
+  format: "Png"
+});
 const JOIN_SCHEDULER_NOTIFICATION_LEAD_MS = 30_000;
 const JOIN_SCHEDULER_LATE_GRACE_MS = 2 * 60_000;
 const JOIN_SCHEDULER_AUTO_COLLISION_MS = 5 * 60_000;
@@ -487,6 +543,8 @@ let joinSchedulerStorageOverride = null;
 let joinSchedulerRuntimeOverrides = null;
 let joinSchedulerCoordinatorPromise = null;
 let joinSchedulerPermissionGeneration = 0;
+const joinSchedulerGameIconCache = new Map();
+const joinSchedulerNotificationIconCache = new Map();
 const privateServerSupportCache = new Map();
 const privateServerSupportByPlaceId = new Map();
 const privateServerSupportRequestsByPlaceId = new Map();
@@ -754,6 +812,212 @@ function getThumbnail(kind, id, forceRefresh = false) {
     thumbnailRequests.set(key, request);
   }
   return thumbnailRequests.get(key);
+}
+
+function normalizeExperiencePlaceThumbnailIds(rawValue) {
+  if (
+    !Array.isArray(rawValue) ||
+    rawValue.length === 0 ||
+    rawValue.length > EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX
+  ) {
+    return null;
+  }
+  const ids = [];
+  const seen = new Set();
+  for (const rawId of rawValue) {
+    const id = typeof rawId === "string" ? rawId : "";
+    if (!isValidId(id)) return null;
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  return ids.length > 0 ? Object.freeze(ids) : null;
+}
+
+async function fetchExperiencePlaceThumbnails(placeIds) {
+  const normalizedIds = normalizeExperiencePlaceThumbnailIds(placeIds);
+  if (!normalizedIds) throw new TypeError("Invalid Experience Place IDs");
+  const endpoint = new URL(
+    "/v1/places/gameicons",
+    "https://thumbnails.roblox.com"
+  );
+  endpoint.searchParams.set("placeIds", normalizedIds.join(","));
+  endpoint.searchParams.set("size", EXPERIENCE_PLACE_THUMBNAIL_SIZE);
+  endpoint.searchParams.set("format", "Webp");
+  endpoint.searchParams.set("isCircular", "false");
+
+  for (
+    let attempt = 0;
+    attempt <= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    const payload = await fetchJson(endpoint, {
+      cache: "no-store",
+      credentials: "omit"
+    });
+    const requested = new Set(normalizedIds);
+    const thumbnailsById = new Map();
+    let hasPending = false;
+    for (const rawThumbnail of Array.isArray(payload?.data)
+      ? payload.data
+      : []) {
+      const placeId = normalizeId(rawThumbnail?.targetId);
+      if (!placeId || !requested.has(placeId)) continue;
+      if (
+        rawThumbnail?.state === "Completed" &&
+        isSafeThumbnailUrl(rawThumbnail.imageUrl)
+      ) {
+        thumbnailsById.set(placeId, rawThumbnail.imageUrl);
+      } else if (rawThumbnail?.state === "Pending") {
+        hasPending = true;
+      }
+    }
+    if (
+      !hasPending ||
+      attempt >= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length
+    ) {
+      return normalizedIds
+        .filter((placeId) => thumbnailsById.has(placeId))
+        .map((placeId) => Object.freeze({
+          placeId,
+          url: thumbnailsById.get(placeId)
+        }));
+    }
+    await wait(THUMBNAIL_PENDING_RETRY_DELAYS_MS[attempt]);
+  }
+  return [];
+}
+
+function handleExperiencePlaceThumbnailsMessage(message, sendResponse) {
+  const requestId = message?.requestId;
+  const placeIds = normalizeExperiencePlaceThumbnailIds(message?.placeIds);
+  if (
+    !Number.isSafeInteger(requestId) ||
+    requestId <= 0 ||
+    !placeIds
+  ) {
+    return false;
+  }
+  fetchExperiencePlaceThumbnails(placeIds)
+    .then((thumbnails) => {
+      sendResponse({ ok: true, requestId, thumbnails });
+    })
+    .catch(() => {
+      sendResponse({ ok: false, requestId, thumbnails: [] });
+    });
+  return true;
+}
+
+async function fetchExperiencePlacesEligibility(
+  placeId,
+  universeId,
+  rootPlaceId
+) {
+  if (
+    !isValidId(placeId) ||
+    !isValidId(universeId) ||
+    !isValidId(rootPlaceId)
+  ) {
+    throw new TypeError("Invalid Experience Places identity");
+  }
+  const universeEndpoint = new URL(
+    `/universes/v1/places/${placeId}/universe`,
+    "https://apis.roblox.com"
+  );
+  const gameEndpoint = new URL("/v1/games", "https://games.roblox.com");
+  gameEndpoint.searchParams.set("universeIds", universeId);
+  const [universePayload, payload] = await Promise.all([
+    fetchJson(universeEndpoint, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    }),
+    fetchJson(gameEndpoint, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    })
+  ]);
+  if (normalizeId(universePayload?.universeId) !== universeId) {
+    throw new Error("Mismatched Experience Places route Universe");
+  }
+  if (!Array.isArray(payload?.data) || payload.data.length !== 1) {
+    throw new Error("Invalid Experience Places eligibility response");
+  }
+  const game = payload.data[0];
+  if (
+    normalizeId(game?.id) !== universeId ||
+    normalizeId(game?.rootPlaceId) !== rootPlaceId ||
+    typeof game?.isContentRestricted !== "boolean"
+  ) {
+    throw new Error("Mismatched Experience Places eligibility response");
+  }
+  return Object.freeze({
+    placeId,
+    universeId,
+    rootPlaceId,
+    eligible: game.isContentRestricted === false,
+    restricted: game.isContentRestricted === true
+  });
+}
+
+function handleExperiencePlacesEligibilityMessage(message, sender, sendResponse) {
+  if (message?.type !== EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE) {
+    return false;
+  }
+  const messageKeys = message && typeof message === "object" && !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const hasExactMessageShape =
+    messageKeys.length === 5 &&
+    messageKeys[0] === "placeId" &&
+    messageKeys[1] === "requestId" &&
+    messageKeys[2] === "rootPlaceId" &&
+    messageKeys[3] === "type" &&
+    messageKeys[4] === "universeId";
+  const requestId = normalizeRandomServerRequestId(message?.requestId);
+  const placeId = normalizeId(message?.placeId);
+  const rootPlaceId = normalizeId(message?.rootPlaceId);
+  const universeId = normalizeId(message?.universeId);
+  const senderPlaceId = getTrustedNativeEventSchedulePagePlaceId(sender);
+  if (
+    !hasExactMessageShape ||
+    requestId === null ||
+    !placeId ||
+    !rootPlaceId ||
+    !universeId ||
+    senderPlaceId !== placeId
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  fetchExperiencePlacesEligibility(placeId, universeId, rootPlaceId)
+    .then((eligibility) => {
+      sendResponse({
+        ok: true,
+        requestId,
+        placeId,
+        ...eligibility
+      });
+    })
+    .catch((error) => {
+      sendResponse({
+        ok: false,
+        requestId,
+        placeId,
+        rootPlaceId,
+        universeId,
+        code: getGameCcuErrorCode(error)
+      });
+    });
+  return true;
 }
 
 async function fetchJson(url, options = {}, retryPolicy = {}) {
@@ -8480,6 +8744,207 @@ function normalizeJoinSchedulerResultCode(value) {
   return /^[a-z][a-z0-9-]{0,63}$/.test(code) ? code : null;
 }
 
+function normalizeJoinSchedulerGameIconUniverseIds(rawValue) {
+  if (
+    !Array.isArray(rawValue) ||
+    rawValue.length === 0 ||
+    rawValue.length > JOIN_SCHEDULER_GAME_ICON_MAX_IDS
+  ) {
+    return null;
+  }
+  const universeIds = [];
+  const seen = new Set();
+  for (const rawUniverseId of rawValue) {
+    if (typeof rawUniverseId !== "string") return null;
+    const universeId = normalizeId(rawUniverseId);
+    if (!universeId || seen.has(universeId)) return null;
+    seen.add(universeId);
+    universeIds.push(universeId);
+  }
+  return Object.freeze(universeIds);
+}
+
+function normalizeJoinSchedulerGameIconUrl(rawUrl) {
+  if (
+    typeof rawUrl !== "string" ||
+    rawUrl.length === 0 ||
+    rawUrl.length > JOIN_SCHEDULER_GAME_ICON_URL_MAX_LENGTH
+  ) {
+    return null;
+  }
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      !url.hash &&
+      (url.hostname === "rbxcdn.com" || url.hostname.endsWith(".rbxcdn.com"))
+    ) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function pruneJoinSchedulerGameIconCache(cache, maxEntries, now = Date.now()) {
+  for (const [key, entry] of cache) {
+    if (!entry || entry.expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size > maxEntries) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
+function getFreshJoinSchedulerGameIconCacheEntry(cache, key, now = Date.now()) {
+  const entry = cache.get(key);
+  if (!entry || entry.expiresAt <= now) {
+    cache.delete(key);
+    return null;
+  }
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry;
+}
+
+function normalizeJoinSchedulerGameIconBatch(payload, universeIds) {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !Array.isArray(payload.data) ||
+    payload.data.length > universeIds.length
+  ) {
+    throw new JoinSchedulerError("UNAVAILABLE");
+  }
+  const requested = new Set(universeIds);
+  const byUniverseId = new Map();
+  const seen = new Set();
+  const duplicates = new Set();
+  let hasPending = false;
+  for (const rawIcon of payload.data) {
+    const universeId = normalizeId(rawIcon?.targetId);
+    if (!universeId || !requested.has(universeId)) continue;
+    if (seen.has(universeId)) {
+      byUniverseId.delete(universeId);
+      duplicates.add(universeId);
+      continue;
+    }
+    seen.add(universeId);
+    if (rawIcon?.state === "Completed") {
+      const thumbnailUrl = normalizeJoinSchedulerGameIconUrl(rawIcon.imageUrl);
+      if (thumbnailUrl) byUniverseId.set(universeId, thumbnailUrl);
+    } else if (rawIcon?.state === "Pending") {
+      hasPending = true;
+    }
+  }
+  for (const duplicate of duplicates) byUniverseId.delete(duplicate);
+  return Object.freeze({ byUniverseId, hasPending });
+}
+
+async function fetchJoinSchedulerGameIconBatch(universeIds) {
+  const completed = new Map();
+  let remaining = [...universeIds];
+  for (
+    let attempt = 0;
+    remaining.length > 0 && attempt <= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    const endpoint = new URL(
+      JOIN_SCHEDULER_GAME_ICON_SPEC.path,
+      "https://thumbnails.roblox.com"
+    );
+    endpoint.searchParams.set(
+      JOIN_SCHEDULER_GAME_ICON_SPEC.idParameter,
+      remaining.join(",")
+    );
+    endpoint.searchParams.set("size", JOIN_SCHEDULER_GAME_ICON_SPEC.size);
+    endpoint.searchParams.set("format", JOIN_SCHEDULER_GAME_ICON_SPEC.format);
+    endpoint.searchParams.set(
+      "isCircular",
+      String(JOIN_SCHEDULER_GAME_ICON_SPEC.circular)
+    );
+    const payload = await fetchJson(endpoint, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      headers: { Accept: "application/json" }
+    }, { maxAttempts: 1 });
+    const normalized = normalizeJoinSchedulerGameIconBatch(payload, remaining);
+    for (const [universeId, thumbnailUrl] of normalized.byUniverseId) {
+      completed.set(universeId, thumbnailUrl);
+    }
+    remaining = remaining.filter((universeId) =>
+      !completed.has(universeId) && normalized.hasPending
+    );
+    if (
+      remaining.length > 0 &&
+      attempt < THUMBNAIL_PENDING_RETRY_DELAYS_MS.length
+    ) {
+      await wait(THUMBNAIL_PENDING_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  return completed;
+}
+
+async function getJoinSchedulerGameIcons(rawUniverseIds) {
+  const universeIds = normalizeJoinSchedulerGameIconUniverseIds(rawUniverseIds);
+  if (!universeIds) throw new JoinSchedulerError("INVALID", 400);
+  const now = Date.now();
+  const promisesByUniverseId = new Map();
+  const missing = [];
+  for (const universeId of universeIds) {
+    const cached = getFreshJoinSchedulerGameIconCacheEntry(
+      joinSchedulerGameIconCache,
+      universeId,
+      now
+    );
+    if (cached) promisesByUniverseId.set(universeId, cached.promise);
+    else missing.push(universeId);
+  }
+  if (missing.length > 0) {
+    const batchPromise = fetchJoinSchedulerGameIconBatch(missing)
+      .catch(() => new Map());
+    for (const universeId of missing) {
+      const entry = {
+        expiresAt: now + JOIN_SCHEDULER_GAME_ICON_CACHE_TTL_MS,
+        promise: null
+      };
+      entry.promise = batchPromise.then((icons) => {
+        const thumbnailUrl = normalizeJoinSchedulerGameIconUrl(
+          icons.get(universeId)
+        );
+        entry.expiresAt = Date.now() + (thumbnailUrl
+          ? JOIN_SCHEDULER_GAME_ICON_CACHE_TTL_MS
+          : JOIN_SCHEDULER_GAME_ICON_FAILURE_CACHE_TTL_MS);
+        return thumbnailUrl;
+      });
+      joinSchedulerGameIconCache.set(universeId, entry);
+      promisesByUniverseId.set(universeId, entry.promise);
+    }
+    pruneJoinSchedulerGameIconCache(
+      joinSchedulerGameIconCache,
+      JOIN_SCHEDULER_GAME_ICON_CACHE_MAX_ENTRIES,
+      now
+    );
+  }
+  const resolved = await Promise.all(universeIds.map(async (universeId) => ({
+    universeId,
+    thumbnailUrl: await promisesByUniverseId.get(universeId)
+  })));
+  return Object.freeze(resolved
+    .filter((icon) => icon.thumbnailUrl)
+    .map((icon) => Object.freeze(icon)));
+}
+
+async function getJoinSchedulerGameIconUrl(rawUniverseId) {
+  const universeId = normalizeId(rawUniverseId);
+  if (!universeId) return null;
+  const icons = await getJoinSchedulerGameIcons([universeId]).catch(() => []);
+  return icons[0]?.universeId === universeId ? icons[0].thumbnailUrl : null;
+}
+
 function parseJoinSchedulerDestinationUrl(rawUrl) {
   if (
     typeof rawUrl !== "string" ||
@@ -9503,7 +9968,7 @@ async function getJoinSchedulerSearchResponse(message) {
   const rawResults = await searchGameEventsGames(query, message?.locale);
   const results = await Promise.all(rawResults.map(async (game) => ({
     ...game,
-    thumbnailUrl: await getThumbnail("gameUniverse", game.universeId)
+    thumbnailUrl: await getJoinSchedulerGameIconUrl(game.universeId)
       .catch(() => null)
   })));
   await getJoinSchedulerViewerUserId({ viewerUserId }, true);
@@ -9513,6 +9978,35 @@ async function getJoinSchedulerSearchResponse(message) {
     viewerUserId,
     query,
     results
+  };
+}
+
+async function getJoinSchedulerGameIconsResponse(message) {
+  const messageKeys = message && typeof message === "object" && !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const hasExactMessageShape =
+    messageKeys.length === 4 &&
+    messageKeys[0] === "requestId" &&
+    messageKeys[1] === "type" &&
+    messageKeys[2] === "universeIds" &&
+    messageKeys[3] === "viewerUserId";
+  const universeIds = normalizeJoinSchedulerGameIconUniverseIds(
+    message?.universeIds
+  );
+  if (!hasExactMessageShape || !universeIds) {
+    throw new JoinSchedulerError("INVALID", 400);
+  }
+  await assertJoinSchedulerFeatureEnabled();
+  const viewerUserId = await getJoinSchedulerViewerUserId(message, true);
+  const gameIcons = await getJoinSchedulerGameIcons(universeIds);
+  await assertJoinSchedulerFeatureEnabled(true);
+  await getJoinSchedulerViewerUserId({ viewerUserId }, true);
+  return {
+    ok: true,
+    requestId: normalizeJoinSchedulerRequestId(message?.requestId) || 0,
+    viewerUserId,
+    gameIcons
   };
 }
 
@@ -10154,6 +10648,199 @@ async function clearJoinSchedulerNotification(scheduleId, revision = null) {
   }
 }
 
+function settleJoinSchedulerGameIconBeforeDeadline(promise, deadlineAt) {
+  const remainingMs = Math.max(0, deadlineAt - Date.now());
+  if (remainingMs <= 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value ?? null);
+    };
+    const timeoutId = setTimeout(() => finish(null), remainingMs);
+    Promise.resolve(promise).then(finish, () => finish(null));
+  });
+}
+
+async function readJoinSchedulerGameIconBytes(response) {
+  const rawContentLength = response?.headers?.get?.("content-length") || "";
+  if (rawContentLength && !/^\d+$/.test(rawContentLength)) return null;
+  const contentLength = rawContentLength ? Number(rawContentLength) : 0;
+  if (
+    !Number.isSafeInteger(contentLength) ||
+    contentLength > JOIN_SCHEDULER_GAME_ICON_RESPONSE_MAX_BYTES
+  ) {
+    return null;
+  }
+  if (typeof response?.body?.getReader === "function") {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!(value instanceof Uint8Array)) return null;
+        total += value.byteLength;
+        if (total > JOIN_SCHEDULER_GAME_ICON_RESPONSE_MAX_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          return null;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock?.();
+    }
+    if (total === 0) return null;
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  }
+  if (typeof response?.arrayBuffer !== "function") return null;
+  const buffer = await response.arrayBuffer();
+  if (
+    !(buffer instanceof ArrayBuffer) ||
+    buffer.byteLength === 0 ||
+    buffer.byteLength > JOIN_SCHEDULER_GAME_ICON_RESPONSE_MAX_BYTES
+  ) {
+    return null;
+  }
+  return new Uint8Array(buffer);
+}
+
+function isJoinSchedulerGameIconSignature(bytes, mimeType) {
+  if (!(bytes instanceof Uint8Array)) return false;
+  if (mimeType === "image/png") {
+    return bytes.length >= 8 &&
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+      bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
+      bytes[6] === 0x1a && bytes[7] === 0x0a;
+  }
+  if (mimeType === "image/jpeg") {
+    return bytes.length >= 3 &&
+      bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (mimeType === "image/webp") {
+    return bytes.length >= 12 &&
+      bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+      bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 &&
+      bytes[10] === 0x42 && bytes[11] === 0x50;
+  }
+  return false;
+}
+
+function encodeJoinSchedulerGameIconDataUrl(bytes, mimeType) {
+  let encoded = "";
+  if (typeof globalThis.btoa === "function") {
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    encoded = globalThis.btoa(binary);
+  } else {
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (let index = 0; index < bytes.length; index += 3) {
+      const first = bytes[index];
+      const hasSecond = index + 1 < bytes.length;
+      const hasThird = index + 2 < bytes.length;
+      const second = hasSecond ? bytes[index + 1] : 0;
+      const third = hasThird ? bytes[index + 2] : 0;
+      encoded += alphabet[first >> 2];
+      encoded += alphabet[((first & 0x03) << 4) | (second >> 4)];
+      encoded += hasSecond
+        ? alphabet[((second & 0x0f) << 2) | (third >> 6)]
+        : "=";
+      encoded += hasThird ? alphabet[third & 0x3f] : "=";
+    }
+  }
+  return `data:${mimeType};base64,${encoded}`;
+}
+
+async function fetchJoinSchedulerNotificationGameIconDataUrl(
+  rawThumbnailUrl,
+  deadlineAt
+) {
+  const thumbnailUrl = normalizeJoinSchedulerGameIconUrl(rawThumbnailUrl);
+  const remainingMs = Math.max(0, deadlineAt - Date.now());
+  if (!thumbnailUrl || remainingMs <= 0) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), remainingMs);
+  try {
+    const response = await fetch(thumbnailUrl, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      headers: { Accept: "image/png,image/jpeg,image/webp" },
+      signal: controller.signal
+    });
+    const responseUrl = normalizeJoinSchedulerGameIconUrl(response?.url);
+    if (!response?.ok || responseUrl !== thumbnailUrl) return null;
+    const mimeType = String(
+      response.headers?.get?.("content-type") || ""
+    ).split(";", 1)[0].trim().toLowerCase();
+    if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(mimeType)) {
+      return null;
+    }
+    const bytes = await readJoinSchedulerGameIconBytes(response);
+    if (!isJoinSchedulerGameIconSignature(bytes, mimeType)) return null;
+    return encodeJoinSchedulerGameIconDataUrl(bytes, mimeType);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function getJoinSchedulerNotificationGameIconDataUrl(rawUniverseId) {
+  const universeId = normalizeId(rawUniverseId);
+  if (!universeId) return null;
+  const now = Date.now();
+  const cached = getFreshJoinSchedulerGameIconCacheEntry(
+    joinSchedulerNotificationIconCache,
+    universeId,
+    now
+  );
+  if (cached) return cached.promise;
+  const entry = {
+    expiresAt: now + JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_CACHE_TTL_MS,
+    promise: null
+  };
+  entry.promise = (async () => {
+    const deadlineAt = Date.now() +
+      JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_DEADLINE_MS;
+    const thumbnailUrl = await settleJoinSchedulerGameIconBeforeDeadline(
+      getJoinSchedulerGameIconUrl(universeId),
+      deadlineAt
+    );
+    if (!thumbnailUrl) return null;
+    return settleJoinSchedulerGameIconBeforeDeadline(
+      fetchJoinSchedulerNotificationGameIconDataUrl(thumbnailUrl, deadlineAt),
+      deadlineAt
+    );
+  })().catch(() => null).then((dataUrl) => {
+    entry.expiresAt = Date.now() + (dataUrl
+      ? JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_CACHE_TTL_MS
+      : JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_FAILURE_CACHE_TTL_MS);
+    return dataUrl;
+  });
+  joinSchedulerNotificationIconCache.set(universeId, entry);
+  pruneJoinSchedulerGameIconCache(
+    joinSchedulerNotificationIconCache,
+    JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_CACHE_MAX_ENTRIES,
+    now
+  );
+  return entry.promise;
+}
+
 async function createJoinSchedulerNotification(schedule, message = null) {
   if (!await hasJoinSchedulerNotificationPermission()) {
     throw new JoinSchedulerError("NOTIFICATIONS_REQUIRED");
@@ -10172,9 +10859,15 @@ async function createJoinSchedulerNotification(schedule, message = null) {
     schedule.id,
     schedule.revision
   );
+  const iconUrl = await getJoinSchedulerNotificationGameIconDataUrl(
+    schedule.universeId
+  ).catch(() => null) || chrome.runtime.getURL("icons/rotool-128.png");
+  if (!await hasJoinSchedulerNotificationAuthority(schedule.accountId)) {
+    throw new JoinSchedulerError("ACCOUNT_CHANGED", 409);
+  }
   await chrome.notifications.create(notificationId, {
     type: "basic",
-    iconUrl: chrome.runtime.getURL("icons/rotool-128.png"),
+    iconUrl,
     title: `Join ${schedule.gameName}`,
     message: message || `${schedule.title} starts at ${when}.`,
     priority: 2,
@@ -11080,6 +11773,8 @@ async function dispatchJoinSchedulerContentMessage(message) {
   const operations = new Map([
     [JOIN_SCHEDULER_MESSAGE_TYPES.getState,
       () => getJoinSchedulerStateResponse(message)],
+    [JOIN_SCHEDULER_MESSAGE_TYPES.getGameIcons,
+      () => getJoinSchedulerGameIconsResponse(message)],
     [JOIN_SCHEDULER_MESSAGE_TYPES.searchGames,
       () => getJoinSchedulerSearchResponse(message)],
     [JOIN_SCHEDULER_MESSAGE_TYPES.validateDestination,
@@ -11651,6 +12346,8 @@ function resetJoinSchedulerStateForTests() {
   joinSchedulerRuntimeOverrides = null;
   joinSchedulerCoordinatorPromise = null;
   joinSchedulerPermissionGeneration = 0;
+  joinSchedulerGameIconCache.clear();
+  joinSchedulerNotificationIconCache.clear();
 }
 
 const JOIN_SCHEDULER_TEST_HOOKS = {
@@ -11669,7 +12366,12 @@ const JOIN_SCHEDULER_TEST_HOOKS = {
     maxDestinations: JOIN_SCHEDULER_MAX_DESTINATIONS,
     maxSchedules: JOIN_SCHEDULER_MAX_SCHEDULES,
     maxAccounts: JOIN_SCHEDULER_MAX_ACCOUNTS,
-    maxPrivateUrlLength: JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH
+    maxPrivateUrlLength: JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH,
+    gameIconMaxIds: JOIN_SCHEDULER_GAME_ICON_MAX_IDS,
+    gameIconCacheMaxEntries: JOIN_SCHEDULER_GAME_ICON_CACHE_MAX_ENTRIES,
+    gameIconResponseMaxBytes: JOIN_SCHEDULER_GAME_ICON_RESPONSE_MAX_BYTES,
+    gameIconNotificationDeadlineMs:
+      JOIN_SCHEDULER_GAME_ICON_NOTIFICATION_DEADLINE_MS
   }),
   messageTypes: JOIN_SCHEDULER_MESSAGE_TYPES,
   parseDestinationUrl: parseJoinSchedulerDestinationUrl,
@@ -11683,6 +12385,18 @@ const JOIN_SCHEDULER_TEST_HOOKS = {
   createMemoryStorage: createJoinSchedulerMemoryStorageForTests,
   createJoinSchedulerMemoryStorageForTests,
   readState: readJoinSchedulerAccountState,
+  normalizeGameIconUniverseIds: normalizeJoinSchedulerGameIconUniverseIds,
+  normalizeGameIconBatch: normalizeJoinSchedulerGameIconBatch,
+  getGameIcons: getJoinSchedulerGameIcons,
+  getGameIconsResponse: getJoinSchedulerGameIconsResponse,
+  readGameIconBytes: readJoinSchedulerGameIconBytes,
+  isGameIconSignature: isJoinSchedulerGameIconSignature,
+  encodeGameIconDataUrl: encodeJoinSchedulerGameIconDataUrl,
+  fetchNotificationGameIconDataUrl:
+    fetchJoinSchedulerNotificationGameIconDataUrl,
+  getNotificationGameIconDataUrl:
+    getJoinSchedulerNotificationGameIconDataUrl,
+  createNotification: createJoinSchedulerNotification,
   validateDestination: validateJoinSchedulerDestination,
   saveDestination: saveJoinSchedulerDestination,
   createSchedule: createJoinSchedulerSchedule,
@@ -12598,6 +13312,138 @@ function isTrustedRobloxPageUrl(rawUrl) {
   }
 }
 
+const EXTENSION_UPDATE_ROBLOX_LOCALE_SEGMENTS = new Set([
+  "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+  "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+]);
+
+function isTrustedRobloxHomePageUrl(rawUrl) {
+  if (!isTrustedRobloxPageUrl(rawUrl)) {
+    return false;
+  }
+  try {
+    const url = new URL(rawUrl);
+    const pathname = url.pathname.toLowerCase();
+    if (/^\/home\/?$/.test(pathname)) {
+      return true;
+    }
+    const localized = /^\/([a-z]{2}(?:-[a-z]{2})?)\/home\/?$/.exec(
+      pathname
+    );
+    return Boolean(
+      localized &&
+      EXTENSION_UPDATE_ROBLOX_LOCALE_SEGMENTS.has(localized[1])
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getLiveBrowserTab(tabId) {
+  if (!chrome.tabs?.get) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(tab && typeof tab === "object" ? tab : null);
+    });
+  });
+}
+
+async function verifyTrustedActiveRobloxHomeTab(tabId, senderUrl) {
+  if (
+    !Number.isSafeInteger(tabId) ||
+    tabId < 0 ||
+    !isTrustedRobloxHomePageUrl(senderUrl)
+  ) {
+    return false;
+  }
+  const liveTab = await getLiveBrowserTab(tabId);
+  return Boolean(
+    liveTab &&
+    liveTab.id === tabId &&
+    liveTab.active === true &&
+    isTrustedRobloxHomePageUrl(liveTab.url)
+  );
+}
+
+function challengeExtensionUpdateClaimContext(
+  tabId,
+  { claimContextId, homeVisitId, expectedFrequency }
+) {
+  if (
+    !chrome.tabs?.sendMessage ||
+    normalizeExtensionUpdateClaimContextId(claimContextId) === null ||
+    normalizeExtensionUpdateHomeVisitId(homeVisitId) === null ||
+    normalizeExtensionUpdateReminderFrequency(expectedFrequency) === null
+  ) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = null;
+    const finish = (verified) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      resolve(verified === true);
+    };
+    timeoutId = setTimeout(
+      () => finish(false),
+      EXTENSION_UPDATE_CONTEXT_CHALLENGE_TIMEOUT_MS
+    );
+    if (settled) {
+      return;
+    }
+    try {
+      chrome.tabs.sendMessage(
+        tabId,
+        {
+          type: EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE,
+          claimContextId,
+          homeVisitId,
+          expectedFrequency
+        },
+        { frameId: 0 },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            finish(false);
+            return;
+          }
+          const responseKeys = response && typeof response === "object" &&
+            !Array.isArray(response)
+            ? Object.keys(response)
+            : [];
+          finish(
+            responseKeys.length === 1 &&
+            responseKeys[0] === "ok" &&
+            response.ok === true
+          );
+        }
+      );
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+async function verifyExtensionUpdatePresentationContext(options) {
+  if (
+    !(await verifyTrustedActiveRobloxHomeTab(options.tabId, options.senderUrl))
+  ) {
+    return false;
+  }
+  return challengeExtensionUpdateClaimContext(options.tabId, options);
+}
+
 function getTrustedRobloxTopFrameTabId(sender) {
   const tabId = sender?.tab?.id;
   if (
@@ -12642,6 +13488,63 @@ function compareExtensionUpdateVersions(leftValue, rightValue) {
   return 0;
 }
 
+function normalizeExtensionUpdateReminderFrequency(value) {
+  return typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(
+      EXTENSION_UPDATE_REMINDER_FREQUENCIES,
+      value
+    )
+    ? value
+    : null;
+}
+
+function createDefaultExtensionUpdatePreferences() {
+  return {
+    version: EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION,
+    frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+    revision: 0
+  };
+}
+
+function normalizeExtensionUpdatePreferences(rawValue) {
+  const preferences = createDefaultExtensionUpdatePreferences();
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    Array.isArray(rawValue) ||
+    rawValue.version !== EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION
+  ) {
+    return preferences;
+  }
+  const frequency = normalizeExtensionUpdateReminderFrequency(
+    rawValue.frequency
+  );
+  const revision = Number(rawValue.revision);
+  if (
+    frequency &&
+    Number.isSafeInteger(revision) &&
+    revision >= 0
+  ) {
+    preferences.frequency = frequency;
+    preferences.revision = revision;
+  }
+  return preferences;
+}
+
+function normalizeExtensionUpdateHomeVisitId(value) {
+  return typeof value === "string" &&
+    EXTENSION_UPDATE_HOME_VISIT_ID_PATTERN.test(value)
+    ? value
+    : null;
+}
+
+function normalizeExtensionUpdateClaimContextId(value) {
+  return typeof value === "string" &&
+    EXTENSION_UPDATE_CLAIM_CONTEXT_ID_PATTERN.test(value)
+    ? value
+    : null;
+}
+
 function createEmptyExtensionUpdateState() {
   return {
     version: EXTENSION_UPDATE_STORAGE_VERSION,
@@ -12649,7 +13552,9 @@ function createEmptyExtensionUpdateState() {
     checkedAt: 0,
     retryNotBefore: 0,
     lastPresentedVersion: null,
-    lastPresentedAt: 0
+    lastPresentedAt: 0,
+    lastPresentedHomeVisitId: null,
+    presentedHomeVisits: []
   };
 }
 
@@ -12690,30 +13595,90 @@ function normalizeExtensionUpdateState(rawValue, now = Date.now()) {
     rawValue.lastPresentedVersion
   );
   const lastPresentedAt = Number(rawValue.lastPresentedAt);
-  const presentationAge = now - lastPresentedAt;
   if (
     state.latest &&
     lastPresentedVersion === state.latest &&
     lastPresentedVersion === rawValue.lastPresentedVersion &&
     Number.isSafeInteger(lastPresentedAt) &&
     lastPresentedAt > 0 &&
-    presentationAge >= 0 &&
-    presentationAge < EXTENSION_UPDATE_PRESENTATION_TTL_MS
+    lastPresentedAt <= now + 5 * 60_000 &&
+    now - lastPresentedAt >= 0 &&
+    now - lastPresentedAt < EXTENSION_UPDATE_MAX_PRESENTATION_MARKER_AGE_MS
   ) {
     state.lastPresentedVersion = lastPresentedVersion;
     state.lastPresentedAt = lastPresentedAt;
+    state.lastPresentedHomeVisitId = normalizeExtensionUpdateHomeVisitId(
+      rawValue.lastPresentedHomeVisitId
+    );
   }
+
+  // Keep bounded per-version visit markers independently of the current
+  // release. If GitHub's latest tag changes A -> B -> A during one Home visit,
+  // the returning A must not be presented twice in that same visit.
+  const rawHomeVisits = Array.isArray(rawValue.presentedHomeVisits)
+    ? rawValue.presentedHomeVisits
+    : [];
+  const homeVisitKeys = new Set();
+  for (const rawEntry of rawHomeVisits) {
+    const version = normalizeExtensionUpdateVersion(rawEntry?.version);
+    const visitId = normalizeExtensionUpdateHomeVisitId(rawEntry?.visitId);
+    const presentedAt = Number(rawEntry?.presentedAt);
+    const age = now - presentedAt;
+    const key = `${version || ""}\n${visitId || ""}`;
+    if (
+      !version ||
+      !visitId ||
+      !Number.isSafeInteger(presentedAt) ||
+      presentedAt <= 0 ||
+      age < 0 ||
+      age >= EXTENSION_UPDATE_MAX_PRESENTATION_MARKER_AGE_MS ||
+      homeVisitKeys.has(key)
+    ) {
+      continue;
+    }
+    homeVisitKeys.add(key);
+    state.presentedHomeVisits.push({ version, visitId, presentedAt });
+  }
+  if (
+    state.lastPresentedVersion &&
+    state.lastPresentedHomeVisitId &&
+    !homeVisitKeys.has(
+      `${state.lastPresentedVersion}\n${state.lastPresentedHomeVisitId}`
+    )
+  ) {
+    state.presentedHomeVisits.push({
+      version: state.lastPresentedVersion,
+      visitId: state.lastPresentedHomeVisitId,
+      presentedAt: state.lastPresentedAt
+    });
+  }
+  state.presentedHomeVisits = state.presentedHomeVisits
+    .sort((left, right) => left.presentedAt - right.presentedAt)
+    .slice(-EXTENSION_UPDATE_MAX_HOME_VISIT_MARKERS);
   return state;
 }
 
 function extensionUpdateStatesEqual(left, right) {
+  const leftVisits = Array.isArray(left.presentedHomeVisits)
+    ? left.presentedHomeVisits
+    : [];
+  const rightVisits = Array.isArray(right.presentedHomeVisits)
+    ? right.presentedHomeVisits
+    : [];
   return (
     left.version === right.version &&
     left.latest === right.latest &&
     left.checkedAt === right.checkedAt &&
     left.retryNotBefore === right.retryNotBefore &&
     left.lastPresentedVersion === right.lastPresentedVersion &&
-    left.lastPresentedAt === right.lastPresentedAt
+    left.lastPresentedAt === right.lastPresentedAt &&
+    left.lastPresentedHomeVisitId === right.lastPresentedHomeVisitId &&
+    leftVisits.length === rightVisits.length &&
+    leftVisits.every((entry, index) => (
+      entry.version === rightVisits[index]?.version &&
+      entry.visitId === rightVisits[index]?.visitId &&
+      entry.presentedAt === rightVisits[index]?.presentedAt
+    ))
   );
 }
 
@@ -12761,6 +13726,121 @@ function writeExtensionUpdateStateStorage(state) {
   });
 }
 
+function readExtensionUpdatePreferencesStorage() {
+  if (typeof extensionUpdatePreferencesStorageOverride?.read === "function") {
+    return Promise.resolve(extensionUpdatePreferencesStorageOverride.read());
+  }
+  if (!chrome.storage?.local?.get) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(
+      { [EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY]: null },
+      (result) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(result?.[EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY] ?? null);
+      }
+    );
+  });
+}
+
+function writeExtensionUpdatePreferencesStorage(preferences) {
+  if (typeof extensionUpdatePreferencesStorageOverride?.write === "function") {
+    return Promise.resolve(
+      extensionUpdatePreferencesStorageOverride.write({ ...preferences })
+    );
+  }
+  if (!chrome.storage?.local?.set) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(
+      { [EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY]: { ...preferences } },
+      () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+async function loadExtensionUpdatePreferences() {
+  if (extensionUpdatePreferencesMemory) {
+    return extensionUpdatePreferencesMemory;
+  }
+  if (extensionUpdatePreferencesLoadPromise) {
+    return extensionUpdatePreferencesLoadPromise;
+  }
+  const load = (async () => {
+    let rawValue = null;
+    try {
+      rawValue = await readExtensionUpdatePreferencesStorage();
+    } catch {
+      rawValue = null;
+    }
+    extensionUpdatePreferencesMemory = normalizeExtensionUpdatePreferences(
+      rawValue
+    );
+    return extensionUpdatePreferencesMemory;
+  })();
+  const tracked = load.finally(() => {
+    if (extensionUpdatePreferencesLoadPromise === tracked) {
+      extensionUpdatePreferencesLoadPromise = null;
+    }
+  });
+  extensionUpdatePreferencesLoadPromise = tracked;
+  return tracked;
+}
+
+async function reloadExtensionUpdatePreferences() {
+  let rawValue = null;
+  try {
+    rawValue = await readExtensionUpdatePreferencesStorage();
+  } catch {
+    return loadExtensionUpdatePreferences();
+  }
+  extensionUpdatePreferencesMemory = normalizeExtensionUpdatePreferences(
+    rawValue
+  );
+  return extensionUpdatePreferencesMemory;
+}
+
+function readExtensionUpdatePopupMasterEnabled() {
+  if (!chrome.storage?.local?.get) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    chrome.storage.local.get(
+      { [EXTENSION_UPDATE_FEATURE_SETTINGS_STORAGE_KEY]: null },
+      (result) => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+        const rawValue = result?.[EXTENSION_UPDATE_FEATURE_SETTINGS_STORAGE_KEY];
+        const enabled = !(
+          rawValue &&
+          typeof rawValue === "object" &&
+          !Array.isArray(rawValue) &&
+          rawValue.version === EXTENSION_UPDATE_FEATURE_SETTINGS_STORAGE_VERSION &&
+          rawValue.flags &&
+          typeof rawValue.flags === "object" &&
+          rawValue.flags.updatePopups === false
+        );
+        resolve(enabled);
+      }
+    );
+  });
+}
+
 async function loadExtensionUpdateState() {
   if (extensionUpdateStateMemory) {
     return extensionUpdateStateMemory;
@@ -12798,10 +13878,42 @@ function enqueueExtensionUpdateStateOperation(operation) {
   return run;
 }
 
+function getExtensionUpdatePreferences() {
+  return enqueueExtensionUpdateStateOperation(async () => {
+    const preferences = await reloadExtensionUpdatePreferences();
+    return { ...preferences };
+  });
+}
+
+function setExtensionUpdateReminderFrequency(reminderFrequency) {
+  const normalizedFrequency = normalizeExtensionUpdateReminderFrequency(
+    reminderFrequency
+  );
+  if (!normalizedFrequency) {
+    return Promise.resolve(null);
+  }
+  return enqueueExtensionUpdateStateOperation(async () => {
+    const current = await reloadExtensionUpdatePreferences();
+    if (current.frequency === normalizedFrequency) {
+      return { ...current };
+    }
+    const next = {
+      version: EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION,
+      frequency: normalizedFrequency,
+      revision: current.revision < Number.MAX_SAFE_INTEGER
+        ? current.revision + 1
+        : 1
+    };
+    await writeExtensionUpdatePreferencesStorage(next);
+    extensionUpdatePreferencesMemory = next;
+    return { ...next };
+  });
+}
+
 async function persistExtensionUpdateState(state, now = Date.now()) {
   const normalized = normalizeExtensionUpdateState(state, now);
-  extensionUpdateStateMemory = normalized;
   await writeExtensionUpdateStateStorage(normalized);
+  extensionUpdateStateMemory = normalized;
   return normalized;
 }
 
@@ -12966,6 +14078,7 @@ async function ensureFreshExtensionUpdateState(now = Date.now()) {
         if (next.lastPresentedVersion !== latest) {
           next.lastPresentedVersion = null;
           next.lastPresentedAt = 0;
+          next.lastPresentedHomeVisitId = null;
         }
         await persistExtensionUpdateStateSafely(next, checkedAt);
       });
@@ -13011,20 +14124,38 @@ function getExtensionUpdateNextCheckAt(state, now = Date.now()) {
 function getExtensionUpdateNextNoticeAt(
   state,
   updateAvailable,
+  reminderFrequency = EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+  homeVisitId = null,
   now = Date.now()
 ) {
+  // Keep the former test/helper call shape `(state, available, now)` valid.
+  if (Number.isSafeInteger(reminderFrequency)) {
+    now = reminderFrequency;
+    reminderFrequency = EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY;
+    homeVisitId = null;
+  }
   if (!updateAvailable) {
     return null;
   }
+  const normalizedFrequency = normalizeExtensionUpdateReminderFrequency(
+    reminderFrequency
+  ) || EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY;
+  if (normalizedFrequency === "home") {
+    // A Home visit has no time-based reminder boundary. The current request may
+    // claim once with its opaque visit id, but no timer may claim again later in
+    // the same document/SPA visit.
+    return null;
+  }
+  const reminderInterval =
+    EXTENSION_UPDATE_REMINDER_FREQUENCIES[normalizedFrequency];
   if (
     state?.lastPresentedVersion === state.latest &&
     Number.isSafeInteger(state.lastPresentedAt) &&
     state.lastPresentedAt > 0
   ) {
-    const nextNoticeAt = state.lastPresentedAt +
-      EXTENSION_UPDATE_PRESENTATION_TTL_MS;
+    const nextNoticeAt = state.lastPresentedAt + reminderInterval;
     if (nextNoticeAt > now) {
-      return Math.min(nextNoticeAt, now + EXTENSION_UPDATE_PRESENTATION_TTL_MS);
+      return Math.min(nextNoticeAt, now + reminderInterval);
     }
   }
   return now;
@@ -13033,7 +14164,10 @@ function getExtensionUpdateNextNoticeAt(
 function buildExtensionUpdateStatus(
   state,
   showNotice = false,
-  now = Date.now()
+  now = Date.now(),
+  reminderFrequency = EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+  homeVisitId = null,
+  preferenceRevision = 0
 ) {
   const current = getCurrentExtensionUpdateVersion();
   const latest = normalizeExtensionUpdateVersion(state?.latest);
@@ -13052,10 +14186,19 @@ function buildExtensionUpdateStatus(
     latest,
     updateAvailable,
     showNotice: updateAvailable && showNotice === true,
+    frequency:
+      normalizeExtensionUpdateReminderFrequency(reminderFrequency) ||
+      EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+    preferenceRevision:
+      Number.isSafeInteger(preferenceRevision) && preferenceRevision >= 0
+        ? preferenceRevision
+        : 0,
     checkedAt,
     nextNoticeAt: getExtensionUpdateNextNoticeAt(
       state,
       updateAvailable,
+      reminderFrequency,
+      homeVisitId,
       now
     ),
     nextCheckAt: getExtensionUpdateNextCheckAt(state, now),
@@ -13072,13 +14215,35 @@ async function getExtensionUpdateStatus(options = {}) {
     : Date.now();
   const canCheck =
     Number.isSafeInteger(tabId) && tabId >= 0 && pageVisible && tabActive;
-  const canPresent = canCheck && options.claimNotice === true;
+  const homeVisitId = normalizeExtensionUpdateHomeVisitId(
+    options.homeVisitId
+  );
+  const claimContextId = normalizeExtensionUpdateClaimContextId(
+    options.claimContextId
+  );
+  const expectedFrequency = normalizeExtensionUpdateReminderFrequency(
+    options.expectedFrequency
+  );
+  const canAttemptPresentation =
+    canCheck &&
+    options.homePage === true &&
+    options.claimNotice === true &&
+    homeVisitId !== null &&
+    claimContextId !== null &&
+    expectedFrequency !== null;
 
   if (canCheck) {
     await ensureFreshExtensionUpdateState(now);
   }
 
   return enqueueExtensionUpdateStateOperation(async (state) => {
+    const preferences = await reloadExtensionUpdatePreferences();
+    const reminderFrequency = preferences.frequency;
+    const popupMasterEnabled = await readExtensionUpdatePopupMasterEnabled();
+    const presentationConfigurationMatches =
+      canAttemptPresentation &&
+      popupMasterEnabled &&
+      expectedFrequency === reminderFrequency;
     const next = normalizeExtensionUpdateState(state, now);
     const current = getCurrentExtensionUpdateVersion();
     const updateAvailable = Boolean(
@@ -13088,20 +14253,67 @@ async function getExtensionUpdateStatus(options = {}) {
     );
     let showNotice = false;
 
+    const reminderInterval =
+      EXTENSION_UPDATE_REMINDER_FREQUENCIES[reminderFrequency];
+    const presentationIsDue = reminderFrequency === "home"
+      ? !next.presentedHomeVisits.some((entry) => (
+          entry.version === next.latest && entry.visitId === homeVisitId
+        ))
+      : (
+          next.lastPresentedVersion !== next.latest ||
+          !Number.isSafeInteger(next.lastPresentedAt) ||
+          next.lastPresentedAt <= 0 ||
+          next.lastPresentedAt + reminderInterval <= now
+        );
+
+    let presentationContextVerified =
+      options.presentationContextVerified === true;
     if (
-      canPresent &&
+      presentationConfigurationMatches &&
       updateAvailable &&
-      next.lastPresentedVersion !== next.latest
+      presentationIsDue &&
+      typeof options.verifyPresentationContext === "function"
     ) {
+      try {
+        presentationContextVerified =
+          (await options.verifyPresentationContext()) === true;
+      } catch {
+        presentationContextVerified = false;
+      }
+    }
+    const canPresent =
+      presentationConfigurationMatches && presentationContextVerified;
+
+    if (canPresent && updateAvailable && presentationIsDue) {
       next.lastPresentedVersion = next.latest;
       next.lastPresentedAt = now;
+      next.lastPresentedHomeVisitId = homeVisitId;
+      next.presentedHomeVisits = [
+        ...next.presentedHomeVisits.filter((entry) => !(
+          entry.version === next.latest && entry.visitId === homeVisitId
+        )),
+        { version: next.latest, visitId: homeVisitId, presentedAt: now }
+      ].slice(-EXTENSION_UPDATE_MAX_HOME_VISIT_MARKERS);
       showNotice = true;
     }
 
+    let responseState = next;
     if (canPresent && !extensionUpdateStatesEqual(state, next)) {
-      await persistExtensionUpdateStateSafely(next, now);
+      try {
+        responseState = await persistExtensionUpdateState(next, now);
+      } catch {
+        showNotice = false;
+        responseState = normalizeExtensionUpdateState(state, now);
+      }
     }
-    return buildExtensionUpdateStatus(next, showNotice, now);
+    return buildExtensionUpdateStatus(
+      responseState,
+      showNotice,
+      now,
+      reminderFrequency,
+      homeVisitId,
+      preferences.revision
+    );
   });
 }
 
@@ -13114,10 +14326,27 @@ function handleExtensionUpdateStatusMessage(message, sender, sendResponse) {
     message?.type !== EXTENSION_UPDATE_STATUS_MESSAGE_TYPE ||
     typeof message.pageVisible !== "boolean" ||
     typeof message.claimNotice !== "boolean" ||
-    messageKeys.length !== 3 ||
-    messageKeys[0] !== "claimNotice" ||
-    messageKeys[1] !== "pageVisible" ||
-    messageKeys[2] !== "type"
+    normalizeExtensionUpdateReminderFrequency(message.expectedFrequency) === null ||
+    !(
+      message.claimContextId === null ||
+      normalizeExtensionUpdateClaimContextId(message.claimContextId) !== null
+    ) ||
+    !(
+      message.homeVisitId === null ||
+      normalizeExtensionUpdateHomeVisitId(message.homeVisitId) !== null
+    ) ||
+    (
+      message.claimNotice &&
+      (message.homeVisitId === null || message.claimContextId === null)
+    ) ||
+    (!message.claimNotice && message.claimContextId !== null) ||
+    messageKeys.length !== 6 ||
+    messageKeys[0] !== "claimContextId" ||
+    messageKeys[1] !== "claimNotice" ||
+    messageKeys[2] !== "expectedFrequency" ||
+    messageKeys[3] !== "homeVisitId" ||
+    messageKeys[4] !== "pageVisible" ||
+    messageKeys[5] !== "type"
   ) {
     return false;
   }
@@ -13129,7 +14358,19 @@ function handleExtensionUpdateStatusMessage(message, sender, sendResponse) {
     tabId,
     pageVisible: message.pageVisible,
     tabActive: sender.tab.active === true,
-    claimNotice: message.claimNotice
+    claimNotice: message.claimNotice,
+    homePage: getTrustedRobloxHomeTabId(sender) === tabId,
+    homeVisitId: message.homeVisitId,
+    claimContextId: message.claimContextId,
+    expectedFrequency: message.expectedFrequency,
+    verifyPresentationContext: () =>
+      verifyExtensionUpdatePresentationContext({
+        tabId,
+        senderUrl: sender.url,
+        homeVisitId: message.homeVisitId,
+        claimContextId: message.claimContextId,
+        expectedFrequency: message.expectedFrequency
+      })
   })
     .then(sendResponse)
     .catch(() => {
@@ -13140,12 +14381,83 @@ function handleExtensionUpdateStatusMessage(message, sender, sendResponse) {
   return true;
 }
 
+function handleExtensionUpdatePreferencesGetMessage(message, sender, sendResponse) {
+  const messageKeys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message)
+    : [];
+  if (
+    message?.type !== EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE ||
+    messageKeys.length !== 1 ||
+    messageKeys[0] !== "type" ||
+    getTrustedRobloxTopFrameTabId(sender) === null
+  ) {
+    return false;
+  }
+  getExtensionUpdatePreferences()
+    .then((preferences) => {
+      sendResponse({
+        ok: true,
+        frequency: preferences.frequency,
+        revision: preferences.revision
+      });
+    })
+    .catch(() => {
+      sendResponse({
+        ok: false,
+        frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+        revision: 0
+      });
+    });
+  return true;
+}
+
+function handleExtensionUpdatePreferencesSetMessage(message, sender, sendResponse) {
+  const messageKeys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const reminderFrequency = normalizeExtensionUpdateReminderFrequency(
+    message?.frequency
+  );
+  if (
+    message?.type !== EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE ||
+    reminderFrequency === null ||
+    messageKeys.length !== 2 ||
+    messageKeys[0] !== "frequency" ||
+    messageKeys[1] !== "type" ||
+    getTrustedRobloxTopFrameTabId(sender) === null
+  ) {
+    return false;
+  }
+  setExtensionUpdateReminderFrequency(reminderFrequency)
+    .then((preferences) => {
+      sendResponse({
+        ok: Boolean(preferences),
+        frequency:
+          preferences?.frequency || EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+        revision: preferences?.revision || 0
+      });
+    })
+    .catch(() => {
+      sendResponse({
+        ok: false,
+        frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+        revision: 0
+      });
+    });
+  return true;
+}
+
 function resetExtensionUpdateStateForTests() {
   extensionUpdateCheckPromise = null;
   extensionUpdateStateLoadPromise = null;
   extensionUpdateStateMemory = null;
   extensionUpdateStateMutationTail = Promise.resolve();
   extensionUpdateStorageOverride = null;
+  extensionUpdatePreferencesLoadPromise = null;
+  extensionUpdatePreferencesMemory = null;
+  extensionUpdatePreferencesStorageOverride = null;
 }
 
 function getTrustedRobloxHomeTabId(sender) {
@@ -13158,12 +14470,7 @@ function getTrustedRobloxHomeTabId(sender) {
     rawUrls.push(sender.url);
   }
   for (const rawUrl of rawUrls) {
-    try {
-      const url = new URL(rawUrl);
-      if (!/^\/home(?:\/|$)/i.test(url.pathname)) {
-        return null;
-      }
-    } catch {
+    if (!isTrustedRobloxHomePageUrl(rawUrl)) {
       return null;
     }
   }
@@ -13764,6 +15071,23 @@ if (globalThis.__rslBackgroundTestHooks) {
     },
     getViewerCanChat,
     getThumbnail,
+    normalizeExperiencePlaceThumbnailIds,
+    fetchExperiencePlaceThumbnails,
+    handleExperiencePlaceThumbnailsMessage,
+    fetchExperiencePlacesEligibility,
+    handleExperiencePlacesEligibilityMessage,
+    experiencePlaceThumbnailConstants: Object.freeze({
+      messageType: EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE,
+      eligibilityMessageType: EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE,
+      batchMax: EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX,
+      size: EXPERIENCE_PLACE_THUMBNAIL_SIZE
+    }),
+    experiencePlacesConstants: Object.freeze({
+      eligibilityMessageType: EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE,
+      thumbnailMessageType: EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE,
+      thumbnailBatchMax: EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX,
+      thumbnailSize: EXPERIENCE_PLACE_THUMBNAIL_SIZE
+    }),
     parseRobloxContextUrl,
     resolveUniverseId,
     getAssetDetails,
@@ -14007,8 +15331,19 @@ if (globalThis.__rslBackgroundTestHooks) {
     resetQuickSettingsStateForTests,
     normalizeExtensionUpdateVersion,
     compareExtensionUpdateVersions,
+    normalizeExtensionUpdateReminderFrequency,
+    createDefaultExtensionUpdatePreferences,
+    normalizeExtensionUpdatePreferences,
+    normalizeExtensionUpdateHomeVisitId,
+    normalizeExtensionUpdateClaimContextId,
+    isTrustedRobloxHomePageUrl,
+    verifyTrustedActiveRobloxHomeTab,
+    challengeExtensionUpdateClaimContext,
+    verifyExtensionUpdatePresentationContext,
     createEmptyExtensionUpdateState,
     normalizeExtensionUpdateState,
+    getExtensionUpdatePreferences,
+    setExtensionUpdateReminderFrequency,
     readBoundedExtensionUpdateResponse,
     fetchLatestExtensionUpdateVersion,
     isExtensionUpdateCacheFresh,
@@ -14018,23 +15353,45 @@ if (globalThis.__rslBackgroundTestHooks) {
     buildExtensionUpdateStatus,
     getExtensionUpdateStatus,
     handleExtensionUpdateStatusMessage,
+    handleExtensionUpdatePreferencesGetMessage,
+    handleExtensionUpdatePreferencesSetMessage,
     resetExtensionUpdateStateForTests,
     setExtensionUpdateStorageOverrideForTests(override) {
       extensionUpdateStorageOverride = override;
       extensionUpdateStateLoadPromise = null;
       extensionUpdateStateMemory = null;
     },
+    setExtensionUpdatePreferencesStorageOverrideForTests(override) {
+      extensionUpdatePreferencesStorageOverride = override;
+      extensionUpdatePreferencesLoadPromise = null;
+      extensionUpdatePreferencesMemory = null;
+    },
     extensionUpdateConstants: Object.freeze({
       messageType: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
+      preferencesGetMessageType:
+        EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE,
+      preferencesSetMessageType:
+        EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE,
+      contextChallengeMessageType:
+        EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE,
       storageKey: EXTENSION_UPDATE_STORAGE_KEY,
       storageVersion: EXTENSION_UPDATE_STORAGE_VERSION,
+      preferencesStorageKey: EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY,
+      preferencesStorageVersion: EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION,
+      defaultReminderFrequency:
+        EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+      reminderFrequencies: EXTENSION_UPDATE_REMINDER_FREQUENCIES,
+      maxPresentationMarkerAgeMs:
+        EXTENSION_UPDATE_MAX_PRESENTATION_MARKER_AGE_MS,
       latestReleaseUrl: EXTENSION_UPDATE_LATEST_RELEASE_URL,
       howToUpdateUrl: EXTENSION_UPDATE_HOW_TO_URL,
       cacheTtlMs: EXTENSION_UPDATE_CACHE_TTL_MS,
       presentationTtlMs: EXTENSION_UPDATE_PRESENTATION_TTL_MS,
       fetchTimeoutMs: EXTENSION_UPDATE_FETCH_TIMEOUT_MS,
       maxResponseBytes: EXTENSION_UPDATE_MAX_RESPONSE_BYTES,
-      failureRetryMs: EXTENSION_UPDATE_FAILURE_RETRY_MS
+      failureRetryMs: EXTENSION_UPDATE_FAILURE_RETRY_MS,
+      contextChallengeTimeoutMs:
+        EXTENSION_UPDATE_CONTEXT_CHALLENGE_TIMEOUT_MS
     }),
     isTrustedRobloxPageUrl,
     getTrustedRobloxTopFrameTabId,
@@ -14146,6 +15503,22 @@ function handleRuntimeMessage(message, sender, sendResponse) {
     return false;
   }
 
+  if (message?.type === EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE) {
+    return handleExtensionUpdatePreferencesGetMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
+  if (message?.type === EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE) {
+    return handleExtensionUpdatePreferencesSetMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
   if (message?.type === EXTENSION_UPDATE_STATUS_MESSAGE_TYPE) {
     return handleExtensionUpdateStatusMessage(message, sender, sendResponse);
   }
@@ -14228,6 +15601,18 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === PRIVATE_SERVER_JOIN_MESSAGE_TYPE) {
     return handleJoinPrivateServerMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE) {
+    return handleExperiencePlaceThumbnailsMessage(message, sendResponse);
+  }
+
+  if (message?.type === EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE) {
+    return handleExperiencePlacesEligibilityMessage(
+      message,
+      sender,
+      sendResponse
+    );
   }
 
   if (message?.type === "rsl:get-thumbnail") {

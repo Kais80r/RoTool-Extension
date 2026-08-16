@@ -12,6 +12,26 @@
     "rsl-extension-update-feedback--fallback";
   const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
     "rsl:get-extension-update-status";
+  const EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE =
+    "rsl:get-extension-update-preferences";
+  const EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE =
+    "rsl:set-extension-update-preferences";
+  const EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE =
+    "rsl:verify-extension-update-claim-context";
+  const EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY =
+    "rslExtensionUpdatePreferenceV1";
+  const EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION = 1;
+  const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "6h";
+  const EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS = Object.freeze([
+    Object.freeze({ value: "home", label: "Every Home visit" }),
+    Object.freeze({ value: "30m", label: "Every 30 minutes" }),
+    Object.freeze({ value: "1h", label: "Every hour" }),
+    Object.freeze({ value: "6h", label: "Every 6 hours (default)" }),
+    Object.freeze({ value: "24h", label: "Every 24 hours" })
+  ]);
+  const EXTENSION_UPDATE_REMINDER_FREQUENCIES = new Set(
+    EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS.map(({ value }) => value)
+  );
   const EXTENSION_UPDATE_HOW_TO_URL =
     "https://github.com/Kais80r/RoTool-Extension/blob/main/UPDATING.md";
   const EXTENSION_UPDATE_STATUS_RETRY_MS = 60 * 60_000;
@@ -33,6 +53,26 @@
   const JOIN_SCHEDULER_ROW_ID = "rsl-join-scheduler-row";
   const JOIN_SCHEDULER_MODAL_GLOBAL = "__rslJoinSchedulerModal";
   const GAME_EVENTS_SCHEDULE_ATTRIBUTE = "data-rsl-game-events-schedule";
+  const EXPERIENCE_PLACES_ATTRIBUTE = "data-rsl-experience-places";
+  const EXPERIENCE_PLACE_ID_ATTRIBUTE = "data-rsl-experience-place-id";
+  const EXPERIENCE_PLACES_GRID_ID = "rsl-experience-places-grid";
+  const EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE =
+    "rsl:get-experience-place-thumbnails";
+  const EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE =
+    "rsl:get-experience-places-eligibility";
+  const EXPERIENCE_PLACES_API_ORIGIN = "https://develop.roblox.com";
+  const EXPERIENCE_PLACES_API_PAGE_SIZE = 25;
+  const EXPERIENCE_PLACES_VISIBLE_STEP = 8;
+  const EXPERIENCE_PLACE_THUMBNAIL_BATCH_SIZE = 24;
+  const EXPERIENCE_PLACES_MAX_ITEMS = 500;
+  const EXPERIENCE_PLACES_MAX_PAGES = Math.ceil(
+    EXPERIENCE_PLACES_MAX_ITEMS / EXPERIENCE_PLACES_API_PAGE_SIZE
+  );
+  const EXPERIENCE_PLACES_MAX_CURSOR_LENGTH = 1_024;
+  const EXPERIENCE_PLACES_MAX_NAME_LENGTH = 120;
+  const EXPERIENCE_PLACES_MAX_RESPONSE_BYTES = 256 * 1_024;
+  const EXPERIENCE_PLACES_REQUEST_TIMEOUT_MS = 10_000;
+  const EXPERIENCE_PLACES_ELIGIBILITY_TIMEOUT_MS = 30_000;
   const NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE =
     "rsl:get-native-event-schedule-data";
   const NATIVE_EVENT_SCHEDULE_ATTRIBUTE = "data-rsl-native-event-schedule";
@@ -254,7 +294,7 @@
   const DEFAULT_AVATAR_URL =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%233b3d45'/%3E%3Ccircle cx='75' cy='54' r='28' fill='%23787c88'/%3E%3Cpath d='M25 145c4-35 24-52 50-52s46 17 50 52' fill='%23787c88'/%3E%3C/svg%3E";
   const DEFAULT_GAME_ICON_URL =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect width='150' height='150' fill='%233b3d45'/%3E%3Cpath d='M45 33l72 18-18 72-72-18 18-72Zm22 31-9 34 34 9 9-34-34-9Z' fill='%23787c88'/%3E%3C/svg%3E";
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Crect x='27' y='37' width='96' height='76' rx='9' fill='none' stroke='%238e919b' stroke-width='7'/%3E%3Ccircle cx='97' cy='61' r='10' fill='%238e919b'/%3E%3Cpath d='m31 101 26-26 20 20 13-13 29 29H36a9 9 0 0 1-9-9v-1h4Z' fill='%238e919b'/%3E%3C/svg%3E";
   const VERIFIED_BADGE_ICON_URL =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect x='5.888' width='22.89' height='22.89' transform='rotate(15 5.888 0)' fill='%230066ff'/%3E%3Cpath fill-rule='evenodd' d='m20.543 8.751.006.006a1.538 1.538 0 0 1 0 2.176l-8.732 8.732-4.367-4.368a1.538 1.538 0 0 1 0-2.176l.007-.006a1.538 1.538 0 0 1 2.176 0l2.184 2.184 6.55-6.548a1.538 1.538 0 0 1 2.176 0Z' fill='white'/%3E%3C/svg%3E";
 
@@ -698,8 +738,15 @@
     Object.freeze({
       key: "updatePopups",
       group: "Interface",
-      label: "Update Popups",
-      description: "Show update reminders at the top of Roblox. Available updates still appear in RoTool Settings."
+      label: "RoTool Update Popups",
+      description: "Show RoTool update reminders at the top of Home. Updates still appear in RoTool Settings.",
+      advancedControl: Object.freeze({
+        type: "select",
+        key: "updateReminderFrequency",
+        label: "Reminder frequency",
+        description:
+          "Reminders appear only while Home is active and visible. Opening a game never shows one."
+      })
     }),
     Object.freeze({
       key: "quickPlay",
@@ -723,6 +770,12 @@
           description: "Show the Random Server button."
         })
       ]
+    }),
+    Object.freeze({
+      key: "experiencePlaces",
+      group: "Experiences",
+      label: "Experience Places",
+      description: "Show Roblox-listed Places on eligible experience pages."
     }),
     Object.freeze({
       key: "gameCcu",
@@ -830,6 +883,8 @@
   let featureSettingsDialogOpener = null;
   let featureSettingsNotice = "";
   let featureSettingsNoticeIsError = false;
+  let featureSettingsCombinedSavePending = 0;
+  let featureSettingsCombinedSaveFailed = false;
   let gameEventsDialogOpener = null;
   let gameEventsLifecycleEpoch = 0;
   let gameEventsRequestSequence = 0;
@@ -859,6 +914,32 @@
   const gameEventsThumbnailByUniverseId = new Map();
   const gameEventsThumbnailRequestByUniverseId = new Map();
   let gameEventsThumbnailObserver = null;
+  let experiencePlacesLifecycleEpoch = 0;
+  let experiencePlacesRequestSequence = 0;
+  let experiencePlacesThumbnailRequestSequence = 0;
+  let experiencePlacesRouteKey = "";
+  let experiencePlacesLoadState = "idle";
+  let experiencePlacesItems = [];
+  let experiencePlacesNextPageCursor = null;
+  let experiencePlacesVisibleCount = EXPERIENCE_PLACES_VISIBLE_STEP;
+  let experiencePlacesCollapsedCapacity = EXPERIENCE_PLACES_VISIBLE_STEP;
+  let experiencePlacesExpanded = false;
+  let experiencePlacesLimitReached = false;
+  let experiencePlacesPageCount = 0;
+  let experiencePlacesEligibilityConfirmed = false;
+  let experiencePlacesFocusIntent = null;
+  let experiencePlacesRequestController = null;
+  let experiencePlacesRequestPending = false;
+  let experiencePlacesResizeObserver = null;
+  let experiencePlacesObservedSection = null;
+  let experiencePlacesLayoutFrame = null;
+  let experiencePlacesLayoutFrameUsesAnimation = false;
+  let experiencePlacesFallbackResizeHandler = null;
+  let experiencePlacesFetcherForTests = null;
+  let experiencePlacesMessageSenderForTests = null;
+  const experiencePlacesSeenCursors = new Set();
+  const experiencePlaceThumbnailById = new Map();
+  const experiencePlaceThumbnailPendingIds = new Set();
   let nativeEventScheduleLifecycleEpoch = 0;
   let nativeEventScheduleRequestSequence = 0;
   let nativeEventScheduleRoutePlaceId = null;
@@ -2624,7 +2705,9 @@
     const button = document.createElement("button");
     const draft = makeNativeEventScheduleDraft(event);
     button.type = "button";
-    button.className = "rsl-native-event-schedule";
+    // Use Roblox's secondary-control treatment while keeping ownership and
+    // placement entirely separate from the native event link and action.
+    button.className = "btn-secondary-xs rsl-native-event-schedule";
     button.textContent = "Schedule with RoTool";
     button.setAttribute(NATIVE_EVENT_SCHEDULE_ATTRIBUTE, event.id);
     button.setAttribute("aria-haspopup", "dialog");
@@ -2848,6 +2931,1415 @@
     if (!nativeEventScheduleRequestPending) {
       reconcileNativeEventScheduleButtons();
     }
+  }
+
+  function normalizeExperiencePlacesCursor(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === "") {
+      return null;
+    }
+    if (
+      typeof rawValue !== "string" ||
+      rawValue.length > EXPERIENCE_PLACES_MAX_CURSOR_LENGTH ||
+      /[\u0000-\u001f\u007f]/.test(rawValue)
+    ) {
+      return null;
+    }
+    return rawValue;
+  }
+
+  function normalizeExperiencePlace(rawValue, expectedUniverseId) {
+    if (!rawValue || typeof rawValue !== "object") return null;
+    const id = normalizeQuickPlayPlaceId(rawValue.id);
+    const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    if (!id || !universeId || universeId !== expectedUniverseId) return null;
+    const name = normalizeGameEventText(
+      rawValue.name,
+      `Place ${id}`,
+      EXPERIENCE_PLACES_MAX_NAME_LENGTH
+    );
+    return Object.freeze({ id, universeId, name });
+  }
+
+  function normalizeExperiencePlacesPage(rawValue, expectedUniverseId) {
+    if (
+      !rawValue ||
+      typeof rawValue !== "object" ||
+      !Array.isArray(rawValue.data) ||
+      rawValue.data.length > EXPERIENCE_PLACES_API_PAGE_SIZE
+    ) {
+      return null;
+    }
+    for (const rawCursor of [
+      rawValue.previousPageCursor,
+      rawValue.nextPageCursor
+    ]) {
+      if (
+        rawCursor !== null &&
+        rawCursor !== undefined &&
+        rawCursor !== "" &&
+        normalizeExperiencePlacesCursor(rawCursor) === null
+      ) {
+        return null;
+      }
+    }
+    const seen = new Set();
+    const places = [];
+    for (const rawPlace of rawValue.data) {
+      const place = normalizeExperiencePlace(rawPlace, expectedUniverseId);
+      if (!place) return null;
+      if (seen.has(place.id)) continue;
+      seen.add(place.id);
+      places.push(place);
+    }
+    return Object.freeze({
+      previousPageCursor: normalizeExperiencePlacesCursor(
+        rawValue.previousPageCursor
+      ),
+      nextPageCursor: normalizeExperiencePlacesCursor(
+        rawValue.nextPageCursor
+      ),
+      places: Object.freeze(places)
+    });
+  }
+
+  function getExperiencePlacesMountTarget() {
+    const about = document.querySelector(
+      "#game-details-about-tab-container > .game-about-tab-container"
+    );
+    if (!about) return null;
+    const eventContainers = Array.from(about.children).filter((child) =>
+      child.classList?.contains("virtual-event-game-details-container")
+    );
+    if (eventContainers.length === 1) {
+      return Object.freeze({
+        parent: about,
+        anchor: eventContainers[0],
+        placement: "before"
+      });
+    }
+    if (eventContainers.length > 1) return null;
+    const descriptions = Array.from(about.children).filter(
+      (child) =>
+        child.classList?.contains("game-description-container") &&
+        child.querySelector?.(".game-stat-container") &&
+        child.querySelector?.(".game-description-footer")
+    );
+    if (descriptions.length !== 1) return null;
+    return Object.freeze({
+      parent: about,
+      anchor: descriptions[0],
+      placement: "after"
+    });
+  }
+
+  function getExperiencePlacesPageContext() {
+    const routePlaceId = parseNativeEventScheduleGamePagePlaceId();
+    if (!routePlaceId) return null;
+    const metadata = getNativeEventSchedulePageMetadata(routePlaceId);
+    const mountTarget = getExperiencePlacesMountTarget();
+    if (!metadata || !mountTarget) return null;
+    return Object.freeze({
+      ...metadata,
+      routeKey: `${metadata.placeId}:${metadata.rootPlaceId}:${metadata.universeId}`,
+      mountTarget
+    });
+  }
+
+  function isExperiencePlacesContextCurrent(expectedContext) {
+    const currentContext = getExperiencePlacesPageContext();
+    return Boolean(
+      expectedContext &&
+      currentContext &&
+      expectedContext.routeKey === experiencePlacesRouteKey &&
+      currentContext.routeKey === expectedContext.routeKey
+    );
+  }
+
+  function orderExperiencePlaces(places, metadata) {
+    return places
+      .map((place, index) => ({ place, index }))
+      .sort((left, right) => {
+        const getPriority = ({ id }) => {
+          if (id === metadata.rootPlaceId) return 0;
+          if (id === metadata.placeId) return 1;
+          return 2;
+        };
+        return getPriority(left.place) - getPriority(right.place) ||
+          left.index - right.index;
+      })
+      .map(({ place }) => place);
+  }
+
+  function mergeExperiencePlaces(currentItems, nextItems, metadata) {
+    const byId = new Map();
+    for (const place of [...currentItems, ...nextItems]) {
+      if (!byId.has(place.id)) byId.set(place.id, place);
+    }
+    return orderExperiencePlaces(Array.from(byId.values()), metadata);
+  }
+
+  function makeExperiencePlacesElement(tagName, className = "", text = "") {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    if (text) element.textContent = text;
+    return element;
+  }
+
+  function splitExperiencePlacesGridTracks(serializedTracks) {
+    const text = typeof serializedTracks === "string"
+      ? serializedTracks.trim()
+      : "";
+    if (!text || text === "none" || text === "subgrid") return [];
+    const tracks = [];
+    let current = "";
+    let depth = 0;
+    for (const character of text) {
+      if (/\s/.test(character) && depth === 0) {
+        if (current) {
+          tracks.push(current);
+          current = "";
+        }
+        continue;
+      }
+      current += character;
+      if (character === "(") depth += 1;
+      else if (character === ")" && depth > 0) depth -= 1;
+    }
+    if (current) tracks.push(current);
+    return tracks;
+  }
+
+  function countExperiencePlacesGridTracks(serializedTracks) {
+    if (/repeat\(\s*auto-(?:fill|fit)\b/i.test(serializedTracks || "")) {
+      return 0;
+    }
+    let count = 0;
+    for (const track of splitExperiencePlacesGridTracks(serializedTracks)) {
+      if (/^\[.*\]$/.test(track)) continue;
+      const repeated = track.match(/^repeat\(\s*(\d+)\s*,([\s\S]*)\)$/i);
+      if (!repeated) {
+        count += 1;
+        continue;
+      }
+      const repetitions = Number(repeated[1]);
+      const innerCount = countExperiencePlacesGridTracks(repeated[2]);
+      if (Number.isSafeInteger(repetitions) && repetitions > 0) {
+        count += repetitions * Math.max(1, innerCount);
+      }
+    }
+    return count;
+  }
+
+  function measureExperiencePlacesColumnCapacity(grid) {
+    if (!grid) return experiencePlacesCollapsedCapacity;
+    let computedStyle = null;
+    try {
+      computedStyle = typeof window.getComputedStyle === "function"
+        ? window.getComputedStyle(grid)
+        : null;
+    } catch {
+      computedStyle = null;
+    }
+    const computedTrackCount = countExperiencePlacesGridTracks(
+      computedStyle?.gridTemplateColumns
+    );
+    if (computedTrackCount > 0) {
+      return Math.max(
+        1,
+        Math.min(EXPERIENCE_PLACES_MAX_ITEMS, computedTrackCount)
+      );
+    }
+
+    const measuredWidth = Number(grid.getBoundingClientRect?.().width) ||
+      Number(grid.clientWidth) || 0;
+    if (!(measuredWidth > 0)) return experiencePlacesCollapsedCapacity;
+    const columnGap = Number.parseFloat(computedStyle?.columnGap) || 0;
+    const configuredMinimum = Number.parseFloat(
+      computedStyle?.getPropertyValue?.(
+        "--rsl-experience-places-card-min-width"
+      )
+    );
+    const minimumCardWidth = configuredMinimum > 0
+      ? configuredMinimum
+      : 150;
+    return Math.max(
+      1,
+      Math.min(
+        EXPERIENCE_PLACES_MAX_ITEMS,
+        Math.floor(
+          (measuredWidth + columnGap) /
+          (minimumCardWidth + columnGap)
+        )
+      )
+    );
+  }
+
+  function updateExperiencePlacesCollapsedCapacity(grid) {
+    const nextCapacity = measureExperiencePlacesColumnCapacity(grid);
+    if (nextCapacity === experiencePlacesCollapsedCapacity) return false;
+    experiencePlacesCollapsedCapacity = nextCapacity;
+    if (!experiencePlacesExpanded) {
+      experiencePlacesVisibleCount = Math.min(
+        experiencePlacesItems.length,
+        experiencePlacesCollapsedCapacity
+      );
+    }
+    return true;
+  }
+
+  function cancelExperiencePlacesLayoutFrame() {
+    if (experiencePlacesLayoutFrame === null) return;
+    if (
+      experiencePlacesLayoutFrameUsesAnimation &&
+      typeof window.cancelAnimationFrame === "function"
+    ) {
+      window.cancelAnimationFrame(experiencePlacesLayoutFrame);
+    } else {
+      window.clearTimeout(experiencePlacesLayoutFrame);
+    }
+    experiencePlacesLayoutFrame = null;
+    experiencePlacesLayoutFrameUsesAnimation = false;
+  }
+
+  function disconnectExperiencePlacesLayoutTracking() {
+    cancelExperiencePlacesLayoutFrame();
+    experiencePlacesResizeObserver?.disconnect?.();
+    experiencePlacesResizeObserver = null;
+    experiencePlacesObservedSection = null;
+    if (
+      experiencePlacesFallbackResizeHandler &&
+      typeof window.removeEventListener === "function"
+    ) {
+      window.removeEventListener(
+        "resize",
+        experiencePlacesFallbackResizeHandler
+      );
+    }
+    experiencePlacesFallbackResizeHandler = null;
+  }
+
+  function scheduleExperiencePlacesLayoutReconcile(section, routeKey) {
+    if (
+      experiencePlacesLayoutFrame !== null ||
+      section !== experiencePlacesObservedSection
+    ) {
+      return;
+    }
+    const reconcile = () => {
+      experiencePlacesLayoutFrame = null;
+      experiencePlacesLayoutFrameUsesAnimation = false;
+      if (
+        section !== experiencePlacesObservedSection ||
+        !section.isConnected ||
+        section.dataset.rslExperiencePlacesRoute !== routeKey
+      ) {
+        return;
+      }
+      const context = getExperiencePlacesPageContext();
+      if (!context || context.routeKey !== routeKey) return;
+      const grid = section.querySelector(".rsl-experience-places__grid");
+      if (!grid) return;
+      const previousVisibleCount = experiencePlacesVisibleCount;
+      const capacityChanged = updateExperiencePlacesCollapsedCapacity(grid);
+      if (
+        capacityChanged &&
+        !experiencePlacesExpanded &&
+        (experiencePlacesLoadState === "loading" ||
+          experiencePlacesVisibleCount !== previousVisibleCount)
+      ) {
+        renderExperiencePlacesSection(context);
+      }
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      experiencePlacesLayoutFrameUsesAnimation = true;
+      experiencePlacesLayoutFrame = window.requestAnimationFrame(reconcile);
+    } else {
+      experiencePlacesLayoutFrameUsesAnimation = false;
+      experiencePlacesLayoutFrame = window.setTimeout(reconcile, 0);
+    }
+  }
+
+  function observeExperiencePlacesLayout(section, context) {
+    if (!section || !context) return;
+    if (experiencePlacesObservedSection !== section) {
+      disconnectExperiencePlacesLayoutTracking();
+      experiencePlacesObservedSection = section;
+      if (typeof window.ResizeObserver === "function") {
+        experiencePlacesResizeObserver = new window.ResizeObserver(() => {
+          scheduleExperiencePlacesLayoutReconcile(section, context.routeKey);
+        });
+        experiencePlacesResizeObserver.observe(section);
+      } else if (typeof window.addEventListener === "function") {
+        experiencePlacesFallbackResizeHandler = () => {
+          scheduleExperiencePlacesLayoutReconcile(section, context.routeKey);
+        };
+        window.addEventListener("resize", experiencePlacesFallbackResizeHandler);
+      }
+    }
+    scheduleExperiencePlacesLayoutReconcile(section, context.routeKey);
+  }
+
+  function makeExperiencePlaceCard(place, context) {
+    const item = makeExperiencePlacesElement(
+      "li",
+      "rsl-experience-places__item"
+    );
+    const link = makeExperiencePlacesElement(
+      "a",
+      "rsl-experience-places__card"
+    );
+    link.href = `https://www.roblox.com/games/${place.id}`;
+    link.setAttribute(EXPERIENCE_PLACE_ID_ATTRIBUTE, place.id);
+
+    const placeKind = place.id === context.rootPlaceId
+      ? "Main place"
+      : "Subplace";
+    const placeMetadata = place.id === context.placeId
+      ? `${placeKind} · Current`
+      : placeKind;
+    link.setAttribute(
+      "aria-label",
+      `${place.name}. ${placeMetadata}. Open Roblox page.`
+    );
+    link.title = place.name;
+
+    const thumbnail = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__thumbnail"
+    );
+    const image = document.createElement("img");
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    const cachedThumbnail = experiencePlaceThumbnailById.get(place.id) || null;
+    loadOwnedThumbnailImage(
+      thumbnail,
+      image,
+      cachedThumbnail,
+      DEFAULT_GAME_ICON_URL,
+      () => experiencePlaceThumbnailById.delete(place.id)
+    );
+    thumbnail.append(image);
+
+    const name = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__name",
+      place.name
+    );
+    const metadata = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__metadata",
+      placeMetadata
+    );
+    link.append(thumbnail, name, metadata);
+    item.append(link);
+    return item;
+  }
+
+  function makeExperiencePlaceSkeletonCard() {
+    const item = makeExperiencePlacesElement(
+      "li",
+      "rsl-experience-places__item"
+    );
+    const card = makeExperiencePlacesElement(
+      "div",
+      "rsl-experience-places__card rsl-experience-places__card--skeleton"
+    );
+    const thumbnail = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__thumbnail rsl-owned-thumbnail-frame"
+    );
+    thumbnail.dataset.rslThumbnailState = "loading";
+    const nameLine = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__skeleton-line rsl-experience-places__skeleton-line--name"
+    );
+    const metadataLine = makeExperiencePlacesElement(
+      "span",
+      "rsl-experience-places__skeleton-line rsl-experience-places__skeleton-line--metadata"
+    );
+    card.append(thumbnail, nameLine, metadataLine);
+    item.append(card);
+    return item;
+  }
+
+  function isExperiencePlacesSectionCurrent(section, context) {
+    return Boolean(
+      section?.hasAttribute?.(EXPERIENCE_PLACES_ATTRIBUTE) &&
+      section.dataset.rslExperiencePlacesRoute === context?.routeKey &&
+      section.parentElement === context.mountTarget.parent &&
+      (context.mountTarget.placement === "before"
+        ? section.nextElementSibling === context.mountTarget.anchor
+        : section.previousElementSibling === context.mountTarget.anchor)
+    );
+  }
+
+  function ensureExperiencePlacesSection(context) {
+    const sections = Array.from(
+      document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+    );
+    let section = sections.shift() || null;
+    sections.forEach((duplicate) => duplicate.remove());
+    if (!section) {
+      section = makeExperiencePlacesElement(
+        "section",
+        "section rsl-experience-places"
+      );
+      section.setAttribute(EXPERIENCE_PLACES_ATTRIBUTE, "");
+    }
+    section.setAttribute("aria-labelledby", "rsl-experience-places-title");
+    section.dataset.rslExperiencePlacesRoute = context.routeKey;
+    if (!isExperiencePlacesSectionCurrent(section, context)) {
+      if (context.mountTarget.placement === "before") {
+        context.mountTarget.anchor.before(section);
+      } else {
+        context.mountTarget.anchor.after(section);
+      }
+    }
+    return section;
+  }
+
+  function ensureExperiencePlacesRenderRoots(section) {
+    let content = Array.from(section.children).find((child) =>
+      child.classList?.contains("rsl-experience-places__content")
+    );
+    let announcement = Array.from(section.children).find((child) =>
+      child.classList?.contains("rsl-experience-places__announcement")
+    );
+    if (!content) {
+      content = makeExperiencePlacesElement(
+        "div",
+        "rsl-experience-places__content"
+      );
+    }
+    if (!announcement) {
+      announcement = makeExperiencePlacesElement(
+        "p",
+        "rsl-experience-places__status--visually-hidden " +
+          "rsl-experience-places__announcement"
+      );
+    }
+    announcement.id = "rsl-experience-places-announcement";
+    announcement.setAttribute("role", "status");
+    announcement.setAttribute("aria-live", "polite");
+    announcement.setAttribute("aria-atomic", "true");
+    if (
+      section.children.length !== 2 ||
+      section.children[0] !== content ||
+      section.children[1] !== announcement
+    ) {
+      section.replaceChildren(content, announcement);
+    }
+    return Object.freeze({ content, announcement });
+  }
+
+  function clearExperiencePlacesAnnouncement(section) {
+    const announcement = section?.querySelector?.(
+      ".rsl-experience-places__announcement"
+    );
+    if (!announcement || announcement.textContent === "") return false;
+    announcement.textContent = "";
+    return true;
+  }
+
+  function scheduleExperiencePlacesAppendAnnouncement({
+    context,
+    lifecycleEpoch,
+    requestId,
+    appendedPlaceCount
+  }) {
+    if (!(appendedPlaceCount > 0)) return false;
+    const announce = () => {
+      if (
+        lifecycleEpoch !== experiencePlacesLifecycleEpoch ||
+        requestId !== experiencePlacesRequestSequence ||
+        !experiencePlacesExpanded ||
+        !isExperiencePlacesContextCurrent(context)
+      ) {
+        return;
+      }
+      const section = Array.from(
+        document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+      ).find(
+        (candidate) =>
+          candidate.dataset.rslExperiencePlacesRoute === context.routeKey
+      );
+      const disclosure = section?.querySelector(
+        ".rsl-experience-places__disclosure"
+      );
+      const announcement = section?.querySelector(
+        ".rsl-experience-places__announcement"
+      );
+      if (
+        !disclosure ||
+        !announcement ||
+        disclosure.getAttribute("aria-expanded") !== "true" ||
+        document.activeElement !== disclosure
+      ) {
+        return;
+      }
+      announcement.textContent =
+        `${appendedPlaceCount} more ` +
+        `${appendedPlaceCount === 1 ? "place" : "places"} loaded.`;
+    };
+    if (typeof queueMicrotask === "function") queueMicrotask(announce);
+    else Promise.resolve().then(announce);
+    return true;
+  }
+
+  function applyExperiencePlaceThumbnail(placeId, url, context) {
+    if (!isSafeThumbnailImageUrl(url) || !isExperiencePlacesContextCurrent(context)) {
+      return false;
+    }
+    experiencePlaceThumbnailById.set(placeId, url);
+    const section = Array.from(
+      document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+    ).find(
+      (candidate) =>
+        candidate.dataset.rslExperiencePlacesRoute === context.routeKey
+    );
+    const image = section
+      ?.querySelector(`[${EXPERIENCE_PLACE_ID_ATTRIBUTE}="${placeId}"]`)
+      ?.querySelector(".rsl-experience-places__thumbnail > img");
+    if (!image) return true;
+    loadOwnedThumbnailImage(
+      image.parentElement,
+      image,
+      url,
+      DEFAULT_GAME_ICON_URL,
+      () => experiencePlaceThumbnailById.delete(placeId)
+    );
+    return true;
+  }
+
+  function sendExperiencePlacesRuntimeMessage(
+    message,
+    timeoutMs = EXPERIENCE_PLACES_REQUEST_TIMEOUT_MS
+  ) {
+    if (typeof experiencePlacesMessageSenderForTests === "function") {
+      return Promise.resolve().then(() =>
+        experiencePlacesMessageSenderForTests(message)
+      );
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Experience Places request timed out"));
+      }, timeoutMs);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        const returned = chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) finish(reject, new Error(runtimeError.message));
+          else finish(resolve, response);
+        });
+        if (returned?.then) {
+          returned.then(
+            (response) => finish(resolve, response),
+            (error) => finish(reject, error)
+          );
+        }
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  async function requestExperiencePlaceThumbnails(placeIds, context) {
+    const requestedIds = Array.from(new Set(placeIds)).filter(
+      (id) =>
+        normalizeQuickPlayPlaceId(id) === id &&
+        !experiencePlaceThumbnailById.has(id) &&
+        !experiencePlaceThumbnailPendingIds.has(id)
+    ).slice(0, EXPERIENCE_PLACES_MAX_ITEMS);
+    if (requestedIds.length === 0) return;
+    requestedIds.forEach((id) => experiencePlaceThumbnailPendingIds.add(id));
+    try {
+      for (
+        let offset = 0;
+        offset < requestedIds.length;
+        offset += EXPERIENCE_PLACE_THUMBNAIL_BATCH_SIZE
+      ) {
+        if (!isExperiencePlacesContextCurrent(context)) return;
+        const batch = requestedIds.slice(
+          offset,
+          offset + EXPERIENCE_PLACE_THUMBNAIL_BATCH_SIZE
+        );
+        const requestId = ++experiencePlacesThumbnailRequestSequence;
+        let response = null;
+        try {
+          response = await sendExperiencePlacesRuntimeMessage({
+            type: EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE,
+            requestId,
+            placeIds: batch
+          });
+        } catch {
+          continue;
+        }
+        if (
+          response?.ok !== true ||
+          response.requestId !== requestId ||
+          !isExperiencePlacesContextCurrent(context)
+        ) {
+          continue;
+        }
+        const requested = new Set(batch);
+        for (const thumbnail of Array.isArray(response.thumbnails)
+          ? response.thumbnails
+          : []) {
+          const placeId = normalizeQuickPlayPlaceId(thumbnail?.placeId);
+          if (
+            placeId &&
+            requested.has(placeId) &&
+            isSafeThumbnailImageUrl(thumbnail?.url)
+          ) {
+            applyExperiencePlaceThumbnail(placeId, thumbnail.url, context);
+          }
+        }
+      }
+    } catch {
+      // A missing decorative thumbnail leaves the packaged fallback in place.
+    } finally {
+      requestedIds.forEach((id) => experiencePlaceThumbnailPendingIds.delete(id));
+    }
+  }
+
+  async function requestExperiencePlacesEligibility(context, requestId) {
+    const response = await sendExperiencePlacesRuntimeMessage(
+      {
+        type: EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE,
+        requestId,
+        placeId: context.placeId,
+        rootPlaceId: context.rootPlaceId,
+        universeId: context.universeId
+      },
+      EXPERIENCE_PLACES_ELIGIBILITY_TIMEOUT_MS
+    );
+    const eligible = response?.eligible === true;
+    const restricted = response?.restricted === true;
+    if (
+      response?.ok !== true ||
+      response.requestId !== requestId ||
+      normalizeQuickPlayPlaceId(response.placeId) !== context.placeId ||
+      normalizeQuickPlayPlaceId(response.rootPlaceId) !== context.rootPlaceId ||
+      normalizeQuickPlayPlaceId(response.universeId) !== context.universeId ||
+      eligible === restricted
+    ) {
+      throw new Error("Invalid Experience Places eligibility response");
+    }
+    return Object.freeze({ eligible, restricted });
+  }
+
+  function captureExperiencePlacesFocus(section) {
+    const active = document.activeElement;
+    if (!active || !section?.contains(active)) return null;
+    if (active.matches?.(".rsl-experience-places__disclosure")) {
+      return Object.freeze({ kind: "disclosure" });
+    }
+    if (active.matches?.(".rsl-experience-places__pagination")) {
+      return Object.freeze({ kind: "pagination" });
+    }
+    if (active.matches?.(".rsl-experience-places__retry")) {
+      return Object.freeze({ kind: "retry" });
+    }
+    if (active.matches?.(".rsl-experience-places__info")) {
+      return Object.freeze({ kind: "info" });
+    }
+    const placeLink = active.closest?.(`[${EXPERIENCE_PLACE_ID_ATTRIBUTE}]`);
+    const placeId = normalizeQuickPlayPlaceId(
+      placeLink?.getAttribute(EXPERIENCE_PLACE_ID_ATTRIBUTE)
+    );
+    return placeId
+      ? Object.freeze({ kind: "place", placeId })
+      : Object.freeze({ kind: "heading" });
+  }
+
+  function ensureExperiencePlacesFocusVisible(target) {
+    if (
+      !target?.matches?.(".rsl-experience-places__disclosure") ||
+      typeof target.getBoundingClientRect !== "function" ||
+      typeof target.scrollIntoView !== "function"
+    ) {
+      return false;
+    }
+    const rect = target.getBoundingClientRect();
+    const viewportWidth = Number(window.innerWidth) ||
+      Number(document.documentElement?.clientWidth) || 0;
+    const viewportHeight = Number(window.innerHeight) ||
+      Number(document.documentElement?.clientHeight) || 0;
+    const edges = [rect?.top, rect?.right, rect?.bottom, rect?.left].map(Number);
+    if (
+      !(viewportWidth > 0) ||
+      !(viewportHeight > 0) ||
+      edges.some((edge) => !Number.isFinite(edge))
+    ) {
+      return false;
+    }
+    const [top, right, bottom, left] = edges;
+    const viewportInset = 8;
+    if (
+      top >= viewportInset &&
+      left >= viewportInset &&
+      bottom <= viewportHeight - viewportInset &&
+      right <= viewportWidth - viewportInset
+    ) {
+      return false;
+    }
+    try {
+      target.scrollIntoView({
+        behavior: "auto",
+        block: "nearest",
+        inline: "nearest"
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function restoreExperiencePlacesFocus(section, focusToken) {
+    if (!section || !focusToken) return;
+    let target = null;
+    if (focusToken.kind === "place" && focusToken.placeId) {
+      target = section.querySelector(
+        `[${EXPERIENCE_PLACE_ID_ATTRIBUTE}="${focusToken.placeId}"]`
+      );
+      if (!target && !experiencePlacesExpanded) {
+        target = section.querySelector(
+          ".rsl-experience-places__disclosure"
+        );
+      }
+    } else if (focusToken.kind === "disclosure") {
+      target = section.querySelector(".rsl-experience-places__disclosure");
+    } else if (focusToken.kind === "pagination") {
+      target = section.querySelector(".rsl-experience-places__pagination") ||
+        section.querySelector(".rsl-experience-places__disclosure");
+    } else if (focusToken.kind === "more") {
+      target = section.querySelector(".rsl-experience-places__pagination") ||
+        section.querySelector(".rsl-experience-places__disclosure") ||
+        section.querySelector(".rsl-experience-places__retry");
+    } else if (focusToken.kind === "retry") {
+      target = section.querySelector(".rsl-experience-places__retry");
+    } else if (focusToken.kind === "info") {
+      target = section.querySelector(".rsl-experience-places__info");
+    }
+    if (!target) {
+      target = section.querySelector("#rsl-experience-places-title") ||
+        section.querySelector("[role='status']");
+      if (target && !target.hasAttribute("tabindex")) target.tabIndex = -1;
+    }
+    if (!target || typeof target.focus !== "function") return;
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      target.focus();
+    }
+    if (focusToken.ensureVisible === true) {
+      ensureExperiencePlacesFocusVisible(target);
+    }
+  }
+
+  function renderExperiencePlacesSection(context) {
+    if (!isExperiencePlacesContextCurrent(context)) return null;
+    if (experiencePlacesLoadState === "restricted") {
+      experiencePlacesFocusIntent = null;
+      removeExperiencePlacesSections();
+      return null;
+    }
+    const section = ensureExperiencePlacesSection(context);
+    const explicitFocusIntent = experiencePlacesFocusIntent;
+    const focusToken = explicitFocusIntent ||
+      captureExperiencePlacesFocus(section);
+    if (
+      explicitFocusIntent?.kind !== "retry" ||
+      experiencePlacesLoadState !== "loading"
+    ) {
+      experiencePlacesFocusIntent = null;
+    }
+    if (!experiencePlacesExpanded) {
+      updateExperiencePlacesCollapsedCapacity(
+        section.querySelector(".rsl-experience-places__grid")
+      );
+    }
+    const { content } = ensureExperiencePlacesRenderRoots(section);
+    const header = makeExperiencePlacesElement("div", "container-header");
+    const heading = makeExperiencePlacesElement("h3", "", "Places");
+    heading.id = "rsl-experience-places-title";
+    const information = makeExperiencePlacesElement(
+      "span",
+      "rsl-quick-setting-info rsl-experience-places__info"
+    );
+    information.tabIndex = 0;
+    information.setAttribute("role", "button");
+    information.setAttribute("aria-label", "About Experience Places");
+    information.setAttribute(
+      "aria-describedby",
+      "rsl-experience-places-tooltip"
+    );
+    const informationIcon = makeExperiencePlacesElement(
+      "span",
+      "icon-moreinfo-16x16"
+    );
+    informationIcon.setAttribute("aria-hidden", "true");
+    const tooltip = makeExperiencePlacesElement(
+      "span",
+      "rsl-quick-setting-tooltip fade in tooltip bottom"
+    );
+    tooltip.id = "rsl-experience-places-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    const tooltipArrow = makeExperiencePlacesElement("span", "tooltip-arrow");
+    const tooltipInner = makeExperiencePlacesElement(
+      "span",
+      "tooltip-inner",
+      "Roblox-listed places. Open a card to view it. Some may be unavailable."
+    );
+    tooltip.append(tooltipArrow, tooltipInner);
+    information.append(informationIcon, tooltip);
+    header.append(heading, information);
+    content.replaceChildren(header);
+
+    if (experiencePlacesLoadState === "loading") {
+      const status = makeExperiencePlacesElement(
+        "p",
+        "rsl-experience-places__status rsl-experience-places__status--visually-hidden",
+        "Loading Places…"
+      );
+      status.setAttribute("role", "status");
+      const skeletons = makeExperiencePlacesElement(
+        "ul",
+        "rsl-experience-places__grid rsl-experience-places__grid--loading"
+      );
+      skeletons.id = EXPERIENCE_PLACES_GRID_ID;
+      skeletons.setAttribute("aria-hidden", "true");
+      for (
+        let index = 0;
+        index < experiencePlacesCollapsedCapacity;
+        index += 1
+      ) {
+        skeletons.append(makeExperiencePlaceSkeletonCard());
+      }
+      content.append(status, skeletons);
+      if (updateExperiencePlacesCollapsedCapacity(skeletons)) {
+        skeletons.replaceChildren();
+        for (
+          let index = 0;
+          index < experiencePlacesCollapsedCapacity;
+          index += 1
+        ) {
+          skeletons.append(makeExperiencePlaceSkeletonCard());
+        }
+      }
+      observeExperiencePlacesLayout(section, context);
+      restoreExperiencePlacesFocus(section, focusToken);
+      return section;
+    }
+
+    if (experiencePlacesLoadState === "error" && experiencePlacesItems.length === 0) {
+      const status = makeExperiencePlacesElement(
+        "p",
+        "rsl-experience-places__status",
+        "Places could not be loaded."
+      );
+      status.setAttribute("role", "status");
+      const retry = makeExperiencePlacesElement(
+        "button",
+        "btn-secondary-md rsl-experience-places__more " +
+          "rsl-experience-places__retry",
+        "Try again"
+      );
+      retry.type = "button";
+      retry.addEventListener("click", () => {
+        if (!isExperiencePlacesContextCurrent(context)) return;
+        experiencePlacesFocusIntent = Object.freeze({ kind: "retry" });
+        void loadExperiencePlacesPage(context, false);
+      });
+      content.append(status, retry);
+      restoreExperiencePlacesFocus(section, focusToken);
+      return section;
+    }
+
+    if (experiencePlacesItems.length === 0) {
+      content.append(
+        makeExperiencePlacesElement(
+          "p",
+          "rsl-experience-places__status",
+          "Roblox did not return any Places."
+        )
+      );
+      restoreExperiencePlacesFocus(section, focusToken);
+      return section;
+    }
+
+    experiencePlacesVisibleCount = experiencePlacesExpanded
+      ? experiencePlacesItems.length
+      : Math.min(
+          experiencePlacesCollapsedCapacity,
+          experiencePlacesItems.length
+        );
+    let visibleItems = experiencePlacesItems.slice(
+      0,
+      Math.min(experiencePlacesVisibleCount, experiencePlacesItems.length)
+    );
+    const grid = makeExperiencePlacesElement(
+      "ul",
+      "rsl-experience-places__grid"
+    );
+    grid.id = EXPERIENCE_PLACES_GRID_ID;
+    for (const place of visibleItems) {
+      grid.append(makeExperiencePlaceCard(place, context));
+    }
+    content.append(grid);
+    if (
+      !experiencePlacesExpanded &&
+      updateExperiencePlacesCollapsedCapacity(grid)
+    ) {
+      visibleItems = experiencePlacesItems.slice(
+        0,
+        experiencePlacesVisibleCount
+      );
+      grid.replaceChildren();
+      for (const place of visibleItems) {
+        grid.append(makeExperiencePlaceCard(place, context));
+      }
+    }
+
+    const hasHiddenLoadedItems =
+      experiencePlacesVisibleCount < experiencePlacesItems.length;
+    const canLoadAnotherPage = Boolean(
+      experiencePlacesNextPageCursor && !experiencePlacesLimitReached
+    );
+    const shouldShowDisclosure = experiencePlacesExpanded ||
+      hasHiddenLoadedItems || canLoadAnotherPage;
+    const shouldLoadMore = experiencePlacesExpanded && canLoadAnotherPage;
+    if (shouldShowDisclosure || shouldLoadMore) {
+      const controls = makeExperiencePlacesElement(
+        "div",
+        "rsl-experience-places__controls"
+      );
+      controls.setAttribute("role", "group");
+      controls.setAttribute("aria-label", "Places controls");
+      if (shouldShowDisclosure) {
+        const disclosure = makeExperiencePlacesElement(
+          "button",
+          "btn-secondary-md rsl-experience-places__more " +
+            "rsl-experience-places__disclosure",
+          experiencePlacesExpanded ? "Show less" : "Show more"
+        );
+        disclosure.type = "button";
+        disclosure.setAttribute("aria-controls", EXPERIENCE_PLACES_GRID_ID);
+        disclosure.setAttribute(
+          "aria-expanded",
+          String(experiencePlacesExpanded)
+        );
+        disclosure.setAttribute(
+          "aria-disabled",
+          String(!experiencePlacesExpanded && experiencePlacesRequestPending)
+        );
+        disclosure.addEventListener("click", () => {
+          if (!isExperiencePlacesContextCurrent(context)) return;
+          if (experiencePlacesExpanded) {
+            clearExperiencePlacesAnnouncement(section);
+            experiencePlacesFocusIntent = Object.freeze({
+              kind: "disclosure",
+              ensureVisible: true
+            });
+            experiencePlacesExpanded = false;
+            experiencePlacesVisibleCount = Math.min(
+              experiencePlacesCollapsedCapacity,
+              experiencePlacesItems.length
+            );
+            renderExperiencePlacesSection(context);
+            return;
+          }
+          if (experiencePlacesRequestPending) return;
+          experiencePlacesFocusIntent = Object.freeze({
+            kind: "disclosure"
+          });
+          experiencePlacesExpanded = true;
+          experiencePlacesVisibleCount = experiencePlacesItems.length;
+          if (!hasHiddenLoadedItems && canLoadAnotherPage) {
+            void loadExperiencePlacesPage(context, true);
+          } else {
+            renderExperiencePlacesSection(context);
+          }
+        });
+        controls.append(disclosure);
+      }
+      if (shouldLoadMore) {
+        const pagination = makeExperiencePlacesElement(
+          "button",
+          "btn-secondary-md rsl-experience-places__more " +
+            "rsl-experience-places__pagination"
+        );
+        pagination.type = "button";
+        pagination.setAttribute("aria-controls", EXPERIENCE_PLACES_GRID_ID);
+        pagination.setAttribute(
+          "aria-disabled",
+          String(experiencePlacesRequestPending)
+        );
+        pagination.textContent = experiencePlacesRequestPending
+          ? "Loading…"
+          : experiencePlacesLoadState === "load-error"
+            ? "Try loading more"
+            : "Load more";
+        pagination.addEventListener("click", () => {
+          if (
+            experiencePlacesRequestPending ||
+            !isExperiencePlacesContextCurrent(context)
+          ) {
+            return;
+          }
+          experiencePlacesFocusIntent = Object.freeze({
+            kind: "pagination"
+          });
+          void loadExperiencePlacesPage(context, true);
+        });
+        controls.append(pagination);
+      }
+      content.append(controls);
+    }
+
+    if (experiencePlacesLimitReached) {
+      content.append(
+        makeExperiencePlacesElement(
+          "p",
+          "rsl-experience-places__limit",
+          "RoTool limits very large Place lists."
+        )
+      );
+    }
+
+    void requestExperiencePlaceThumbnails(
+      visibleItems.map((place) => place.id),
+      context
+    );
+    observeExperiencePlacesLayout(section, context);
+    restoreExperiencePlacesFocus(section, focusToken);
+    return section;
+  }
+
+  async function fetchExperiencePlacesPage(universeId, cursor, signal) {
+    const endpoint = new URL(
+      `/v1/universes/${universeId}/places`,
+      EXPERIENCE_PLACES_API_ORIGIN
+    );
+    endpoint.searchParams.set("isUniverseCreation", "false");
+    endpoint.searchParams.set("limit", String(EXPERIENCE_PLACES_API_PAGE_SIZE));
+    endpoint.searchParams.set("sortOrder", "Asc");
+    if (cursor) endpoint.searchParams.set("cursor", cursor);
+    if (typeof experiencePlacesFetcherForTests === "function") {
+      return experiencePlacesFetcherForTests({
+        universeId,
+        cursor,
+        signal,
+        url: endpoint.href
+      });
+    }
+    const response = await window.fetch(endpoint.href, {
+      method: "GET",
+      mode: "cors",
+      credentials: "omit",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      signal
+    });
+    const responseUrl = new URL(response.url || endpoint.href);
+    if (
+      !response.ok ||
+      responseUrl.origin !== EXPERIENCE_PLACES_API_ORIGIN ||
+      responseUrl.pathname !== endpoint.pathname
+    ) {
+      throw new Error(`Experience Places request failed (${response.status || 0})`);
+    }
+    const contentType = response.headers?.get?.("content-type") || "";
+    if (
+      contentType &&
+      !/^\s*application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|\s*$)/i.test(
+        contentType
+      )
+    ) {
+      throw new Error("Experience Places response was not JSON");
+    }
+    const contentLength = response.headers?.get?.("content-length");
+    if (contentLength !== null && contentLength !== undefined && contentLength !== "") {
+      if (
+        !/^\d+$/.test(contentLength) ||
+        Number(contentLength) > EXPERIENCE_PLACES_MAX_RESPONSE_BYTES
+      ) {
+        throw new Error("Experience Places response was too large");
+      }
+    }
+    const responseText = await response.text();
+    if (
+      new TextEncoder().encode(responseText).byteLength >
+      EXPERIENCE_PLACES_MAX_RESPONSE_BYTES
+    ) {
+      throw new Error("Experience Places response was too large");
+    }
+    return JSON.parse(responseText);
+  }
+
+  async function loadExperiencePlacesPage(context, append) {
+    if (
+      experiencePlacesRequestPending ||
+      !isExperiencePlacesContextCurrent(context)
+    ) {
+      return false;
+    }
+    const cursor = append ? experiencePlacesNextPageCursor : null;
+    if (append && !cursor) return false;
+    if (append && experiencePlacesPageCount >= EXPERIENCE_PLACES_MAX_PAGES) {
+      experiencePlacesLimitReached = true;
+      experiencePlacesNextPageCursor = null;
+      renderExperiencePlacesSection(context);
+      return false;
+    }
+    const existingPlaceIds = append
+      ? new Set(experiencePlacesItems.map(({ id }) => id))
+      : null;
+    const activeSection = append
+      ? Array.from(
+          document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+        ).find(
+          (section) =>
+            section.dataset.rslExperiencePlacesRoute === context.routeKey
+        )
+      : null;
+    const appendFocusWasOwned = Boolean(
+      activeSection?.contains(document.activeElement) &&
+      document.activeElement?.matches?.(
+        ".rsl-experience-places__pagination"
+      )
+    );
+    const appendAnnouncementWasDisclosure = Boolean(
+      activeSection?.contains(document.activeElement) &&
+      document.activeElement?.matches?.(
+        ".rsl-experience-places__disclosure"
+      )
+    );
+    if (append) clearExperiencePlacesAnnouncement(activeSection);
+    const requestId = ++experiencePlacesRequestSequence;
+    const lifecycleEpoch = experiencePlacesLifecycleEpoch;
+    const controller = new AbortController();
+    experiencePlacesRequestController?.abort();
+    experiencePlacesRequestController = controller;
+    experiencePlacesRequestPending = true;
+    experiencePlacesLoadState = append ? "loading-more" : "loading";
+    renderExperiencePlacesSection(context);
+    let timeout = null;
+    try {
+      if (!experiencePlacesEligibilityConfirmed) {
+        const eligibility = await requestExperiencePlacesEligibility(
+          context,
+          requestId
+        );
+        if (
+          lifecycleEpoch !== experiencePlacesLifecycleEpoch ||
+          requestId !== experiencePlacesRequestSequence ||
+          !isExperiencePlacesContextCurrent(context)
+        ) {
+          return false;
+        }
+        if (eligibility.restricted) {
+          experiencePlacesLoadState = "restricted";
+          removeExperiencePlacesSections();
+          return false;
+        }
+        experiencePlacesEligibilityConfirmed = true;
+      }
+      timeout = window.setTimeout(
+        () => controller.abort(),
+        EXPERIENCE_PLACES_REQUEST_TIMEOUT_MS
+      );
+      const rawPage = await fetchExperiencePlacesPage(
+        context.universeId,
+        cursor,
+        controller.signal
+      );
+      if (
+        lifecycleEpoch !== experiencePlacesLifecycleEpoch ||
+        requestId !== experiencePlacesRequestSequence ||
+        !isExperiencePlacesContextCurrent(context)
+      ) {
+        return false;
+      }
+      const page = normalizeExperiencePlacesPage(rawPage, context.universeId);
+      if (!page) throw new Error("Invalid Experience Places response");
+      experiencePlacesPageCount += 1;
+      if (cursor) experiencePlacesSeenCursors.add(cursor);
+      const remaining = Math.max(
+        0,
+        EXPERIENCE_PLACES_MAX_ITEMS - experiencePlacesItems.length
+      );
+      const acceptedPlaces = page.places.slice(0, remaining);
+      const merged = mergeExperiencePlaces(
+        append ? experiencePlacesItems : [],
+        acceptedPlaces,
+        context
+      );
+      experiencePlacesItems = merged.slice(0, EXPERIENCE_PLACES_MAX_ITEMS);
+      const appendedPlaceCount = append
+        ? experiencePlacesItems.reduce(
+            (count, { id }) => count + (existingPlaceIds.has(id) ? 0 : 1),
+            0
+          )
+        : 0;
+      const repeatedCursor = Boolean(
+        page.nextPageCursor && experiencePlacesSeenCursors.has(page.nextPageCursor)
+      );
+      experiencePlacesLimitReached = Boolean(
+        page.places.length > acceptedPlaces.length ||
+        (experiencePlacesItems.length >= EXPERIENCE_PLACES_MAX_ITEMS &&
+          page.nextPageCursor) ||
+        (experiencePlacesPageCount >= EXPERIENCE_PLACES_MAX_PAGES &&
+          page.nextPageCursor)
+      );
+      experiencePlacesNextPageCursor =
+        experiencePlacesLimitReached || repeatedCursor
+          ? null
+          : page.nextPageCursor;
+      experiencePlacesVisibleCount = experiencePlacesExpanded
+        ? experiencePlacesItems.length
+        : Math.min(
+            experiencePlacesCollapsedCapacity,
+            experiencePlacesItems.length
+          );
+      if (append && appendFocusWasOwned) {
+        const currentSection = Array.from(
+          document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+        ).find(
+          (section) =>
+            section.dataset.rslExperiencePlacesRoute === context.routeKey
+        );
+        if (
+          currentSection?.contains(document.activeElement) &&
+          document.activeElement?.matches?.(
+            ".rsl-experience-places__pagination"
+          )
+        ) {
+          const firstNewPlace = experiencePlacesItems.find(
+            ({ id }) => !existingPlaceIds.has(id)
+          );
+          experiencePlacesFocusIntent = firstNewPlace
+            ? Object.freeze({ kind: "place", placeId: firstNewPlace.id })
+            : Object.freeze({ kind: "pagination" });
+        }
+      }
+      experiencePlacesLoadState = "ready";
+      if (appendAnnouncementWasDisclosure && appendedPlaceCount > 0) {
+        scheduleExperiencePlacesAppendAnnouncement({
+          context,
+          lifecycleEpoch,
+          requestId,
+          appendedPlaceCount
+        });
+      }
+      return true;
+    } catch {
+      if (
+        lifecycleEpoch === experiencePlacesLifecycleEpoch &&
+        requestId === experiencePlacesRequestSequence &&
+        isExperiencePlacesContextCurrent(context)
+      ) {
+        experiencePlacesLoadState = append ? "load-error" : "error";
+      }
+      return false;
+    } finally {
+      if (timeout !== null) window.clearTimeout(timeout);
+      if (
+        lifecycleEpoch === experiencePlacesLifecycleEpoch &&
+        requestId === experiencePlacesRequestSequence
+      ) {
+        experiencePlacesRequestPending = false;
+        if (experiencePlacesRequestController === controller) {
+          experiencePlacesRequestController = null;
+        }
+        if (isExperiencePlacesContextCurrent(context)) {
+          renderExperiencePlacesSection(context);
+        }
+      }
+    }
+  }
+
+  function removeExperiencePlacesSections() {
+    disconnectExperiencePlacesLayoutTracking();
+    document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`).forEach(
+      (section) => {
+        clearExperiencePlacesAnnouncement(section);
+        section.remove();
+      }
+    );
+  }
+
+  function cleanupExperiencePlacesFeature() {
+    experiencePlacesLifecycleEpoch += 1;
+    experiencePlacesRequestSequence += 1;
+    experiencePlacesRequestController?.abort();
+    experiencePlacesRequestController = null;
+    experiencePlacesRequestPending = false;
+    experiencePlacesRouteKey = "";
+    experiencePlacesLoadState = "idle";
+    experiencePlacesItems = [];
+    experiencePlacesNextPageCursor = null;
+    experiencePlacesVisibleCount = EXPERIENCE_PLACES_VISIBLE_STEP;
+    experiencePlacesCollapsedCapacity = EXPERIENCE_PLACES_VISIBLE_STEP;
+    experiencePlacesExpanded = false;
+    experiencePlacesLimitReached = false;
+    experiencePlacesPageCount = 0;
+    experiencePlacesEligibilityConfirmed = false;
+    experiencePlacesFocusIntent = null;
+    experiencePlacesSeenCursors.clear();
+    experiencePlaceThumbnailById.clear();
+    experiencePlaceThumbnailPendingIds.clear();
+    removeExperiencePlacesSections();
+  }
+
+  function mountExperiencePlaces() {
+    if (
+      window.top !== window ||
+      !featureSettingsLoaded ||
+      !isFeatureEnabled("experiencePlaces")
+    ) {
+      cleanupExperiencePlacesFeature();
+      return null;
+    }
+    const context = getExperiencePlacesPageContext();
+    if (!context) {
+      cleanupExperiencePlacesFeature();
+      return null;
+    }
+    if (experiencePlacesRouteKey !== context.routeKey) {
+      cleanupExperiencePlacesFeature();
+      experiencePlacesRouteKey = context.routeKey;
+    }
+    if (experiencePlacesLoadState === "restricted") {
+      removeExperiencePlacesSections();
+      return null;
+    }
+    const sections = Array.from(
+      document.querySelectorAll(`[${EXPERIENCE_PLACES_ATTRIBUTE}]`)
+    );
+    const stableSection = sections.length === 1 &&
+      isExperiencePlacesSectionCurrent(sections[0], context)
+      ? sections[0]
+      : null;
+    if (experiencePlacesLoadState === "idle") {
+      const section = stableSection || ensureExperiencePlacesSection(context);
+      void loadExperiencePlacesPage(context, false);
+      return section;
+    }
+    if (stableSection) return stableSection;
+    return renderExperiencePlacesSection(context);
   }
 
   function buildJoinSchedulerSidebarRow(templateRow) {
@@ -3122,10 +4614,24 @@
     return true;
   }
 
+  function isRobloxHomePathname(rawPathname) {
+    const pathname = String(rawPathname || "").toLowerCase();
+    if (/^\/home\/?$/.test(pathname)) {
+      return true;
+    }
+    const localized = /^\/([a-z]{2}(?:-[a-z]{2})?)\/home\/?$/.exec(
+      pathname
+    );
+    return Boolean(
+      localized &&
+      NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has(localized[1])
+    );
+  }
+
   function isHomePage() {
     return (
-      /^\/home(?:\/|$)/i.test(location.pathname) ||
-      document.documentElement.dataset.rslHomeFixture === "true"
+      document.documentElement.dataset.rslHomeFixture === "true" ||
+      isRobloxHomePathname(location.pathname)
     );
   }
 
@@ -15639,20 +17145,35 @@
       const parentKey = button.getAttribute("data-rsl-feature-bulk-parent");
       button.disabled =
         !featureSettingsLoaded ||
-        Boolean(parentKey && !isFeatureEnabled(parentKey));
+          Boolean(parentKey && !isFeatureEnabled(parentKey));
     });
+    const reminderFrequency = dialog.querySelector(
+      "[data-rsl-update-reminder-frequency]"
+    );
+    if (reminderFrequency) {
+      reminderFrequency.value = extensionUpdateReminderFrequency;
+      reminderFrequency.disabled =
+        !featureSettingsLoaded ||
+        !extensionUpdatePreferencesLoaded ||
+        !isFeatureEnabled("updatePopups");
+    }
     const reset = dialog.querySelector("[data-rsl-feature-reset]");
     if (reset) {
       reset.disabled =
         !featureSettingsLoaded ||
-        featureSettingsEqual(featureSettings, DEFAULT_FEATURE_SETTINGS);
+        !extensionUpdatePreferencesLoaded ||
+        (
+          featureSettingsEqual(featureSettings, DEFAULT_FEATURE_SETTINGS) &&
+          extensionUpdateReminderFrequency ===
+            EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
+        );
     }
     const status = dialog.querySelector("[data-rsl-feature-settings-status]");
     if (status) {
       status.textContent = !featureSettingsLoaded
         ? "Loading settings..."
-        : featureSettingsSaving
-          ? "Saving..."
+          : featureSettingsSaving || extensionUpdatePreferencesSaving
+            ? "Saving..."
           : featureSettingsNotice;
       status.classList.toggle(
         "rsl-feature-settings__status--error",
@@ -15666,6 +17187,31 @@
     );
   }
 
+  function beginFeatureSettingsCombinedSave() {
+    if (featureSettingsCombinedSavePending === 0) {
+      featureSettingsCombinedSaveFailed = false;
+    }
+    featureSettingsCombinedSavePending += 1;
+    featureSettingsNotice = "";
+    featureSettingsNoticeIsError = false;
+  }
+
+  function finishFeatureSettingsCombinedSave(succeeded) {
+    if (!succeeded) {
+      featureSettingsCombinedSaveFailed = true;
+    }
+    featureSettingsCombinedSavePending = Math.max(
+      0,
+      featureSettingsCombinedSavePending - 1
+    );
+    if (featureSettingsCombinedSavePending === 0) {
+      featureSettingsNotice = featureSettingsCombinedSaveFailed
+        ? "That setting could not be saved."
+        : "Saved automatically.";
+      featureSettingsNoticeIsError = featureSettingsCombinedSaveFailed;
+    }
+  }
+
   async function saveFeatureSettings(nextSettings, fallbackSettings) {
     if (!featureSettingsLoaded) {
       return;
@@ -15674,6 +17220,7 @@
       serializeFeatureSettings(nextSettings)
     );
     featureSettings = normalizedNext;
+    beginFeatureSettingsCombinedSave();
     applyExtensionUpdatePopupPreferenceTransition(featureSettings);
     featureSettingsPendingWrites += 1;
     featureSettingsSaving = true;
@@ -15688,12 +17235,11 @@
       .catch(() => undefined)
       .then(() => featureSettingsStorageSet(savedSnapshot));
     featureSettingsSaveChain = write;
+    let saveSucceeded = false;
     try {
       await write;
+      saveSucceeded = true;
       featureSettingsConfirmed = { ...savedSnapshot };
-      if (featureSettingsEqual(featureSettings, savedSnapshot)) {
-        featureSettingsNotice = "Saved automatically.";
-      }
       if (featureSettings.updatePopups === savedSnapshot.updatePopups) {
         applyExtensionUpdatePopupPreferenceTransition(savedSnapshot, {
           authoritativeEnable: true
@@ -15705,8 +17251,6 @@
         applyExtensionUpdatePopupPreferenceTransition(featureSettings, {
           authoritativeEnable: true
         });
-        featureSettingsNotice = "That setting could not be saved.";
-        featureSettingsNoticeIsError = true;
         scheduleFeatureSettingsReconcile();
       }
       console.error("[RoTool] Failed to save feature settings", error);
@@ -15736,6 +17280,7 @@
           scheduleFeatureSettingsReconcile();
         }
       }
+      finishFeatureSettingsCombinedSave(saveSucceeded);
       renderFeatureSettingsDialog();
     }
   }
@@ -15865,7 +17410,7 @@
       const item = document.createElement("div");
       item.className = "rsl-feature-settings__item";
       item.append(createSettingRow(definition));
-      if (definition.children?.length) {
+      if (definition.children?.length || definition.advancedControl) {
         const childrenId = `rsl-feature-settings-${definition.key}-advanced`;
         const disclosure = document.createElement("button");
         disclosure.type = "button";
@@ -15926,9 +17471,56 @@
           toolbar.append(toolbarLabel, actions);
           children.append(toolbar);
         }
+        if (definition.advancedControl?.type === "select") {
+          const control = definition.advancedControl;
+          const controlRow = document.createElement("label");
+          controlRow.className =
+            "rsl-feature-settings__row rsl-feature-settings__row--child " +
+            "rsl-feature-settings__row--select";
+          const controlCopy = document.createElement("span");
+          controlCopy.className = "rsl-feature-settings__copy";
+          const controlLabel = document.createElement("strong");
+          controlLabel.className = "content-emphasis text-label-large";
+          controlLabel.textContent = control.label;
+          const controlDescription = document.createElement("span");
+          controlDescription.className = "content-default text-body-medium";
+          controlDescription.textContent = control.description;
+          controlCopy.append(controlLabel, controlDescription);
+
+          const select = document.createElement("select");
+          select.className = "rsl-feature-settings__select";
+          select.setAttribute("data-rsl-update-reminder-frequency", "");
+          select.setAttribute("aria-label", control.label);
+          for (const optionDefinition of
+            EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS) {
+            const option = document.createElement("option");
+            option.value = optionDefinition.value;
+            option.textContent = optionDefinition.label;
+            select.append(option);
+          }
+          select.value = extensionUpdateReminderFrequency;
+          select.addEventListener("change", (event) => {
+            const frequency = normalizeExtensionUpdateReminderFrequency(
+              select.value
+            );
+            if (
+              event.isTrusted !== true ||
+              !featureSettingsLoaded ||
+              !extensionUpdatePreferencesLoaded ||
+              !isFeatureEnabled(definition.key) ||
+              !frequency
+            ) {
+              renderFeatureSettingsDialog();
+              return;
+            }
+            void saveExtensionUpdateReminderFrequency(frequency);
+          });
+          controlRow.append(controlCopy, select);
+          children.append(controlRow);
+        }
         let currentSection = "";
         let currentSectionIndex = 0;
-        for (const child of definition.children) {
+        for (const child of definition.children || []) {
           if (child.section && child.section !== currentSection) {
             currentSection = child.section;
             const sectionHeading = document.createElement("h4");
@@ -15976,6 +17568,14 @@
       }
       const previous = { ...featureSettings };
       void saveFeatureSettings({ ...DEFAULT_FEATURE_SETTINGS }, previous);
+      if (
+        extensionUpdateReminderFrequency !==
+        EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
+      ) {
+        void saveExtensionUpdateReminderFrequency(
+          EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
+        );
+      }
     });
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) {
@@ -18807,11 +20407,17 @@
   }
 
   function mountExtensionFeatures() {
+    syncExtensionUpdateHomeVisitState();
     mountFeatureSettingsButton();
     if (!featureSettingsLoaded) {
       return;
     }
     mountNativeEventScheduleButtons();
+    if (isFeatureEnabled("experiencePlaces")) {
+      mountExperiencePlaces();
+    } else {
+      cleanupExperiencePlacesFeature();
+    }
     if (isFeatureEnabled("sidebarShortcuts")) {
       syncNativeSidebarVisibility();
       mountGameEventsSidebarRow();
@@ -19591,15 +21197,108 @@
   let extensionUpdateFeedbackRequestId = 0;
   let extensionUpdateSettingsRequestId = 0;
   let extensionUpdateFeedbackRequestPromise = null;
+  let extensionUpdateFeedbackRefreshPending = false;
   let extensionUpdatePopupPreferenceApplied =
     DEFAULT_FEATURE_SETTINGS.updatePopups !== false;
+  let extensionUpdateReminderFrequency =
+    EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY;
+  let extensionUpdatePreferenceRevision = 0;
+  let extensionUpdatePreferencesLoaded = false;
+  let extensionUpdatePreferencesSaving = false;
+  let extensionUpdatePreferencesPendingWrites = 0;
+  let extensionUpdatePreferencesSaveChain = Promise.resolve();
+  let extensionUpdatePreferencesDeferredStorageValue = null;
+  let extensionUpdatePreferencesBatchChanged = false;
+  let extensionUpdatePreferencesConfirmed = Object.freeze({
+    frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+    revision: 0
+  });
   let extensionUpdateFeedbackClaimWhenVisible = false;
   let extensionUpdateStatusTimer = null;
   let extensionUpdateStatusTimerDueAt = 0;
+  let extensionUpdateStatusTimerAllowsNoticeClaim = false;
   let extensionUpdateStatusSnapshot = null;
   let extensionUpdateFeedbackPositionFrame = null;
   let extensionUpdateFeedbackNativeObserver = null;
   let extensionUpdateFeedbackObservedNativeSurfaces = new WeakSet();
+  let extensionUpdateHomeVisitId = null;
+  let extensionUpdateHomeVisitSequence = 0;
+  let extensionUpdateHomeVisitClaimAttempted = false;
+  let extensionUpdateHomeVisitAttemptedLatest = null;
+  let extensionUpdateHomeVisitClaimRequestPending = false;
+  let extensionUpdateActiveClaimContextId = null;
+  let extensionUpdatePageSuspended = false;
+  let extensionUpdateNavigationAwayFromHome = false;
+  const extensionUpdateDocumentVisitPrefix = (() => {
+    try {
+      const uuid = globalThis.crypto?.randomUUID?.();
+      if (typeof uuid === "string" && uuid.length >= 8) {
+        return uuid.toLowerCase();
+      }
+    } catch {
+      // A non-secret uniqueness fallback is sufficient for a presentation id.
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  })();
+
+  function normalizeExtensionUpdateReminderFrequency(value) {
+    return typeof value === "string" &&
+      EXTENSION_UPDATE_REMINDER_FREQUENCIES.has(value)
+      ? value
+      : null;
+  }
+
+  function normalizeExtensionUpdatePreferenceRevision(value) {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+
+  function normalizeExtensionUpdatePreferences(rawValue) {
+    const frequency = normalizeExtensionUpdateReminderFrequency(
+      rawValue?.frequency
+    );
+    const revision = normalizeExtensionUpdatePreferenceRevision(
+      rawValue?.revision
+    );
+    if (
+      !rawValue ||
+      typeof rawValue !== "object" ||
+      Array.isArray(rawValue) ||
+      rawValue.version !== EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION ||
+      !frequency ||
+      revision === null
+    ) {
+      return Object.freeze({
+        frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+        revision: 0
+      });
+    }
+    return Object.freeze({ frequency, revision });
+  }
+
+  function normalizeExtensionUpdatePreferencesResponse(response) {
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+      return null;
+    }
+    const keys = Object.keys(response).sort();
+    const frequency = normalizeExtensionUpdateReminderFrequency(
+      response.frequency
+    );
+    const revision = normalizeExtensionUpdatePreferenceRevision(
+      response.revision
+    );
+    if (
+      keys.length !== 3 ||
+      keys[0] !== "frequency" ||
+      keys[1] !== "ok" ||
+      keys[2] !== "revision" ||
+      response.ok !== true ||
+      !frequency ||
+      revision === null
+    ) {
+      return null;
+    }
+    return Object.freeze({ frequency, revision });
+  }
 
   function normalizeExtensionUpdateVersion(value) {
     if (
@@ -19667,15 +21366,35 @@
     if (!status || typeof status !== "object" || status.ok !== true) {
       return null;
     }
+    const keys = Object.keys(status).sort();
     const current = normalizeExtensionUpdateVersion(status.current);
     const installed = getInstalledExtensionVersion();
     const latest = normalizeExtensionUpdateVersion(status.latest);
+    const frequency = normalizeExtensionUpdateReminderFrequency(status.frequency);
+    const preferenceRevision = normalizeExtensionUpdatePreferenceRevision(
+      status.preferenceRevision
+    );
     if (
+      keys.length !== 11 ||
+      keys[0] !== "checkedAt" ||
+      keys[1] !== "current" ||
+      keys[2] !== "frequency" ||
+      keys[3] !== "howToUpdateUrl" ||
+      keys[4] !== "latest" ||
+      keys[5] !== "nextCheckAt" ||
+      keys[6] !== "nextNoticeAt" ||
+      keys[7] !== "ok" ||
+      keys[8] !== "preferenceRevision" ||
+      keys[9] !== "showNotice" ||
+      keys[10] !== "updateAvailable" ||
       !current ||
       installed !== current ||
       (status.latest !== null && !latest) ||
       typeof status.updateAvailable !== "boolean" ||
-      typeof status.showNotice !== "boolean"
+      typeof status.showNotice !== "boolean" ||
+      !frequency ||
+      preferenceRevision === null ||
+      Reflect.get(status, "howToUpdateUrl") !== EXTENSION_UPDATE_HOW_TO_URL
     ) {
       return null;
     }
@@ -19699,7 +21418,12 @@
     );
     if (
       nextCheckAt === null ||
-      (updateAvailable && nextNoticeAt === null) ||
+      (
+        updateAvailable &&
+        frequency !== "home" &&
+        nextNoticeAt === null
+      ) ||
+      (frequency === "home" && status.nextNoticeAt !== null) ||
       (!updateAvailable && status.nextNoticeAt !== null)
     ) {
       return null;
@@ -19710,6 +21434,8 @@
       latest,
       updateAvailable,
       showNotice: updateAvailable && status.showNotice === true,
+      frequency,
+      preferenceRevision,
       checkedAt,
       nextNoticeAt,
       nextCheckAt
@@ -19753,6 +21479,21 @@
     if (!normalized) {
       return null;
     }
+    if (extensionUpdatePreferencesPendingWrites === 0) {
+      const authoritativePreferences = Object.freeze({
+        frequency: normalized.frequency,
+        revision: normalized.preferenceRevision
+      });
+      if (
+        authoritativePreferences.revision >=
+        extensionUpdatePreferencesConfirmed.revision
+      ) {
+        extensionUpdatePreferencesConfirmed = authoritativePreferences;
+      }
+      applyExtensionUpdatePreferences(authoritativePreferences, {
+        recompute: true
+      });
+    }
     const previous = extensionUpdateStatusSnapshot;
     if (
       previous &&
@@ -19789,11 +21530,15 @@
     if (window.top !== window) {
       return null;
     }
+    syncExtensionUpdateHomeVisitState();
     const requestId = ++extensionUpdateSettingsRequestId;
     const response = await sendExtensionUpdateMessage({
       type: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
       pageVisible: document.visibilityState === "visible",
-      claimNotice: false
+      claimNotice: false,
+      claimContextId: null,
+      homeVisitId: extensionUpdateHomeVisitId,
+      expectedFrequency: extensionUpdateReminderFrequency
     });
     if (requestId !== extensionUpdateSettingsRequestId || !response) {
       return null;
@@ -19810,6 +21555,147 @@
     }
     if (resetDueAt) {
       extensionUpdateStatusTimerDueAt = 0;
+      extensionUpdateStatusTimerAllowsNoticeClaim = false;
+    }
+  }
+
+  function makeExtensionUpdateHomeVisitId() {
+    extensionUpdateHomeVisitSequence += 1;
+    return `${extensionUpdateDocumentVisitPrefix}-${extensionUpdateHomeVisitSequence.toString(36)}`;
+  }
+
+  function queueExtensionUpdateHomeEntryRefresh() {
+    if (
+      !featureSettingsLoaded ||
+      !extensionUpdatePreferencesLoaded ||
+      document.visibilityState !== "visible" ||
+      extensionUpdatePageSuspended
+    ) {
+      return;
+    }
+    Promise.resolve().then(() => {
+      if (
+        extensionUpdateHomeVisitId &&
+        isHomePage() &&
+        document.visibilityState === "visible" &&
+        !extensionUpdatePageSuspended
+      ) {
+        requestExtensionUpdateStatusWhenVisible(true);
+      }
+    });
+  }
+
+  function queueExtensionUpdateNonHomeStatusRefresh() {
+    if (
+      !featureSettingsLoaded ||
+      !extensionUpdatePreferencesLoaded ||
+      document.visibilityState !== "visible" ||
+      extensionUpdatePageSuspended
+    ) {
+      return;
+    }
+    Promise.resolve().then(() => {
+      if (
+        !isHomePage() &&
+        document.visibilityState === "visible" &&
+        !extensionUpdatePageSuspended
+      ) {
+        // A committed Home exit clears the presentation timer. Re-arm the
+        // page-independent status cadence without ever claiming off Home.
+        requestExtensionUpdateStatusWhenVisible(true);
+      }
+    });
+  }
+
+  function syncExtensionUpdateHomeVisitState({ freshVisit = false } = {}) {
+    if (extensionUpdateNavigationAwayFromHome) {
+      return false;
+    }
+    const onHome = !extensionUpdatePageSuspended && isHomePage();
+    if (!onHome) {
+      if (extensionUpdateHomeVisitId !== null) {
+        extensionUpdateHomeVisitId = null;
+        extensionUpdateHomeVisitClaimAttempted = false;
+        extensionUpdateHomeVisitAttemptedLatest = null;
+        invalidateExtensionUpdateFeedbackRequest();
+        clearExtensionUpdateStatusTimer();
+        removeExtensionUpdateFeedback();
+        queueExtensionUpdateNonHomeStatusRefresh();
+      }
+      return false;
+    }
+    if (extensionUpdateHomeVisitId === null || freshVisit) {
+      extensionUpdateHomeVisitId = makeExtensionUpdateHomeVisitId();
+      extensionUpdateHomeVisitClaimAttempted = false;
+      extensionUpdateHomeVisitAttemptedLatest = null;
+      invalidateExtensionUpdateFeedbackRequest();
+      clearExtensionUpdateStatusTimer();
+      removeExtensionUpdateFeedback();
+      queueExtensionUpdateHomeEntryRefresh();
+      return true;
+    }
+    return false;
+  }
+
+  function isExtensionUpdateNavigationDestinationHome(rawUrl) {
+    try {
+      const destination = new URL(rawUrl, location.href);
+      return (
+        destination.protocol === "https:" &&
+        destination.hostname === "www.roblox.com" &&
+        destination.port === "" &&
+        isRobloxHomePathname(destination.pathname)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function handleExtensionUpdateNavigationStart(event) {
+    const destinationHome = isExtensionUpdateNavigationDestinationHome(
+      event?.destination?.url
+    );
+    extensionUpdateNavigationAwayFromHome =
+      Boolean(extensionUpdateHomeVisitId) && !destinationHome;
+    if (extensionUpdateNavigationAwayFromHome) {
+      if (extensionUpdateHomeVisitClaimRequestPending) {
+        extensionUpdateHomeVisitClaimAttempted = false;
+        extensionUpdateHomeVisitAttemptedLatest = null;
+      }
+      invalidateExtensionUpdateFeedbackRequest();
+      extensionUpdateFeedbackRefreshPending = false;
+      clearExtensionUpdateStatusTimer();
+      removeExtensionUpdateFeedback();
+    }
+  }
+
+  function handleExtensionUpdateNavigationSettled() {
+    extensionUpdateNavigationAwayFromHome = false;
+    syncExtensionUpdateHomeVisitState();
+    queueMount();
+  }
+
+  function handleExtensionUpdateNavigationError() {
+    extensionUpdateNavigationAwayFromHome = false;
+    syncExtensionUpdateHomeVisitState();
+    if (document.visibilityState === "visible") {
+      requestExtensionUpdateStatusWhenVisible(true);
+    }
+  }
+
+  function recomputeExtensionUpdateFeedback() {
+    extensionUpdateHomeVisitClaimAttempted = false;
+    extensionUpdateHomeVisitAttemptedLatest = null;
+    invalidateExtensionUpdateFeedbackRequest();
+    clearExtensionUpdateStatusTimer();
+    removeExtensionUpdateFeedback();
+    if (
+      featureSettingsLoaded &&
+      extensionUpdatePreferencesLoaded &&
+      document.visibilityState === "visible" &&
+      !extensionUpdatePageSuspended
+    ) {
+      requestExtensionUpdateStatusWhenVisible(true);
     }
   }
 
@@ -19822,7 +21708,10 @@
 
   function invalidateExtensionUpdateFeedbackRequest() {
     extensionUpdateFeedbackRequestId += 1;
-    extensionUpdateFeedbackRequestPromise = null;
+    extensionUpdateActiveClaimContextId = null;
+    if (extensionUpdateFeedbackRequestPromise) {
+      extensionUpdateFeedbackRefreshPending = true;
+    }
   }
 
   function applyExtensionUpdatePopupPreferenceTransition(
@@ -19838,19 +21727,29 @@
     }
 
     extensionUpdatePopupPreferenceApplied = nextEnabled;
+    if (nextEnabled) {
+      extensionUpdateHomeVisitClaimAttempted = false;
+      extensionUpdateHomeVisitAttemptedLatest = null;
+    }
     extensionUpdateFeedbackClaimWhenVisible = Boolean(
       nextEnabled && document.visibilityState !== "visible"
     );
     invalidateExtensionUpdateFeedbackRequest();
     clearExtensionUpdateStatusTimer();
     removeExtensionUpdateFeedback();
+    if (!nextEnabled) {
+      extensionUpdateFeedbackRefreshPending = false;
+    }
     if (featureSettingsLoaded && window.top === window) {
-      void refreshExtensionUpdateFeedback();
+      requestExtensionUpdateStatusWhenVisible(true);
     }
     return true;
   }
 
-  function replaceExtensionUpdateStatusTimer(nextAt) {
+  function replaceExtensionUpdateStatusTimer(
+    nextAt,
+    { allowNoticeClaim = false } = {}
+  ) {
     const now = Date.now();
     const requestedAt = normalizeExtensionUpdateTimestamp(nextAt) ||
       now + EXTENSION_UPDATE_STATUS_RETRY_MS;
@@ -19860,28 +21759,49 @@
     );
     clearExtensionUpdateStatusTimer(false);
     extensionUpdateStatusTimerDueAt = dueAt;
+    extensionUpdateStatusTimerAllowsNoticeClaim = allowNoticeClaim === true;
     extensionUpdateStatusTimer = window.setTimeout(() => {
       extensionUpdateStatusTimer = null;
-      if (document.visibilityState !== "visible") {
+      const timerAllowsNoticeClaim =
+        extensionUpdateStatusTimerAllowsNoticeClaim;
+      if (
+        document.visibilityState !== "visible" ||
+        extensionUpdatePageSuspended
+      ) {
+        extensionUpdateStatusTimerDueAt = 0;
+        extensionUpdateStatusTimerAllowsNoticeClaim = false;
         return;
       }
       extensionUpdateStatusTimerDueAt = 0;
-      void refreshExtensionUpdateFeedback();
+      extensionUpdateStatusTimerAllowsNoticeClaim = false;
+      void refreshExtensionUpdateFeedback({
+        allowNoticeClaim: timerAllowsNoticeClaim
+      });
     }, dueAt - now);
   }
 
   function scheduleExtensionUpdateStatusTimer(status) {
-    const candidates = [status?.nextCheckAt];
-    if (status?.updateAvailable && isExtensionUpdatePopupEnabled()) {
-      candidates.push(status.nextNoticeAt);
+    if (document.visibilityState !== "visible" || extensionUpdatePageSuspended) {
+      clearExtensionUpdateStatusTimer();
+      return;
     }
-    const validCandidates = candidates.filter(
-      (value) => normalizeExtensionUpdateTimestamp(value) !== null
-    );
+    const checkAt = normalizeExtensionUpdateTimestamp(status?.nextCheckAt);
+    const noticeAt = (
+      status?.updateAvailable &&
+      isExtensionUpdatePopupEnabled() &&
+      extensionUpdateHomeVisitId &&
+      isHomePage() &&
+      extensionUpdateReminderFrequency !== "home"
+    )
+      ? normalizeExtensionUpdateTimestamp(status.nextNoticeAt)
+      : null;
+    const validCandidates = [checkAt, noticeAt].filter(Boolean);
+    const nextAt = validCandidates.length > 0
+      ? Math.min(...validCandidates)
+      : Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS;
     replaceExtensionUpdateStatusTimer(
-      validCandidates.length > 0
-        ? Math.min(...validCandidates)
-        : Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
+      nextAt,
+      { allowNoticeClaim: noticeAt !== null && noticeAt <= nextAt }
     );
   }
 
@@ -19919,6 +21839,170 @@
         subtree: true
       });
     });
+  }
+
+  function applyExtensionUpdatePreferences(
+    preferences,
+    { allowOlderRevision = false, recompute = false } = {}
+  ) {
+    const frequency = normalizeExtensionUpdateReminderFrequency(
+      preferences?.frequency
+    );
+    const revision = normalizeExtensionUpdatePreferenceRevision(
+      preferences?.revision
+    );
+    if (
+      !frequency ||
+      revision === null ||
+      (!allowOlderRevision && revision < extensionUpdatePreferenceRevision)
+    ) {
+      return false;
+    }
+    const frequencyChanged = frequency !== extensionUpdateReminderFrequency;
+    extensionUpdateReminderFrequency = frequency;
+    extensionUpdatePreferenceRevision = revision;
+    renderFeatureSettingsDialog();
+    if (frequencyChanged && recompute) {
+      recomputeExtensionUpdateFeedback();
+    }
+    return frequencyChanged;
+  }
+
+  async function loadExtensionUpdatePreferences() {
+    const response = await sendExtensionUpdateMessage({
+      type: EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE
+    });
+    const preferences = normalizeExtensionUpdatePreferencesResponse(response) ||
+      Object.freeze({
+        frequency: EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+        revision: 0
+      });
+    const currentPreferences = Object.freeze({
+      frequency: extensionUpdateReminderFrequency,
+      revision: extensionUpdatePreferenceRevision
+    });
+    const mergedPreferences =
+      preferences.revision >= currentPreferences.revision
+        ? preferences
+        : currentPreferences;
+    if (
+      mergedPreferences.revision >=
+      extensionUpdatePreferencesConfirmed.revision
+    ) {
+      extensionUpdatePreferencesConfirmed = mergedPreferences;
+    }
+    applyExtensionUpdatePreferences(mergedPreferences);
+    extensionUpdatePreferencesLoaded = true;
+    renderFeatureSettingsDialog();
+    return mergedPreferences;
+  }
+
+  async function saveExtensionUpdateReminderFrequency(rawFrequency) {
+    const frequency = normalizeExtensionUpdateReminderFrequency(rawFrequency);
+    if (!frequency || !extensionUpdatePreferencesLoaded) {
+      renderFeatureSettingsDialog();
+      return null;
+    }
+    const wasIdle = extensionUpdatePreferencesPendingWrites === 0;
+    if (wasIdle) {
+      extensionUpdatePreferencesBatchChanged = false;
+    }
+    beginFeatureSettingsCombinedSave();
+    extensionUpdateReminderFrequency = frequency;
+    extensionUpdatePreferencesPendingWrites += 1;
+    extensionUpdatePreferencesSaving = true;
+    renderFeatureSettingsDialog();
+
+    const write = extensionUpdatePreferencesSaveChain
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await sendExtensionUpdateMessage({
+          type: EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE,
+          frequency
+        });
+        const normalized = normalizeExtensionUpdatePreferencesResponse(response);
+        if (!normalized) {
+          throw new Error("Update reminder frequency was not saved");
+        }
+        return normalized;
+      });
+    extensionUpdatePreferencesSaveChain = write;
+    let saveSucceeded = false;
+    try {
+      const saved = await write;
+      saveSucceeded = true;
+      extensionUpdatePreferencesConfirmed = saved;
+      extensionUpdatePreferencesBatchChanged = true;
+      if (extensionUpdateReminderFrequency === frequency) {
+        applyExtensionUpdatePreferences(saved);
+      }
+      return saved;
+    } catch (error) {
+      if (extensionUpdateReminderFrequency === frequency) {
+        applyExtensionUpdatePreferences(extensionUpdatePreferencesConfirmed, {
+          allowOlderRevision: true
+        });
+      }
+      console.error("[RoTool] Failed to save update reminder frequency", error);
+      return null;
+    } finally {
+      extensionUpdatePreferencesPendingWrites = Math.max(
+        0,
+        extensionUpdatePreferencesPendingWrites - 1
+      );
+      extensionUpdatePreferencesSaving =
+        extensionUpdatePreferencesPendingWrites > 0;
+      if (extensionUpdatePreferencesPendingWrites === 0) {
+        const deferred = extensionUpdatePreferencesDeferredStorageValue;
+        extensionUpdatePreferencesDeferredStorageValue = null;
+        const priorConfirmed = extensionUpdatePreferencesConfirmed;
+        const deferredWins = Boolean(
+          deferred &&
+          deferred.revision >= priorConfirmed.revision
+        );
+        const finalPreferences =
+          deferredWins
+            ? deferred
+            : priorConfirmed;
+        if (
+          deferredWins &&
+          (
+            finalPreferences.revision !== priorConfirmed.revision ||
+            finalPreferences.frequency !== priorConfirmed.frequency
+          )
+        ) {
+          extensionUpdatePreferencesBatchChanged = true;
+        }
+        extensionUpdatePreferencesConfirmed = finalPreferences;
+        applyExtensionUpdatePreferences(finalPreferences, {
+          allowOlderRevision: true
+        });
+        if (extensionUpdatePreferencesBatchChanged) {
+          extensionUpdatePreferencesBatchChanged = false;
+          recomputeExtensionUpdateFeedback();
+        }
+      }
+      finishFeatureSettingsCombinedSave(saveSucceeded);
+      renderFeatureSettingsDialog();
+    }
+  }
+
+  function handleExtensionUpdatePreferencesStorageChange(rawValue) {
+    const nextPreferences = normalizeExtensionUpdatePreferences(rawValue);
+    if (extensionUpdatePreferencesPendingWrites > 0) {
+      const deferred = extensionUpdatePreferencesDeferredStorageValue;
+      if (!deferred || nextPreferences.revision >= deferred.revision) {
+        extensionUpdatePreferencesDeferredStorageValue = nextPreferences;
+      }
+    } else if (
+      nextPreferences.revision >= extensionUpdatePreferenceRevision
+    ) {
+      extensionUpdatePreferencesConfirmed = nextPreferences;
+      applyExtensionUpdatePreferences(nextPreferences, {
+        recompute: true
+      });
+    }
+    return nextPreferences;
   }
 
   function hasNativeExtensionUpdateFeedbackStyles(inner, alert, closeControl) {
@@ -20061,6 +22145,10 @@
       compareExtensionUpdateVersions(latest, current) > 0 &&
       installed === current &&
       isExtensionUpdatePopupEnabled() &&
+      Boolean(extensionUpdateHomeVisitId) &&
+      isHomePage() &&
+      document.visibilityState === "visible" &&
+      !extensionUpdatePageSuspended &&
       window.top === window;
 
     if (!shouldShow) {
@@ -20152,8 +22240,58 @@
     return feedback;
   }
 
-  function refreshExtensionUpdateFeedback() {
-    if (window.top !== window) {
+  function makeExtensionUpdateClaimContextId(homeVisitId, requestId) {
+    if (
+      typeof homeVisitId !== "string" ||
+      !Number.isSafeInteger(requestId) ||
+      requestId <= 0
+    ) {
+      return null;
+    }
+    return `${homeVisitId}-claim-${requestId.toString(36)}`;
+  }
+
+  function handleExtensionUpdateClaimContextChallenge(
+    message,
+    sender,
+    sendResponse
+  ) {
+    const messageKeys = message && typeof message === "object" &&
+      !Array.isArray(message)
+      ? Object.keys(message).sort()
+      : [];
+    if (
+      message?.type !== EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE ||
+      messageKeys.length !== 4 ||
+      messageKeys[0] !== "claimContextId" ||
+      messageKeys[1] !== "expectedFrequency" ||
+      messageKeys[2] !== "homeVisitId" ||
+      messageKeys[3] !== "type"
+    ) {
+      return false;
+    }
+    const verified = Boolean(
+      sender?.id === chrome.runtime.id &&
+      window.top === window &&
+      featureSettingsLoaded &&
+      extensionUpdatePreferencesLoaded &&
+      isExtensionUpdatePopupEnabled() &&
+      !extensionUpdatePageSuspended &&
+      !extensionUpdateNavigationAwayFromHome &&
+      document.visibilityState === "visible" &&
+      isHomePage() &&
+      extensionUpdateHomeVisitClaimRequestPending &&
+      typeof extensionUpdateActiveClaimContextId === "string" &&
+      message.claimContextId === extensionUpdateActiveClaimContextId &&
+      message.homeVisitId === extensionUpdateHomeVisitId &&
+      message.expectedFrequency === extensionUpdateReminderFrequency
+    );
+    sendResponse({ ok: verified });
+    return false;
+  }
+
+  function refreshExtensionUpdateFeedback({ allowNoticeClaim = true } = {}) {
+    if (window.top !== window || extensionUpdatePageSuspended) {
       removeExtensionUpdateFeedback();
       clearExtensionUpdateStatusTimer();
       return Promise.resolve(null);
@@ -20162,21 +22300,58 @@
       return extensionUpdateFeedbackRequestPromise;
     }
 
+    syncExtensionUpdateHomeVisitState();
+    const onVisibleHome = Boolean(
+      extensionUpdateHomeVisitId &&
+      isHomePage() &&
+      document.visibilityState === "visible"
+    );
     const popupEnabled = isExtensionUpdatePopupEnabled();
-    if (!popupEnabled) {
+    if (!popupEnabled || !onVisibleHome) {
       removeExtensionUpdateFeedback();
     }
+    let claimNotice = popupEnabled && onVisibleHome && allowNoticeClaim;
+    if (
+      claimNotice &&
+      extensionUpdateReminderFrequency === "home"
+    ) {
+      const knownLatest = extensionUpdateStatusSnapshot?.latest || null;
+      if (
+        extensionUpdateHomeVisitClaimAttempted &&
+        extensionUpdateHomeVisitAttemptedLatest === knownLatest
+      ) {
+        claimNotice = false;
+      } else {
+        extensionUpdateHomeVisitClaimAttempted = true;
+        extensionUpdateHomeVisitAttemptedLatest = knownLatest;
+      }
+    }
     const requestId = ++extensionUpdateFeedbackRequestId;
+    const claimContextId = claimNotice
+      ? makeExtensionUpdateClaimContextId(extensionUpdateHomeVisitId, requestId)
+      : null;
+    if (claimNotice && !claimContextId) {
+      claimNotice = false;
+    }
+    extensionUpdateHomeVisitClaimRequestPending = claimNotice;
+    extensionUpdateActiveClaimContextId = claimNotice ? claimContextId : null;
     const request = (async () => {
       const response = await sendExtensionUpdateMessage({
         type: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
         pageVisible: document.visibilityState === "visible",
-        claimNotice: popupEnabled
+        claimNotice,
+        claimContextId: claimNotice ? claimContextId : null,
+        homeVisitId: extensionUpdateHomeVisitId,
+        expectedFrequency: extensionUpdateReminderFrequency
       });
       if (requestId !== extensionUpdateFeedbackRequestId) {
         return null;
       }
       if (!response) {
+        if (claimNotice && extensionUpdateReminderFrequency === "home") {
+          extensionUpdateHomeVisitClaimAttempted = false;
+          extensionUpdateHomeVisitAttemptedLatest = null;
+        }
         replaceExtensionUpdateStatusTimer(
           Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
         );
@@ -20184,10 +22359,40 @@
       }
       const normalized = applyExtensionUpdateStatus(response);
       if (!normalized) {
+        if (claimNotice && extensionUpdateReminderFrequency === "home") {
+          extensionUpdateHomeVisitClaimAttempted = false;
+          extensionUpdateHomeVisitAttemptedLatest = null;
+        }
         replaceExtensionUpdateStatusTimer(
           Date.now() + EXTENSION_UPDATE_STATUS_RETRY_MS
         );
         return null;
+      }
+      if (claimNotice && normalized.frequency === "home") {
+        extensionUpdateHomeVisitClaimAttempted = true;
+        extensionUpdateHomeVisitAttemptedLatest = normalized.latest;
+      }
+      if (
+        !allowNoticeClaim &&
+        normalized.updateAvailable &&
+        popupEnabled &&
+        onVisibleHome &&
+        (
+          (
+            normalized.frequency === "home" &&
+            (
+              !extensionUpdateHomeVisitClaimAttempted ||
+              extensionUpdateHomeVisitAttemptedLatest !== normalized.latest
+            )
+          ) ||
+          (
+            normalized.frequency !== "home" &&
+            Number.isSafeInteger(normalized.nextNoticeAt) &&
+            normalized.nextNoticeAt <= Date.now()
+          )
+        )
+      ) {
+        extensionUpdateFeedbackRefreshPending = true;
       }
 
       if (!normalized.updateAvailable || !isExtensionUpdatePopupEnabled()) {
@@ -20209,8 +22414,23 @@
       return normalized;
     })();
     const tracked = request.finally(() => {
+      extensionUpdateHomeVisitClaimRequestPending = false;
+      if (extensionUpdateActiveClaimContextId === claimContextId) {
+        extensionUpdateActiveClaimContextId = null;
+      }
       if (extensionUpdateFeedbackRequestPromise === tracked) {
         extensionUpdateFeedbackRequestPromise = null;
+      }
+      if (extensionUpdateFeedbackRefreshPending) {
+        extensionUpdateFeedbackRefreshPending = false;
+        if (
+          featureSettingsLoaded &&
+          extensionUpdatePreferencesLoaded &&
+          document.visibilityState === "visible" &&
+          !extensionUpdatePageSuspended
+        ) {
+          requestExtensionUpdateStatusWhenVisible(true);
+        }
       }
     });
     extensionUpdateFeedbackRequestPromise = tracked;
@@ -20220,10 +22440,13 @@
   function requestExtensionUpdateStatusWhenVisible(force = false) {
     if (
       document.visibilityState !== "visible" ||
-      !featureSettingsLoaded
+      !featureSettingsLoaded ||
+      !extensionUpdatePreferencesLoaded ||
+      extensionUpdatePageSuspended
     ) {
       return;
     }
+    syncExtensionUpdateHomeVisitState();
     const forceRequest = force || extensionUpdateFeedbackClaimWhenVisible;
     extensionUpdateFeedbackClaimWhenVisible = false;
     const now = Date.now();
@@ -20275,7 +22498,8 @@
       : node?.parentElement;
     return Boolean(
       element?.closest?.(
-        `[data-rsl-best-friends-carousel], [${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}]`
+        `[data-rsl-best-friends-carousel], [${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}], ` +
+          "[data-rsl-experience-places]"
       )
     );
   }
@@ -20308,8 +22532,12 @@
     // Mount immediately so a delayed or unavailable storage response can never
     // prevent the Add Shortcut row from appearing.
     mountExtensionFeatures();
+    chrome.runtime.onMessage?.addListener(
+      handleExtensionUpdateClaimContextChallenge
+    );
 
     const observer = new MutationObserver((mutations) => {
+      syncExtensionUpdateHomeVisitState();
       if (document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)) {
         queueExtensionUpdateFeedbackPositionSync();
       }
@@ -20336,16 +22564,32 @@
       attributes: true,
       attributeFilter: ["href"]
     });
+    if (typeof globalThis.navigation?.addEventListener === "function") {
+      globalThis.navigation.addEventListener(
+        "navigate",
+        handleExtensionUpdateNavigationStart
+      );
+      globalThis.navigation.addEventListener(
+        "navigatesuccess",
+        handleExtensionUpdateNavigationSettled
+      );
+      globalThis.navigation.addEventListener(
+        "navigateerror",
+        handleExtensionUpdateNavigationError
+      );
+    }
     window.addEventListener("hashchange", () => {
       closeBestFriendHoverCard();
       closePrivateServersDialog(false);
       clearGameTileCcuGraphHoverIntent();
+      syncExtensionUpdateHomeVisitState();
       queueMount();
     });
     window.addEventListener("popstate", () => {
       closeBestFriendHoverCard();
       closePrivateServersDialog(false);
       clearGameTileCcuGraphHoverIntent();
+      syncExtensionUpdateHomeVisitState();
       queueMount();
     });
     window.addEventListener("resize", () => {
@@ -20381,10 +22625,44 @@
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
         closeBestFriendHoverCard();
+        invalidateExtensionUpdateFeedbackRequest();
+        extensionUpdateFeedbackRefreshPending = false;
+        if (extensionUpdateHomeVisitClaimRequestPending) {
+          extensionUpdateHomeVisitClaimAttempted = false;
+          extensionUpdateHomeVisitAttemptedLatest = null;
+        }
+        clearExtensionUpdateStatusTimer();
+        removeExtensionUpdateFeedback();
         return;
       }
-      requestExtensionUpdateStatusWhenVisible();
+      syncExtensionUpdateHomeVisitState();
+      requestExtensionUpdateStatusWhenVisible(true);
       refreshBestFriendsHomeIfStale();
+    });
+    window.addEventListener("pagehide", () => {
+      extensionUpdatePageSuspended = true;
+      invalidateExtensionUpdateFeedbackRequest();
+      extensionUpdateFeedbackRefreshPending = false;
+      extensionUpdateHomeVisitClaimAttempted = false;
+      extensionUpdateHomeVisitAttemptedLatest = null;
+      clearExtensionUpdateStatusTimer();
+      removeExtensionUpdateFeedback();
+    });
+    window.addEventListener("pageshow", (event) => {
+      extensionUpdatePageSuspended = false;
+      if (event.persisted === true) {
+        // A cross-document navigation can put this Home document into bfcache
+        // without delivering navigatesuccess to it. A restored document starts
+        // a settled route lifecycle and must not retain that stale away state.
+        extensionUpdateNavigationAwayFromHome = false;
+      }
+      const restoredHomeVisit = event.persisted === true && isHomePage();
+      syncExtensionUpdateHomeVisitState({
+        freshVisit: restoredHomeVisit
+      });
+      if (document.visibilityState === "visible" && !restoredHomeVisit) {
+        requestExtensionUpdateStatusWhenVisible(event.persisted === true);
+      }
     });
     document.addEventListener(
       BEST_FRIEND_ACTION_RESULT_EVENT,
@@ -20404,6 +22682,11 @@
       }
 
       let changed = false;
+      if (changes[EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY]) {
+        handleExtensionUpdatePreferencesStorageChange(
+          changes[EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY].newValue
+        );
+      }
       if (changes[FEATURE_SETTINGS_STORAGE_KEY]) {
         featureSettingsLoadGeneration += 1;
         const nextSettings = normalizeFeatureSettings(
@@ -20531,14 +22814,32 @@
       homeFriendsCollapsedStorageGet().catch((error) => {
         console.error("[RoTool] Failed to load Home Friends layout", error);
         return false;
+      }),
+      loadExtensionUpdatePreferences().catch((error) => {
+        console.error("[RoTool] Failed to load update reminder frequency", error);
+        const mergedFallback = Object.freeze({
+          frequency: extensionUpdateReminderFrequency,
+          revision: extensionUpdatePreferenceRevision
+        });
+        if (
+          mergedFallback.revision >=
+          extensionUpdatePreferencesConfirmed.revision
+        ) {
+          extensionUpdatePreferencesConfirmed = mergedFallback;
+        }
+        applyExtensionUpdatePreferences(mergedFallback);
+        extensionUpdatePreferencesLoaded = true;
+        return mergedFallback;
       })
     ])
       .then(([
         storedFeatureSettings,
         storedCollapsed,
         storedBestFriendsCollapsed,
-        storedHomeFriendsCollapsed
+        storedHomeFriendsCollapsed,
+        storedExtensionUpdatePreferences
       ]) => {
+        void storedExtensionUpdatePreferences;
         if (featureLoadGeneration === featureSettingsLoadGeneration) {
           featureSettings = storedFeatureSettings;
           featureSettingsConfirmed = { ...storedFeatureSettings };
@@ -20597,9 +22898,60 @@
       statusRetryMs: EXTENSION_UPDATE_STATUS_RETRY_MS,
       statusMinTimerMs: EXTENSION_UPDATE_STATUS_MIN_TIMER_MS,
       statusMaxTimerMs: EXTENSION_UPDATE_STATUS_MAX_TIMER_MS,
+      preferencesStorageKey: EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY,
+      preferencesStorageVersion: EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION,
+      defaultReminderFrequency:
+        EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY,
+      reminderFrequencyOptions:
+        EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS,
       messageTypes: Object.freeze({
-        status: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE
+        status: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
+        preferencesGet: EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE,
+        preferencesSet: EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE,
+        contextChallenge: EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE
       })
+    });
+    contentTestHooks.normalizeExtensionUpdateReminderFrequency =
+      normalizeExtensionUpdateReminderFrequency;
+    contentTestHooks.normalizeExtensionUpdatePreferences =
+      normalizeExtensionUpdatePreferences;
+    contentTestHooks.normalizeExtensionUpdatePreferencesResponse =
+      normalizeExtensionUpdatePreferencesResponse;
+    contentTestHooks.loadExtensionUpdatePreferences =
+      loadExtensionUpdatePreferences;
+    contentTestHooks.saveExtensionUpdateReminderFrequency =
+      saveExtensionUpdateReminderFrequency;
+    contentTestHooks.handleExtensionUpdatePreferencesStorageChange =
+      handleExtensionUpdatePreferencesStorageChange;
+    contentTestHooks.syncExtensionUpdateHomeVisitState =
+      syncExtensionUpdateHomeVisitState;
+    contentTestHooks.isRobloxHomePathname = isRobloxHomePathname;
+    contentTestHooks.isExtensionUpdateNavigationDestinationHome =
+      isExtensionUpdateNavigationDestinationHome;
+    contentTestHooks.handleExtensionUpdateNavigationStart =
+      handleExtensionUpdateNavigationStart;
+    contentTestHooks.handleExtensionUpdateNavigationSettled =
+      handleExtensionUpdateNavigationSettled;
+    contentTestHooks.makeExtensionUpdateClaimContextId =
+      makeExtensionUpdateClaimContextId;
+    contentTestHooks.handleExtensionUpdateClaimContextChallenge =
+      handleExtensionUpdateClaimContextChallenge;
+    contentTestHooks.recomputeExtensionUpdateFeedback =
+      recomputeExtensionUpdateFeedback;
+    contentTestHooks.getExtensionUpdatePreferenceStateForTests = () => ({
+      frequency: extensionUpdateReminderFrequency,
+      revision: extensionUpdatePreferenceRevision,
+      loaded: extensionUpdatePreferencesLoaded,
+      saving: extensionUpdatePreferencesSaving,
+      pendingWrites: extensionUpdatePreferencesPendingWrites,
+      homeVisitId: extensionUpdateHomeVisitId,
+      homeVisitClaimAttempted: extensionUpdateHomeVisitClaimAttempted,
+      homeVisitAttemptedLatest: extensionUpdateHomeVisitAttemptedLatest,
+      activeClaimContextId: extensionUpdateActiveClaimContextId,
+      pageSuspended: extensionUpdatePageSuspended,
+      navigationAwayFromHome: extensionUpdateNavigationAwayFromHome,
+      timerAllowsNoticeClaim: extensionUpdateStatusTimerAllowsNoticeClaim,
+      refreshPending: extensionUpdateFeedbackRefreshPending
     });
     contentTestHooks.normalizeExtensionUpdateVersion =
       normalizeExtensionUpdateVersion;
@@ -20634,6 +22986,8 @@
       extensionUpdateSettingsRequestId += 1;
       extensionUpdateFeedbackRequestPromise = null;
       extensionUpdateFeedbackClaimWhenVisible = false;
+      extensionUpdateHomeVisitClaimRequestPending = false;
+      extensionUpdateActiveClaimContextId = null;
       extensionUpdateStatusSnapshot = null;
       clearExtensionUpdateStatusTimer();
       removeExtensionUpdateFeedback();
@@ -20662,6 +23016,102 @@
       modalGlobal: JOIN_SCHEDULER_MODAL_GLOBAL,
       gameEventScheduleAttribute: GAME_EVENTS_SCHEDULE_ATTRIBUTE
     });
+    contentTestHooks.experiencePlacesConstants = Object.freeze({
+      attribute: EXPERIENCE_PLACES_ATTRIBUTE,
+      placeIdAttribute: EXPERIENCE_PLACE_ID_ATTRIBUTE,
+      gridId: EXPERIENCE_PLACES_GRID_ID,
+      thumbnailMessageType: EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE,
+      eligibilityMessageType: EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE,
+      apiOrigin: EXPERIENCE_PLACES_API_ORIGIN,
+      apiPageSize: EXPERIENCE_PLACES_API_PAGE_SIZE,
+      visibleStep: EXPERIENCE_PLACES_VISIBLE_STEP,
+      thumbnailBatchSize: EXPERIENCE_PLACE_THUMBNAIL_BATCH_SIZE,
+      maxItems: EXPERIENCE_PLACES_MAX_ITEMS,
+      maxPages: EXPERIENCE_PLACES_MAX_PAGES,
+      maxCursorLength: EXPERIENCE_PLACES_MAX_CURSOR_LENGTH,
+      maxNameLength: EXPERIENCE_PLACES_MAX_NAME_LENGTH,
+      maxResponseBytes: EXPERIENCE_PLACES_MAX_RESPONSE_BYTES,
+      requestTimeoutMs: EXPERIENCE_PLACES_REQUEST_TIMEOUT_MS,
+      eligibilityTimeoutMs: EXPERIENCE_PLACES_ELIGIBILITY_TIMEOUT_MS
+    });
+    contentTestHooks.normalizeExperiencePlacesCursor =
+      normalizeExperiencePlacesCursor;
+    contentTestHooks.normalizeExperiencePlace = normalizeExperiencePlace;
+    contentTestHooks.normalizeExperiencePlacesPage =
+      normalizeExperiencePlacesPage;
+    contentTestHooks.getExperiencePlacesMountTarget =
+      getExperiencePlacesMountTarget;
+    contentTestHooks.getExperiencePlacesPageContext =
+      getExperiencePlacesPageContext;
+    contentTestHooks.orderExperiencePlaces = orderExperiencePlaces;
+    contentTestHooks.mergeExperiencePlaces = mergeExperiencePlaces;
+    contentTestHooks.makeExperiencePlaceCard = makeExperiencePlaceCard;
+    contentTestHooks.makeExperiencePlaceSkeletonCard =
+      makeExperiencePlaceSkeletonCard;
+    contentTestHooks.countExperiencePlacesGridTracks =
+      countExperiencePlacesGridTracks;
+    contentTestHooks.measureExperiencePlacesColumnCapacity =
+      measureExperiencePlacesColumnCapacity;
+    contentTestHooks.updateExperiencePlacesCollapsedCapacity =
+      updateExperiencePlacesCollapsedCapacity;
+    contentTestHooks.isExperiencePlacesSectionCurrent =
+      isExperiencePlacesSectionCurrent;
+    contentTestHooks.renderExperiencePlacesSection =
+      renderExperiencePlacesSection;
+    contentTestHooks.fetchExperiencePlacesPage = fetchExperiencePlacesPage;
+    contentTestHooks.requestExperiencePlacesEligibility =
+      requestExperiencePlacesEligibility;
+    contentTestHooks.captureExperiencePlacesFocus =
+      captureExperiencePlacesFocus;
+    contentTestHooks.ensureExperiencePlacesFocusVisible =
+      ensureExperiencePlacesFocusVisible;
+    contentTestHooks.ensureExperiencePlacesRenderRoots =
+      ensureExperiencePlacesRenderRoots;
+    contentTestHooks.clearExperiencePlacesAnnouncement =
+      clearExperiencePlacesAnnouncement;
+    contentTestHooks.scheduleExperiencePlacesAppendAnnouncement =
+      scheduleExperiencePlacesAppendAnnouncement;
+    contentTestHooks.restoreExperiencePlacesFocus =
+      restoreExperiencePlacesFocus;
+    contentTestHooks.loadExperiencePlacesPage = loadExperiencePlacesPage;
+    contentTestHooks.mountExperiencePlaces = mountExperiencePlaces;
+    contentTestHooks.cleanupExperiencePlacesFeature =
+      cleanupExperiencePlacesFeature;
+    contentTestHooks.setExperiencePlacesFetcherForTests = (fetcher) => {
+      experiencePlacesFetcherForTests =
+        typeof fetcher === "function" ? fetcher : null;
+    };
+    contentTestHooks.setExperiencePlacesMessageSenderForTests = (sender) => {
+      experiencePlacesMessageSenderForTests =
+        typeof sender === "function" ? sender : null;
+    };
+    contentTestHooks.getExperiencePlacesStateForTests = () => ({
+      lifecycleEpoch: experiencePlacesLifecycleEpoch,
+      requestSequence: experiencePlacesRequestSequence,
+      thumbnailRequestSequence: experiencePlacesThumbnailRequestSequence,
+      routeKey: experiencePlacesRouteKey,
+      loadState: experiencePlacesLoadState,
+      items: experiencePlacesItems.slice(),
+      nextPageCursor: experiencePlacesNextPageCursor,
+      visibleCount: experiencePlacesVisibleCount,
+      collapsedCapacity: experiencePlacesCollapsedCapacity,
+      expanded: experiencePlacesExpanded,
+      limitReached: experiencePlacesLimitReached,
+      pageCount: experiencePlacesPageCount,
+      eligibilityConfirmed: experiencePlacesEligibilityConfirmed,
+      requestPending: experiencePlacesRequestPending,
+      seenCursors: Array.from(experiencePlacesSeenCursors),
+      thumbnailIds: Array.from(experiencePlaceThumbnailById.keys()),
+      thumbnailPendingIds: Array.from(experiencePlaceThumbnailPendingIds),
+      layoutObserved: Boolean(experiencePlacesObservedSection)
+    });
+    contentTestHooks.resetExperiencePlacesStateForTests = () => {
+      cleanupExperiencePlacesFeature();
+      experiencePlacesRequestSequence = 0;
+      experiencePlacesThumbnailRequestSequence = 0;
+      experiencePlacesFetcherForTests = null;
+      experiencePlacesMessageSenderForTests = null;
+    };
     contentTestHooks.nativeEventScheduleConstants = Object.freeze({
       attribute: NATIVE_EVENT_SCHEDULE_ATTRIBUTE,
       dataMessageType: NATIVE_EVENT_SCHEDULE_DATA_MESSAGE_TYPE,

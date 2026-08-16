@@ -207,12 +207,17 @@ const sandbox = {
   Headers,
   Request,
   AbortController,
+  ArrayBuffer,
+  Uint8Array,
   TextDecoder,
   TextEncoder,
   Intl,
   console,
   chrome,
   crypto: webcrypto,
+  btoa(value) {
+    return Buffer.from(String(value), "binary").toString("base64");
+  },
   structuredClone,
   fetch: (...args) => fetchHandler(...args),
   setTimeout,
@@ -358,6 +363,55 @@ function createSchedulePayload(overrides = {}) {
   };
 }
 
+function schedulerJsonResponse(payload, options = {}) {
+  const status = Number(options.status ?? 200);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    url: String(options.url || ""),
+    headers: new Headers(options.headers || {
+      "content-type": "application/json"
+    }),
+    async json() { return plain(payload); }
+  };
+}
+
+function schedulerImageResponse(url, bytes, mimeType = "image/png", options = {}) {
+  const bodyBytes = Uint8Array.from(bytes || []);
+  let read = false;
+  const status = Number(options.status ?? 200);
+  const headers = new Headers({
+    "content-type": mimeType,
+    ...(options.includeLength === false
+      ? {}
+      : { "content-length": String(options.contentLength ?? bodyBytes.byteLength) }),
+    ...(options.headers || {})
+  });
+  const response = {
+    ok: status >= 200 && status < 300,
+    status,
+    url: String(options.responseUrl || url),
+    headers,
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (read) return { done: true, value: undefined };
+            read = true;
+            return { done: false, value: bodyBytes };
+          },
+          async cancel() {
+            response.canceled = true;
+          },
+          releaseLock() {}
+        };
+      }
+    },
+    canceled: false
+  };
+  return response;
+}
+
 async function createSchedule(overrides = {}) {
   const response = await hooks.createSchedule(createSchedulePayload(overrides));
   assert.equal(response.ok, true);
@@ -441,6 +495,381 @@ test("constants, strict official Roblox URLs, and bounded normalized storage", (
   );
   assert.match(backgroundSource, /JOIN_SCHEDULER_PRIVATE_URL_MAX_LENGTH\s*=\s*2_048/);
   assert.equal(Object.hasOwn(hooks.normalizeSnapshot({}), "accounts"), false);
+});
+
+test("game-icon IDs, target mapping, and CDN URLs are strict and bounded", () => {
+  assert.equal(constants.messageTypes.getGameIcons,
+    "rsl:join-scheduler:get-game-icons");
+  assert.equal(constants.gameIconMaxIds, constants.maxSchedules);
+  assert.equal(constants.gameIconMaxIds, 50);
+  assert.equal(constants.gameIconCacheMaxEntries, 128);
+  assert.equal(constants.gameIconResponseMaxBytes, 256 * 1_024);
+  assert.equal(constants.gameIconNotificationDeadlineMs, 2_500);
+
+  const fiftyIds = Array.from({ length: 50 }, (_value, index) =>
+    String(10_000 + index));
+  assert.deepEqual(plain(hooks.normalizeGameIconUniverseIds(fiftyIds)), fiftyIds);
+  for (const invalid of [
+    null,
+    [],
+    [...fiftyIds, "99999"],
+    ["2001", "2001"],
+    ["2001", 3001],
+    ["0"],
+    ["01"],
+    ["1".repeat(21)]
+  ]) {
+    assert.equal(hooks.normalizeGameIconUniverseIds(invalid), null);
+  }
+
+  const normalized = hooks.normalizeGameIconBatch({
+    data: [
+      { targetId: 3001, state: "Completed", imageUrl: "https://images.rbxcdn.com/three.png" },
+      { targetId: 2001, state: "Pending", imageUrl: null },
+      { targetId: 4001, state: "Completed", imageUrl: "https://images.rbxcdn.com/duplicate-a.png" },
+      { targetId: 4001, state: "Completed", imageUrl: "https://images.rbxcdn.com/duplicate-b.png" },
+      { targetId: 5001, state: "Completed", imageUrl: "https://user@images.rbxcdn.com/five.png" },
+      { targetId: 6001, state: "Completed", imageUrl: "https://images.rbxcdn.com:444/six.png" },
+      { targetId: 8001, state: "Completed", imageUrl: "https://images.rbxcdn.com/eight.png" }
+    ]
+  }, ["2001", "3001", "4001", "5001", "6001", "7001", "8001"]);
+  assert.equal(Object.isFrozen(normalized), true);
+  assert.equal(normalized.hasPending, true);
+  assert.deepEqual(plain(Array.from(normalized.byUniverseId.entries())), [
+    ["3001", "https://images.rbxcdn.com/three.png"],
+    ["8001", "https://images.rbxcdn.com/eight.png"]
+  ], "targetId, not response position, controls the universe mapping");
+  assert.equal(hooks.normalizeGameIconBatch({
+    data: [{
+      targetId: 7001,
+      state: "Completed",
+      imageUrl: "https://images.rbxcdn.com/seven.png#fragment"
+    }]
+  }, ["7001"]).byUniverseId.size, 0);
+  assert.equal(hooks.normalizeGameIconBatch({
+    data: [{
+      targetId: 9999,
+      state: "Completed",
+      imageUrl: "https://images.rbxcdn.com/extra.png"
+    }]
+  }, ["2001"]).byUniverseId.size, 0,
+  "an extra target can never escape into the response");
+  assert.throws(
+    () => hooks.normalizeGameIconBatch({ data: null }, ["2001"]),
+    (error) => error?.code === "UNAVAILABLE"
+  );
+});
+
+test("the read-only icon operation uses only universe IDs and rechecks account authority", async () => {
+  resetFixture();
+  const calls = [];
+  fetchHandler = async (url, options) => {
+    calls.push({ url: String(url), options: plain(options) });
+    return schedulerJsonResponse({
+      data: [
+        { targetId: 3001, state: "Completed", imageUrl: "https://b.rbxcdn.com/3001.png" },
+        { targetId: 2001, state: "Completed", imageUrl: "https://a.rbxcdn.com/2001.png" }
+      ]
+    });
+  };
+  const gameUrl = "https://www.roblox.com/games/1001/fixture-game";
+  const sender = trustedRobloxSender({
+    url: gameUrl,
+    tab: { id: 17, incognito: false, url: gameUrl }
+  });
+  const message = {
+    type: constants.messageTypes.getGameIcons,
+    requestId: 501,
+    viewerUserId,
+    universeIds: ["2001", "3001"]
+  };
+  const { response } = await invokeScheduler(message, sender);
+  assert.deepEqual(response, {
+    ok: true,
+    requestId: 501,
+    viewerUserId: ACCOUNT_A,
+    gameIcons: [
+      { universeId: "2001", thumbnailUrl: "https://a.rbxcdn.com/2001.png" },
+      { universeId: "3001", thumbnailUrl: "https://b.rbxcdn.com/3001.png" }
+    ]
+  });
+  assert.equal(calls.length, 1, "one deduplicated universe batch is fetched");
+  const endpoint = new URL(calls[0].url);
+  assert.equal(endpoint.origin, "https://thumbnails.roblox.com");
+  assert.equal(endpoint.pathname, "/v1/games/icons");
+  assert.equal(endpoint.searchParams.get("universeIds"), "2001,3001");
+  assert.equal(endpoint.searchParams.has("placeIds"), false);
+  assert.equal(endpoint.searchParams.get("size"), "150x150");
+  assert.equal(endpoint.searchParams.get("format"), "Png");
+  assert.equal(endpoint.searchParams.get("isCircular"), "false");
+  assert.equal(calls[0].options.method, "GET");
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.referrerPolicy, "no-referrer");
+  assert.equal(Object.hasOwn(calls[0].options, "body"), false);
+  assert.doesNotMatch(calls[0].url, /101|1001|Fixture|private|schedule/i,
+    "the public thumbnail request contains no account, Place, title, or private data");
+
+  const fetchesBeforeInvalid = calls.length;
+  for (const invalidMessage of [
+    { ...message, requestId: 502, extra: true },
+    { ...message, requestId: 503, universeIds: ["2001", "2001"] },
+    { ...message, requestId: 504, universeIds: Array.from({ length: 51 }, (_v, i) => String(i + 1)) }
+  ]) {
+    const invalid = await invokeScheduler(invalidMessage, sender);
+    assert.equal(invalid.response.ok, false);
+    assert.equal(invalid.response.code, "INVALID");
+  }
+  let rejectedSenderResponse = null;
+  const keptOpen = hooks.handleContentMessage(
+    { ...message, requestId: 505 },
+    { ...sender, frameId: 1 },
+    (value) => { rejectedSenderResponse = plain(value); }
+  );
+  assert.equal(keptOpen, false);
+  assert.equal(rejectedSenderResponse?.code, "INVALID");
+  assert.equal(calls.length, fetchesBeforeInvalid,
+    "invalid shapes and untrusted frames never reach Roblox");
+
+  resetFixture();
+  let releaseLookup = null;
+  fetchHandler = () => new Promise((resolve) => {
+    releaseLookup = () => resolve(schedulerJsonResponse({
+      data: [{
+        targetId: 2001,
+        state: "Completed",
+        imageUrl: "https://a.rbxcdn.com/stale.png"
+      }]
+    }));
+  });
+  const pending = invokeScheduler({
+    type: constants.messageTypes.getGameIcons,
+    requestId: 506,
+    viewerUserId: ACCOUNT_A,
+    universeIds: ["2001"]
+  }, sender);
+  while (!releaseLookup) await new Promise((resolve) => setTimeout(resolve, 0));
+  viewerUserId = ACCOUNT_B;
+  releaseLookup();
+  const stale = await pending;
+  assert.equal(stale.response.ok, false);
+  assert.equal(stale.response.code, "ACCOUNT_CHANGED");
+  assert.equal(Object.hasOwn(stale.response, "gameIcons"), false,
+    "an old account never receives or repaints a late icon result");
+});
+
+test("notification icon bytes require bounded matching PNG, JPEG, or WebP data", async () => {
+  resetFixture();
+  const png = Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 3
+  ]);
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 1]);
+  const webp = Uint8Array.from([
+    0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1
+  ]);
+  assert.equal(hooks.isGameIconSignature(png, "image/png"), true);
+  assert.equal(hooks.isGameIconSignature(jpeg, "image/jpeg"), true);
+  assert.equal(hooks.isGameIconSignature(webp, "image/webp"), true);
+  assert.equal(hooks.isGameIconSignature(png, "image/jpeg"), false);
+  assert.equal(hooks.isGameIconSignature(Uint8Array.from([1, 2, 3]), "image/png"), false);
+  const encoded = hooks.encodeGameIconDataUrl(png, "image/png");
+  assert.equal(encoded, `data:image/png;base64,${Buffer.from(png).toString("base64")}`);
+  assert.deepEqual(
+    Array.from(await hooks.readGameIconBytes(
+      schedulerImageResponse("https://a.rbxcdn.com/icon.png", png)
+    )),
+    Array.from(png)
+  );
+
+  const declaredOversize = schedulerImageResponse(
+    "https://a.rbxcdn.com/icon.png",
+    png,
+    "image/png",
+    { contentLength: constants.gameIconResponseMaxBytes + 1 }
+  );
+  assert.equal(await hooks.readGameIconBytes(declaredOversize), null);
+  const actualOversize = schedulerImageResponse(
+    "https://a.rbxcdn.com/icon.png",
+    new Uint8Array(constants.gameIconResponseMaxBytes + 1),
+    "image/png",
+    { includeLength: false }
+  );
+  assert.equal(await hooks.readGameIconBytes(actualOversize), null);
+  assert.equal(actualOversize.canceled, true,
+    "an oversized stream is canceled as soon as it crosses the byte cap");
+  const malformedLength = schedulerImageResponse(
+    "https://a.rbxcdn.com/icon.png",
+    png,
+    "image/png",
+    { headers: { "content-length": "12x" } }
+  );
+  assert.equal(await hooks.readGameIconBytes(malformedLength), null);
+});
+
+test("notification icon fetching validates URL, response, MIME, magic, and data encoding", async () => {
+  resetFixture();
+  const png = Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 8, 9
+  ]);
+  const safeUrl = "https://images.rbxcdn.com/fixture.png";
+  const calls = [];
+  fetchHandler = async (url, options) => {
+    calls.push({ url: String(url), options: plain(options) });
+    return schedulerImageResponse(String(url), png, "image/png");
+  };
+  const dataUrl = await hooks.fetchNotificationGameIconDataUrl(
+    safeUrl,
+    Date.now() + 1_000
+  );
+  assert.equal(dataUrl,
+    `data:image/png;base64,${Buffer.from(png).toString("base64")}`);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, safeUrl);
+  assert.equal(calls[0].options.method, "GET");
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(calls[0].options.cache, "no-store");
+  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.referrerPolicy, "no-referrer");
+
+  for (const unsafe of [
+    "http://images.rbxcdn.com/icon.png",
+    "https://user@images.rbxcdn.com/icon.png",
+    "https://images.rbxcdn.com:444/icon.png",
+    "https://images.rbxcdn.com/icon.png#fragment",
+    "https://rbxcdn.com.evil.test/icon.png",
+    `https://images.rbxcdn.com/${"x".repeat(2_100)}`
+  ]) {
+    assert.equal(await hooks.fetchNotificationGameIconDataUrl(
+      unsafe,
+      Date.now() + 1_000
+    ), null);
+  }
+  assert.equal(calls.length, 1, "unsafe CDN URLs are rejected before fetch");
+
+  const invalidCases = [
+    schedulerImageResponse(safeUrl, png, "text/html"),
+    schedulerImageResponse(safeUrl, Uint8Array.from([1, 2, 3, 4]), "image/png"),
+    schedulerImageResponse(safeUrl, png, "image/png", {
+      responseUrl: "https://other.rbxcdn.com/redirected.png"
+    }),
+    schedulerImageResponse(safeUrl, png, "image/png", { status: 404 })
+  ];
+  for (const response of invalidCases) {
+    fetchHandler = async () => response;
+    assert.equal(await hooks.fetchNotificationGameIconDataUrl(
+      safeUrl,
+      Date.now() + 1_000
+    ), null);
+  }
+});
+
+test("notifications use a universe game-icon data URL and safely fall back to RoTool", async () => {
+  resetFixture();
+  await createSchedule({ mode: "notify", autoJoinConsent: false });
+  let rawSchedule = (await hooks.getSnapshot()).schedules[0];
+  hooks.setRuntimeOverrides({
+    hasNotificationPermission: async () => notificationPermission,
+    getViewerUserId: async () => viewerUserId,
+    fetchFreshViewerUserId: async () => viewerUserId
+  });
+  const png = Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 10, 11, 12
+  ]);
+  const thumbnailUrl = "https://images.rbxcdn.com/game-2001.png";
+  const calls = [];
+  fetchHandler = async (url, options) => {
+    const href = String(url);
+    calls.push({ url: href, options: plain(options) });
+    if (new URL(href).hostname === "thumbnails.roblox.com") {
+      return schedulerJsonResponse({
+        data: [{ targetId: 2001, state: "Completed", imageUrl: thumbnailUrl }]
+      });
+    }
+    return schedulerImageResponse(href, png, "image/png");
+  };
+  const notificationId = await hooks.createNotification(rawSchedule);
+  assert.equal(notificationId,
+    hooks.getNotificationId(rawSchedule.id, rawSchedule.revision));
+  assert.equal(notificationCreates.length, 1);
+  const created = notificationCreates[0];
+  assert.equal(created.options.iconUrl,
+    `data:image/png;base64,${Buffer.from(png).toString("base64")}`);
+  assert.doesNotMatch(created.options.iconUrl, /^https:/,
+    "Chrome receives bounded image data, never a remote CDN URL");
+  assert.equal(created.options.title, `Join ${GAME.gameName}`);
+  assert.match(created.options.message, /^Fixture Event starts at /);
+  assert.deepEqual(created.options.buttons,
+    [{ title: "Join now" }, { title: "Remove" }]);
+  assert.equal(new URL(calls[0].url).searchParams.get("universeIds"),
+    GAME.universeId);
+  assert.equal(new URL(calls[0].url).searchParams.has("placeIds"), false,
+    "the notification looks up schedule.universeId, not schedule.placeId");
+
+  resetFixture();
+  await createSchedule({ mode: "notify", autoJoinConsent: false });
+  rawSchedule = (await hooks.getSnapshot()).schedules[0];
+  hooks.setRuntimeOverrides({
+    hasNotificationPermission: async () => notificationPermission,
+    getViewerUserId: async () => viewerUserId,
+    fetchFreshViewerUserId: async () => viewerUserId
+  });
+  fetchHandler = async (url) => {
+    const href = String(url);
+    if (new URL(href).hostname === "thumbnails.roblox.com") {
+      return schedulerJsonResponse({
+        data: [{ targetId: 2001, state: "Completed", imageUrl: thumbnailUrl }]
+      });
+    }
+    return schedulerImageResponse(href, png, "text/html");
+  };
+  await hooks.createNotification(rawSchedule, "Safe fallback reminder");
+  assert.equal(notificationCreates.length, 1);
+  assert.equal(notificationCreates[0].options.iconUrl,
+    chrome.runtime.getURL("icons/rotool-128.png"));
+  assert.equal(notificationCreates[0].options.message, "Safe fallback reminder");
+});
+
+test("an account, permission, or feature switch during icon loading creates no notification", async () => {
+  for (const authorityChange of ["account", "permission", "feature"]) {
+    resetFixture();
+    await createSchedule({ mode: "notify", autoJoinConsent: false });
+    const rawSchedule = (await hooks.getSnapshot()).schedules[0];
+    hooks.setRuntimeOverrides({
+      hasNotificationPermission: async () => notificationPermission,
+      getViewerUserId: async () => viewerUserId,
+      fetchFreshViewerUserId: async () => viewerUserId
+    });
+    const thumbnailUrl = `https://images.rbxcdn.com/race-${authorityChange}.png`;
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 21
+    ]);
+    let releaseImage = null;
+    fetchHandler = async (url) => {
+      const href = String(url);
+      if (new URL(href).hostname === "thumbnails.roblox.com") {
+        return schedulerJsonResponse({
+          data: [{ targetId: 2001, state: "Completed", imageUrl: thumbnailUrl }]
+        });
+      }
+      return new Promise((resolve) => {
+        releaseImage = () => resolve(schedulerImageResponse(href, png, "image/png"));
+      });
+    };
+    const pending = hooks.createNotification(rawSchedule);
+    while (!releaseImage) await new Promise((resolve) => setTimeout(resolve, 0));
+    if (authorityChange === "account") viewerUserId = ACCOUNT_B;
+    if (authorityChange === "permission") notificationPermission = false;
+    if (authorityChange === "feature") {
+      featureSettings.rslFeatureSettingsV1.flags.joinScheduler = false;
+      hooks.setFeatureState(false, true);
+    }
+    releaseImage();
+    await assert.rejects(pending, (error) => error?.code === "ACCOUNT_CHANGED");
+    assert.equal(notificationCreates.length, 0,
+      `${authorityChange} authority loss must be rechecked before notifications.create`);
+    featureSettings.rslFeatureSettingsV1.flags.joinScheduler = true;
+    hooks.setFeatureState(true, true);
+  }
 });
 
 test("modern share resolution follows only bounded exact Roblox redirects", async () => {

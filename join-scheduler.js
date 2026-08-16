@@ -17,6 +17,7 @@
   const READ_ONLY_MESSAGE_TIMEOUT_MS = 120_000;
   const READ_ONLY_OPERATIONS = new Set([
     "get-state",
+    "get-game-icons",
     "search-games",
     "validate-destination"
   ]);
@@ -164,6 +165,45 @@
         : null,
       thumbnailUrl
     };
+  }
+
+  function normalizeGameIcon(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const keys = Object.keys(raw).sort();
+    if (
+      keys.length !== 2 ||
+      keys[0] !== "thumbnailUrl" ||
+      keys[1] !== "universeId"
+    ) {
+      return null;
+    }
+    const universeId = typeof raw.universeId === "string"
+      ? raw.universeId
+      : "";
+    if (
+      !/^[1-9]\d{0,19}$/.test(universeId) ||
+      typeof raw.thumbnailUrl !== "string"
+    ) {
+      return null;
+    }
+    try {
+      const thumbnailUrl = new URL(raw.thumbnailUrl);
+      const hostname = thumbnailUrl.hostname.toLowerCase();
+      if (
+        thumbnailUrl.protocol !== "https:" ||
+        thumbnailUrl.username ||
+        thumbnailUrl.password ||
+        thumbnailUrl.port ||
+        thumbnailUrl.hash ||
+        thumbnailUrl.href.length > 2_048 ||
+        (hostname !== "rbxcdn.com" && !hostname.endsWith(".rbxcdn.com"))
+      ) {
+        return null;
+      }
+      return Object.freeze({ universeId, thumbnailUrl: thumbnailUrl.href });
+    } catch {
+      return null;
+    }
   }
 
   function hydrateQuickSettingsHelpIcons(root) {
@@ -584,6 +624,7 @@
     let requestSequence = 0;
     let openSequence = 0;
     let stateLoadSequence = 0;
+    let gameIconLoadSequence = 0;
     let stateLoading = false;
     let destinationValidationSequence = 0;
     let submitting = false;
@@ -657,14 +698,21 @@
 
     function addThumbnail(container, url, label) {
       container.replaceChildren();
+      const fallback = String(label || "?").trim().charAt(0).toUpperCase() || "?";
       if (url) {
         const image = ownerDocument.createElement("img");
         image.src = url;
         image.alt = "";
         image.referrerPolicy = "no-referrer";
+        image.addEventListener("error", () => {
+          if (image.parentElement === container) {
+            container.replaceChildren();
+            container.textContent = fallback;
+          }
+        }, { once: true });
         container.append(image);
       } else {
-        container.textContent = String(label || "?").trim().charAt(0).toUpperCase() || "?";
+        container.textContent = fallback;
       }
     }
 
@@ -845,12 +893,14 @@
       settleInlineConfirmation(false, false);
       invalidateInteraction();
       stateLoadSequence += 1;
+      gameIconLoadSequence += 1;
       stateLoading = false;
       state = { viewerUserId: null, enabled: true, destinations: [], schedules: [] };
       selectedGame = null;
       editingScheduleId = null;
       editingScheduleRevision = null;
       officialDraft = null;
+      thumbnails.clear();
       clearPrivateEntry();
       clearSearch();
       elements.list.replaceChildren();
@@ -915,6 +965,8 @@
       const identity = makeElement("div", "schedule-card__identity");
       const thumbnail = makeElement("span", "schedule-card__thumbnail");
       thumbnail.setAttribute("aria-hidden", "true");
+      thumbnail.dataset.rslScheduleThumbnail = "";
+      thumbnail.dataset.rslUniverseId = schedule.universeId;
       addThumbnail(thumbnail, thumbnails.get(schedule.universeId), schedule.gameName);
       const copy = makeElement("div", "schedule-card__copy");
       const topLine = makeElement("div", "schedule-card__topline");
@@ -996,6 +1048,107 @@
       else elements.summary.textContent = `${schedules.length} schedules`;
     }
 
+    function getGameIconRequestUniverseIds() {
+      const universeIds = [];
+      const seen = new Set();
+      const add = (rawUniverseId) => {
+        const universeId = String(rawUniverseId || "");
+        if (
+          !/^[1-9]\d{0,19}$/.test(universeId) ||
+          seen.has(universeId) ||
+          universeIds.length >= 50
+        ) {
+          return;
+        }
+        seen.add(universeId);
+        universeIds.push(universeId);
+      };
+      add(selectedGame?.universeId);
+      for (const schedule of Array.isArray(state.schedules) ? state.schedules : []) {
+        add(schedule?.universeId);
+      }
+      return universeIds;
+    }
+
+    function repaintScheduleGameIcons() {
+      for (const thumbnail of elements.list.querySelectorAll(
+        "[data-rsl-schedule-thumbnail][data-rsl-universe-id]"
+      )) {
+        const universeId = thumbnail.dataset.rslUniverseId;
+        const schedule = state.schedules.find(
+          (item) => item.universeId === universeId
+        );
+        if (schedule) {
+          addThumbnail(thumbnail, thumbnails.get(universeId), schedule.gameName);
+        }
+      }
+    }
+
+    async function hydrateGameIcons() {
+      const universeIds = getGameIconRequestUniverseIds();
+      const expectedViewerUserId = state.viewerUserId;
+      if (!state.enabled || !expectedViewerUserId || universeIds.length === 0) {
+        return null;
+      }
+      const sequence = ++gameIconLoadSequence;
+      const expectedStateLoadSequence = stateLoadSequence;
+      const selectedSnapshot = selectedGame ? Object.freeze({
+        universeId: selectedGame.universeId,
+        placeId: selectedGame.placeId,
+        viewEpoch,
+        interactionEpoch
+      }) : null;
+      const response = await api("get-game-icons", { universeIds });
+      if (
+        sequence !== gameIconLoadSequence ||
+        expectedStateLoadSequence !== stateLoadSequence ||
+        destroyed ||
+        root.host?.isConnected !== true ||
+        !elements.schedulerDialog.open ||
+        state.viewerUserId !== expectedViewerUserId
+      ) {
+        return response;
+      }
+      const requested = new Set(universeIds);
+      const seen = new Set();
+      const rawIcons = response.gameIcons;
+      if (!Array.isArray(rawIcons) || rawIcons.length > universeIds.length) {
+        return response;
+      }
+      const icons = [];
+      for (const rawIcon of rawIcons) {
+        const icon = normalizeGameIcon(rawIcon);
+        if (
+          !icon ||
+          !requested.has(icon.universeId) ||
+          seen.has(icon.universeId)
+        ) {
+          return response;
+        }
+        seen.add(icon.universeId);
+        icons.push(icon);
+      }
+      for (const icon of icons) {
+        thumbnails.set(icon.universeId, icon.thumbnailUrl);
+      }
+      repaintScheduleGameIcons();
+      if (
+        selectedSnapshot &&
+        activeView === "editor" &&
+        viewEpoch === selectedSnapshot.viewEpoch &&
+        interactionEpoch === selectedSnapshot.interactionEpoch &&
+        selectedGame?.universeId === selectedSnapshot.universeId &&
+        selectedGame?.placeId === selectedSnapshot.placeId
+      ) {
+        addThumbnail(
+          elements.selectedThumbnail,
+          thumbnails.get(selectedSnapshot.universeId),
+          selectedGame.name
+        );
+      }
+      return response;
+    }
+
     function refreshScheduleCountdowns(now = Date.now()) {
       for (const node of elements.list.querySelectorAll("[data-schedule-countdown]")) {
         const schedule = state.schedules.find(
@@ -1066,6 +1219,7 @@
         state.destinations = Array.isArray(response.destinations) ? response.destinations : [];
         state.schedules = Array.isArray(response.schedules) ? response.schedules : [];
         renderSchedules();
+        void hydrateGameIcons().catch(() => undefined);
         if (!state.enabled) {
           setStatus(elements.pageStatus, errorMessage("DISABLED"), "warning");
         } else {
@@ -1183,6 +1337,9 @@
       elements.selectedDetails.textContent = details;
       addThumbnail(elements.selectedThumbnail, game.thumbnailUrl, game.name);
       if (game.thumbnailUrl) thumbnails.set(game.universeId, game.thumbnailUrl);
+      else if (state.enabled && state.viewerUserId) {
+        void hydrateGameIcons().catch(() => undefined);
+      }
       clearSearch();
       renderDestinations();
       updateMode();
@@ -1264,7 +1421,7 @@
         name: officialDraft.gameName,
         creatorName: "",
         playerCount: null,
-        thumbnailUrl: null
+        thumbnailUrl: thumbnails.get(officialDraft.universeId) || null
       });
       elements.scheduleTime.value = toDatetimeLocal(officialDraft.startAt);
       elements.scheduleTime.readOnly = true;
@@ -1620,6 +1777,7 @@
         }
         renderSchedules();
         closeEditor(true);
+        void hydrateGameIcons().catch(() => undefined);
         setStatus(
           elements.pageStatus,
           submitSnapshot.mode === "auto" ? "Auto-join scheduled." : "Reminder scheduled.",
@@ -2176,6 +2334,7 @@
       openSequence += 1;
       invalidateInteraction();
       stateLoadSequence += 1;
+      gameIconLoadSequence += 1;
       destinationValidationSequence += 1;
       searchSequence += 1;
       clearInterval(countdownTimer);
@@ -2438,6 +2597,7 @@
     formatCountdown,
     errorMessage,
     normalizeGame,
+    normalizeGameIcon,
     bindHelpTips,
     hydrateQuickSettingsHelpIcons,
     normalizeSchedulerDraft,

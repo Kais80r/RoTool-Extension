@@ -18,7 +18,7 @@ function functionSource(source, name, nextName) {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-assert.equal(manifest.version, "0.19.4");
+assert.equal(manifest.version, "0.19.5");
 assert.match(manifest.description, /Quick Settings/);
 assert.ok(manifest.host_permissions.includes("https://apis.roblox.com/*"));
 
@@ -89,7 +89,17 @@ const trustedHomeSource = functionSource(
   "handleQuickSettingsReadMessage"
 );
 assert.match(trustedHomeSource, /getTrustedRobloxTopFrameTabId\(sender\)/);
-assert.match(trustedHomeSource, /\^\\\/home\(\?:\\\/\|\$\)\/i/);
+assert.match(trustedHomeSource, /isTrustedRobloxHomePageUrl\(rawUrl\)/);
+const trustedHomeParserSource = functionSource(
+  background,
+  "isTrustedRobloxHomePageUrl",
+  "getLiveBrowserTab"
+);
+assert.ok(
+  trustedHomeParserSource.includes("/^\\/home\\/?$/.test(pathname)") &&
+    trustedHomeParserSource.includes("EXTENSION_UPDATE_ROBLOX_LOCALE_SEGMENTS.has"),
+  "Home trust delegates to the exact root/localized allowlisted route parser"
+);
 assert.match(background, /message\?\.type === QUICK_SETTINGS_READ_MESSAGE_TYPE/);
 assert.match(background, /message\?\.type === QUICK_SETTING_UPDATE_MESSAGE_TYPE/);
 assert.match(background, /message\?\.type === ONLINE_STATUS_UPDATE_MESSAGE_TYPE/);

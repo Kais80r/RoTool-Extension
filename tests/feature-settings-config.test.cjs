@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.4");
+assert.equal(manifest.version, "0.19.5");
 assert.match(manifest.description, /Join Scheduler/i);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -75,7 +75,7 @@ assert.match(
 );
 assert.match(
   content,
-  /key: "updatePopups"[\s\S]*?group: "Interface"[\s\S]*?label: "Update Popups"[\s\S]*?description: "Show update reminders at the top of Roblox\. Available updates still appear in RoTool Settings\."/,
+  /key: "updatePopups"[\s\S]*?group: "Interface"[\s\S]*?label: "RoTool Update Popups"[\s\S]*?description:[\s\S]*?"Show RoTool update reminders at the top of Home\. Updates still appear in RoTool Settings\."[\s\S]*?type: "select"[\s\S]*?key: "updateReminderFrequency"[\s\S]*?label: "Reminder frequency"/,
   "the top-of-page reminder needs an exact, non-system-notification Settings label and scope"
 );
 const friendFiltersDefinitionIndex = content.indexOf('key: "friendFilters"');
@@ -85,7 +85,7 @@ assert.ok(
   friendFiltersDefinitionIndex >= 0 &&
     updatePopupsDefinitionIndex > friendFiltersDefinitionIndex &&
     quickPlayDefinitionIndex > updatePopupsDefinitionIndex,
-  "Update Popups must be the final Interface setting, directly before Experiences"
+  "RoTool Update Popups must be the final Interface setting, directly before Experiences"
 );
 assert.match(
   content,
@@ -161,7 +161,7 @@ assert.match(
 );
 assert.match(
   updatePopupPreferenceSource,
-  /extensionUpdatePopupPreferenceApplied = nextEnabled[\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)[\s\S]*?clearExtensionUpdateStatusTimer\(\)[\s\S]*?removeExtensionUpdateFeedback\(\)[\s\S]*?refreshExtensionUpdateFeedback\(\)/,
+  /extensionUpdatePopupPreferenceApplied = nextEnabled[\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)[\s\S]*?clearExtensionUpdateStatusTimer\(\)[\s\S]*?removeExtensionUpdateFeedback\(\)[\s\S]*?requestExtensionUpdateStatusWhenVisible\(true\)/,
   "an authoritative preference transition must invalidate stale work and reconcile only update surfaces"
 );
 
@@ -252,7 +252,7 @@ assert.match(readme, /can each be enabled or disabled independently/);
 assert.match(readme, /disabling a feature does not erase/);
 assert.match(
   readme,
-  /\*\*Update [Pp]opups\*\* starts on; turning it off hides only the top-of-page reminder while update checks and the Settings status continue\./,
+  /\*\*RoTool Update Popups\*\* starts on[\s\S]*?Turning the parent switch off hides only the Home banner\. RoTool Settings continues to show a known update on any Roblox page without consuming a reminder/,
   "documentation must preserve the distinction between the banner and update status"
 );
 

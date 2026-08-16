@@ -47,6 +47,47 @@ assert.match(destinationSanitizer, /id: destination\.id/);
 assert.match(destinationSanitizer, /label: destination\.label/);
 assert.match(destinationSanitizer, /type: destination\.type/);
 
+const scheduleSanitizer = sourceBetween(
+  background,
+  "function sanitizeJoinSchedulerSchedule",
+  "async function readJoinSchedulerAccountState"
+);
+assert.doesNotMatch(scheduleSanitizer,
+  /thumbnail|iconUrl|imageUrl|dataUrl|privateServerLinkCode|accessCode|shareCode|canonicalUrl|secret/i,
+  "icons are neither persisted in nor exposed through the schedule schema");
+
+const gameIconResponse = sourceBetween(
+  background,
+  "async function getJoinSchedulerGameIconsResponse",
+  "function pruneJoinSchedulerOrphanPublicDestinations"
+);
+assert.match(gameIconResponse,
+  /messageKeys\.length === 4[\s\S]*?"requestId"[\s\S]*?"type"[\s\S]*?"universeIds"[\s\S]*?"viewerUserId"/,
+  "the read operation accepts one exact public-ID payload shape");
+assert.match(gameIconResponse,
+  /getJoinSchedulerViewerUserId\(message, true\)[\s\S]*?getJoinSchedulerGameIcons\(universeIds\)[\s\S]*?assertJoinSchedulerFeatureEnabled\(true\)[\s\S]*?getJoinSchedulerViewerUserId\(\{ viewerUserId \}, true\)/,
+  "feature and viewer authority are rechecked around icon networking");
+assert.doesNotMatch(gameIconResponse,
+  /placeId|gameName|title|startAt|destination|private|secret|url/i);
+
+const notificationIconBoundary = sourceBetween(
+  background,
+  "function settleJoinSchedulerGameIconBeforeDeadline",
+  "async function clearJoinSchedulerAlarm"
+);
+assert.match(notificationIconBoundary,
+  /getJoinSchedulerNotificationGameIconDataUrl\([\s\S]*?schedule\.universeId/,
+  "the worker derives a notification icon from the stored universe identity");
+assert.match(notificationIconBoundary,
+  /data:\$\{mimeType\};base64,/,
+  "only locally encoded bounded bytes are passed as the game image");
+assert.match(notificationIconBoundary,
+  /hasJoinSchedulerNotificationAuthority\(schedule\.accountId\)[\s\S]*?chrome\.notifications\.create/,
+  "authority is freshly rechecked after optional image loading and before creation");
+assert.doesNotMatch(notificationIconBoundary,
+  /chrome\.(?:tabs|windows|scripting)\.|window\.open|page-bridge|privateServerLinkCode|accessCode|shareCode|canonicalUrl/i,
+  "image hydration cannot launch a browser surface or disclose a private bearer");
+
 // Reject an oversized raw value before URL parsing, then accept only the two
 // strict official www.roblox.com private-server forms.
 const privateUrlParser = sourceBetween(
