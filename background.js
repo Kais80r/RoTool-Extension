@@ -221,7 +221,7 @@ const EXTENSION_UPDATE_STORAGE_VERSION = 1;
 const EXTENSION_UPDATE_LATEST_RELEASE_URL =
   "https://api.github.com/repos/Kais80r/RoTool-Extension/releases/latest";
 const EXTENSION_UPDATE_HOW_TO_URL =
-  "https://github.com/Kais80r/RoTool-Extension#updating-an-unpacked-copy-from-github";
+  "https://github.com/Kais80r/RoTool-Extension/blob/main/UPDATING.md";
 const EXTENSION_UPDATE_CACHE_TTL_MS = 24 * 60 * 60_000;
 const EXTENSION_UPDATE_PRESENTATION_TTL_MS = 6 * 60 * 60_000;
 const EXTENSION_UPDATE_FETCH_TIMEOUT_MS = 8_000;

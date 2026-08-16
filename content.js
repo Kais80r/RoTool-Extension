@@ -13,7 +13,7 @@
   const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
     "rsl:get-extension-update-status";
   const EXTENSION_UPDATE_HOW_TO_URL =
-    "https://github.com/Kais80r/RoTool-Extension#updating-an-unpacked-copy-from-github";
+    "https://github.com/Kais80r/RoTool-Extension/blob/main/UPDATING.md";
   const EXTENSION_UPDATE_STATUS_RETRY_MS = 60 * 60_000;
   const EXTENSION_UPDATE_STATUS_MIN_TIMER_MS = 60_000;
   const EXTENSION_UPDATE_STATUS_MAX_TIMER_MS = 24 * 60 * 60_000;
@@ -694,6 +694,12 @@
       group: "Interface",
       label: "Friend Lists & Filters",
       description: "Fix All and add complete friend lists with advanced Filters."
+    }),
+    Object.freeze({
+      key: "updatePopups",
+      group: "Interface",
+      label: "Update Popups",
+      description: "Show update reminders at the top of Roblox. Available updates still appear in RoTool Settings."
     }),
     Object.freeze({
       key: "quickPlay",
@@ -15668,6 +15674,7 @@
       serializeFeatureSettings(nextSettings)
     );
     featureSettings = normalizedNext;
+    applyExtensionUpdatePopupPreferenceTransition(featureSettings);
     featureSettingsPendingWrites += 1;
     featureSettingsSaving = true;
     featureSettingsNotice = "";
@@ -15687,9 +15694,17 @@
       if (featureSettingsEqual(featureSettings, savedSnapshot)) {
         featureSettingsNotice = "Saved automatically.";
       }
+      if (featureSettings.updatePopups === savedSnapshot.updatePopups) {
+        applyExtensionUpdatePopupPreferenceTransition(savedSnapshot, {
+          authoritativeEnable: true
+        });
+      }
     } catch (error) {
       if (featureSettingsEqual(featureSettings, savedSnapshot)) {
         featureSettings = { ...featureSettingsConfirmed };
+        applyExtensionUpdatePopupPreferenceTransition(featureSettings, {
+          authoritativeEnable: true
+        });
         featureSettingsNotice = "That setting could not be saved.";
         featureSettingsNoticeIsError = true;
         scheduleFeatureSettingsReconcile();
@@ -15715,6 +15730,9 @@
           !featureSettingsEqual(featureSettings, deferred)
         ) {
           featureSettings = deferred;
+          applyExtensionUpdatePopupPreferenceTransition(deferred, {
+            authoritativeEnable: true
+          });
           scheduleFeatureSettingsReconcile();
         }
       }
@@ -18960,6 +18978,22 @@
     if (!featureSettingsLoaded) {
       return;
     }
+    const updatePopupsChanged =
+      previousSettings.updatePopups !== nextSettings.updatePopups;
+    if (updatePopupsChanged) {
+      applyExtensionUpdatePopupPreferenceTransition(nextSettings, {
+        authoritativeEnable: featureSettingsPendingWrites === 0
+      });
+      if (
+        FEATURE_SETTING_DEFINITIONS.every(
+          ({ key }) =>
+            key === "updatePopups" ||
+            previousSettings[key] === nextSettings[key]
+        )
+      ) {
+        return;
+      }
+    }
     if (
       previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
       previousSettings.sidebarCustomShortcuts !==
@@ -19557,6 +19591,9 @@
   let extensionUpdateFeedbackRequestId = 0;
   let extensionUpdateSettingsRequestId = 0;
   let extensionUpdateFeedbackRequestPromise = null;
+  let extensionUpdatePopupPreferenceApplied =
+    DEFAULT_FEATURE_SETTINGS.updatePopups !== false;
+  let extensionUpdateFeedbackClaimWhenVisible = false;
   let extensionUpdateStatusTimer = null;
   let extensionUpdateStatusTimerDueAt = 0;
   let extensionUpdateStatusSnapshot = null;
@@ -19776,6 +19813,43 @@
     }
   }
 
+  function isExtensionUpdatePopupEnabled() {
+    return Boolean(
+      featureSettings.updatePopups !== false &&
+      (!featureSettingsLoaded || extensionUpdatePopupPreferenceApplied)
+    );
+  }
+
+  function invalidateExtensionUpdateFeedbackRequest() {
+    extensionUpdateFeedbackRequestId += 1;
+    extensionUpdateFeedbackRequestPromise = null;
+  }
+
+  function applyExtensionUpdatePopupPreferenceTransition(
+    nextSettings,
+    { authoritativeEnable = false } = {}
+  ) {
+    const nextEnabled = nextSettings?.updatePopups !== false;
+    if (nextEnabled && !authoritativeEnable) {
+      return false;
+    }
+    if (extensionUpdatePopupPreferenceApplied === nextEnabled) {
+      return false;
+    }
+
+    extensionUpdatePopupPreferenceApplied = nextEnabled;
+    extensionUpdateFeedbackClaimWhenVisible = Boolean(
+      nextEnabled && document.visibilityState !== "visible"
+    );
+    invalidateExtensionUpdateFeedbackRequest();
+    clearExtensionUpdateStatusTimer();
+    removeExtensionUpdateFeedback();
+    if (featureSettingsLoaded && window.top === window) {
+      void refreshExtensionUpdateFeedback();
+    }
+    return true;
+  }
+
   function replaceExtensionUpdateStatusTimer(nextAt) {
     const now = Date.now();
     const requestedAt = normalizeExtensionUpdateTimestamp(nextAt) ||
@@ -19798,7 +19872,7 @@
 
   function scheduleExtensionUpdateStatusTimer(status) {
     const candidates = [status?.nextCheckAt];
-    if (status?.updateAvailable) {
+    if (status?.updateAvailable && isExtensionUpdatePopupEnabled()) {
       candidates.push(status.nextNoticeAt);
     }
     const validCandidates = candidates.filter(
@@ -19986,6 +20060,7 @@
       latest !== null &&
       compareExtensionUpdateVersions(latest, current) > 0 &&
       installed === current &&
+      isExtensionUpdatePopupEnabled() &&
       window.top === window;
 
     if (!shouldShow) {
@@ -20087,12 +20162,16 @@
       return extensionUpdateFeedbackRequestPromise;
     }
 
+    const popupEnabled = isExtensionUpdatePopupEnabled();
+    if (!popupEnabled) {
+      removeExtensionUpdateFeedback();
+    }
     const requestId = ++extensionUpdateFeedbackRequestId;
     const request = (async () => {
       const response = await sendExtensionUpdateMessage({
         type: EXTENSION_UPDATE_STATUS_MESSAGE_TYPE,
         pageVisible: document.visibilityState === "visible",
-        claimNotice: true
+        claimNotice: popupEnabled
       });
       if (requestId !== extensionUpdateFeedbackRequestId) {
         return null;
@@ -20111,7 +20190,7 @@
         return null;
       }
 
-      if (!normalized.updateAvailable) {
+      if (!normalized.updateAvailable || !isExtensionUpdatePopupEnabled()) {
         removeExtensionUpdateFeedback();
       } else if (normalized.showNotice) {
         renderExtensionUpdateFeedback(normalized);
@@ -20138,15 +20217,23 @@
     return tracked;
   }
 
-  function requestExtensionUpdateStatusWhenVisible() {
-    if (document.visibilityState !== "visible") {
+  function requestExtensionUpdateStatusWhenVisible(force = false) {
+    if (
+      document.visibilityState !== "visible" ||
+      !featureSettingsLoaded
+    ) {
       return;
     }
+    const forceRequest = force || extensionUpdateFeedbackClaimWhenVisible;
+    extensionUpdateFeedbackClaimWhenVisible = false;
     const now = Date.now();
-    if (extensionUpdateFeedbackRequestPromise) {
+    if (extensionUpdateFeedbackRequestPromise && !forceRequest) {
       return;
     }
-    if (extensionUpdateStatusTimerDueAt > now) {
+    if (forceRequest) {
+      invalidateExtensionUpdateFeedbackRequest();
+      clearExtensionUpdateStatusTimer();
+    } else if (extensionUpdateStatusTimerDueAt > now) {
       if (extensionUpdateStatusTimer === null) {
         replaceExtensionUpdateStatusTimer(extensionUpdateStatusTimerDueAt);
       }
@@ -20327,6 +20414,9 @@
         } else if (!featureSettingsEqual(featureSettings, nextSettings)) {
           featureSettings = nextSettings;
           featureSettingsConfirmed = { ...nextSettings };
+          applyExtensionUpdatePopupPreferenceTransition(nextSettings, {
+            authoritativeEnable: true
+          });
           if (featureSettingsLoaded) {
             scheduleFeatureSettingsReconcile();
           }
@@ -20473,10 +20563,13 @@
         }
       })
       .finally(() => {
+        extensionUpdatePopupPreferenceApplied =
+          featureSettings.updatePopups !== false;
         featureSettingsLoaded = true;
         featureSettingsApplied = { ...featureSettings };
         renderFeatureSettingsDialog();
         mountExtensionFeatures();
+        requestExtensionUpdateStatusWhenVisible();
       });
 
     storageGet()
@@ -20540,6 +20633,7 @@
       extensionUpdateFeedbackRequestId += 1;
       extensionUpdateSettingsRequestId += 1;
       extensionUpdateFeedbackRequestPromise = null;
+      extensionUpdateFeedbackClaimWhenVisible = false;
       extensionUpdateStatusSnapshot = null;
       clearExtensionUpdateStatusTimer();
       removeExtensionUpdateFeedback();
@@ -20778,6 +20872,8 @@
       featureSettings = normalizeFeatureSettings(rawValue);
       featureSettingsConfirmed = { ...featureSettings };
       featureSettingsApplied = { ...featureSettings };
+      extensionUpdatePopupPreferenceApplied =
+        featureSettings.updatePopups !== false;
       featureSettingsLoaded = true;
       renderFeatureSettingsDialog();
     };

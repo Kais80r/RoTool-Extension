@@ -11,12 +11,13 @@ const backgroundSource = fs.readFileSync(path.join(projectRoot, "background.js")
 const contentSource = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
+const updatingGuide = fs.readFileSync(path.join(projectRoot, "UPDATING.md"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
 
 const RELEASE_API =
   "https://api.github.com/repos/Kais80r/RoTool-Extension/releases/latest";
 const UPDATE_GUIDE =
-  "https://github.com/Kais80r/RoTool-Extension#updating-an-unpacked-copy-from-github";
+  "https://github.com/Kais80r/RoTool-Extension/blob/main/UPDATING.md";
 const manifestVersionParts = manifest.version.split(".").map(Number);
 const AVAILABLE_VERSION = `${manifestVersionParts[0]}.${manifestVersionParts[1]}.${manifestVersionParts[2] + 1}`;
 const REPLACEMENT_VERSION = `${manifestVersionParts[0]}.${manifestVersionParts[1]}.${manifestVersionParts[2] + 2}`;
@@ -56,7 +57,11 @@ assert.match(
 );
 assert.match(
   backgroundSource,
-  /const EXTENSION_UPDATE_HOW_TO_URL\s*=\s*\r?\n\s*"https:\/\/github\.com\/Kais80r\/RoTool-Extension#updating-an-unpacked-copy-from-github";/
+  /const EXTENSION_UPDATE_HOW_TO_URL\s*=\s*\r?\n\s*"https:\/\/github\.com\/Kais80r\/RoTool-Extension\/blob\/main\/UPDATING\.md";/
+);
+assert.match(
+  contentSource,
+  /const EXTENSION_UPDATE_HOW_TO_URL\s*=\s*\r?\n\s*"https:\/\/github\.com\/Kais80r\/RoTool-Extension\/blob\/main\/UPDATING\.md";/
 );
 assert.match(
   backgroundUpdateSource,
@@ -95,17 +100,40 @@ assert.equal(
   "GitHub CORS must not become a broad extension host grant"
 );
 
-// The main guide is deliberately short: three normal-user steps, followed by
-// one link to the separate technical/updater document.
-assert.ok(updateReadme.length < 900, "the normal update explanation must stay concise");
+// The user-facing destination is a dedicated four-step guide, while the
+// packaged README stays a small legacy landing point and updater internals
+// remain in the separate technical document.
+const expectedUpdatingGuide = [
+  "# How to update RoTool",
+  "",
+  "1. Open the same RoTool folder you selected with **Load unpacked**.",
+  "2. Open its `updater` folder and double-click `Update RoTool.cmd`.",
+  "3. When it finishes, open `edge://extensions` or `chrome://extensions` and press **Reload** on the existing RoTool card.",
+  "4. Refresh Roblox.",
+  "",
+  "Keep the same folder and extension card. Do not remove RoTool, load it again, or move or rename its folder; that can make its saved data appear lost.",
+  "",
+  "For more details, see the [RoTool Updater guide](updater/README.md)."
+].join("\n");
+assert.equal(updatingGuide.replace(/\r\n/g, "\n").trim(), expectedUpdatingGuide);
+assert.ok(updatingGuide.length < 700, "the normal update guide must stay concise");
 assert.deepEqual(
-  [...updateReadme.matchAll(/^(\d+)\.\s+/gm)].map((match) => Number(match[1])),
-  [1, 2, 3]
+  [...updatingGuide.matchAll(/^(\d+)\.\s+/gm)].map((match) => Number(match[1])),
+  [1, 2, 3, 4]
 );
-assert.match(updateReadme, /Double-click `updater\/Update RoTool\.cmd`/);
-assert.match(updateReadme, /press \*\*Reload\*\* on the existing RoTool card/i);
-assert.match(updateReadme, /Refresh Roblox/);
-assert.match(updateReadme, /\[RoTool Updater guide\]\(updater\/README\.md\)/);
+assert.doesNotMatch(
+  updatingGuide,
+  /SHA-?256|checksum|rollback|Secure Preferences|access token|package-files|managed runtime/i,
+  "technical updater internals belong in updater/README.md"
+);
+assert.ok(updateReadme.length < 600, "the packaged README update section must stay a short landing point");
+assert.deepEqual([...updateReadme.matchAll(/^(\d+)\.\s+/gm)], []);
+assert.match(
+  updateReadme,
+  /\[How to update RoTool\]\(https:\/\/github\.com\/Kais80r\/RoTool-Extension\/blob\/main\/UPDATING\.md\)/
+);
+assert.match(updateReadme, /\[technical RoTool Updater guide\]\(updater\/README\.md\)/i);
+assert.doesNotMatch(updateReadme, /\]\(UPDATING\.md\)/, "the packaged README must not contain a broken relative guide link");
 
 // Roblox's native system-feedback hierarchy/classes stay authoritative. RoTool
 // adds only ownership hooks, a real update link, accessibility, collision
@@ -162,6 +190,31 @@ assert.equal(
 assert.match(
   contentUpdateSource,
   /document\.visibilityState !== "visible"[\s\S]*?return;[\s\S]*?requestExtensionUpdateStatusWhenVisible/
+);
+assert.match(
+  contentUpdateSource,
+  /const popupEnabled = isExtensionUpdatePopupEnabled\(\)[\s\S]*?claimNotice: popupEnabled/,
+  "the automatic request must claim popup cooldown only when Update popups is enabled"
+);
+assert.match(
+  contentUpdateSource,
+  /status\?\.updateAvailable && isExtensionUpdatePopupEnabled\(\)[\s\S]*?candidates\.push\(status\.nextNoticeAt\)/,
+  "a disabled popup must not turn a due reminder into a one-minute polling loop"
+);
+assert.match(
+  contentUpdateSource,
+  /installed === current &&\s*isExtensionUpdatePopupEnabled\(\) &&\s*window\.top === window/,
+  "DOM creation must re-check the current popup setting"
+);
+assert.match(
+  contentUpdateSource,
+  /function invalidateExtensionUpdateFeedbackRequest\([\s\S]*?extensionUpdateFeedbackRequestId \+= 1[\s\S]*?extensionUpdateFeedbackRequestPromise = null[\s\S]*?function applyExtensionUpdatePopupPreferenceTransition\([\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)/,
+  "a popup preference change must make every older in-flight response stale"
+);
+assert.match(
+  contentUpdateSource,
+  /const forceRequest = force \|\| extensionUpdateFeedbackClaimWhenVisible[\s\S]*?if \(forceRequest\) \{\s*invalidateExtensionUpdateFeedbackRequest\(\);[\s\S]*?refreshExtensionUpdateFeedback\(\)/,
+  "an authoritative re-enable must start a fresh claiming request immediately"
 );
 const normalUpdateFeedbackStyles = stylesSource.split("/* Fail safe only:")[0];
 assert.doesNotMatch(
@@ -825,6 +878,11 @@ function runtimeMessage(message, sender) {
   const mutationObservers = [];
   let nativeFeedbackStylesAvailable = true;
   let contentMessages = 0;
+  const contentFeatureStorageWrites = [];
+  let contentFeatureStorageSetHandler = (values, callback) => {
+    contentFeatureStorageWrites.push(plain(values));
+    callback?.();
+  };
   let contentMessageHandler = () => {
     contentMessages += 1;
     throw new Error("close must stay local");
@@ -995,6 +1053,13 @@ function runtimeMessage(message, sender) {
       lastError: null,
       getManifest() { return { version: manifest.version }; },
       sendMessage(message, callback) { return contentMessageHandler(message, callback); }
+    },
+    storage: {
+      local: {
+        set(values, callback) {
+          contentFeatureStorageSetHandler(values, callback);
+        }
+      }
     }
   };
   globalThis.MutationObserver = class {
@@ -1011,6 +1076,58 @@ function runtimeMessage(message, sender) {
   delete require.cache[require.resolve(path.join(projectRoot, "content.js"))];
   require(path.join(projectRoot, "content.js"));
   const contentHooks = globalThis.__rslContentTestHooks;
+  assert.equal(contentHooks.defaultFeatureSettings.updatePopups, true);
+  for (const legacy of [null, { version: 1 }, { version: 1, flags: {} }]) {
+    assert.equal(
+      contentHooks.normalizeFeatureSettings(legacy).updatePopups,
+      true,
+      "existing installations must inherit the enabled popup default"
+    );
+  }
+  const explicitlyDisabledPopups = contentHooks.normalizeFeatureSettings({
+    version: 1,
+    flags: { updatePopups: false }
+  });
+  assert.equal(explicitlyDisabledPopups.updatePopups, false);
+  assert.equal(
+    contentHooks.serializeFeatureSettings(explicitlyDisabledPopups).flags.updatePopups,
+    false,
+    "the disabled choice must round-trip through rslFeatureSettingsV1"
+  );
+  assert.equal(
+    contentHooks.serializeFeatureSettings(contentHooks.defaultFeatureSettings)
+      .flags.updatePopups,
+    true,
+    "Reset defaults must restore update popups"
+  );
+  const updatePopupsDefinition = contentHooks.featureDefinitions.find(
+    ({ key }) => key === "updatePopups"
+  );
+  assert.deepEqual(plain(updatePopupsDefinition), {
+    key: "updatePopups",
+    group: "Interface",
+    label: "Update Popups",
+    description:
+      "Show update reminders at the top of Roblox. Available updates still appear in RoTool Settings."
+  });
+  const topLevelFeatureKeys = contentHooks.featureDefinitions.map(({ key }) => key);
+  assert.equal(
+    topLevelFeatureKeys.indexOf("updatePopups"),
+    topLevelFeatureKeys.indexOf("friendFilters") + 1,
+    "Update Popups must follow Friend Lists & Filters at the end of Interface"
+  );
+  assert.equal(
+    topLevelFeatureKeys.indexOf("quickPlay"),
+    topLevelFeatureKeys.indexOf("updatePopups") + 1,
+    "Experiences must begin directly after Update Popups"
+  );
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      updatePopups: true
+    }
+  });
   assert.deepEqual(contentHooks.extensionUpdateFeedbackConstants, {
     feedbackId: "rsl-extension-update-feedback",
     fallbackClass: "rsl-extension-update-feedback--fallback",
@@ -1366,6 +1483,201 @@ function runtimeMessage(message, sender) {
   assert.equal(settingsUpdateRow.hidden, false,
     "dismissing the popup leaves the Settings update row available");
 
+  // Turning off Update popups changes only the top surface. Automatic checks
+  // continue as non-claiming status reads, so they cannot consume the shared
+  // six-hour presentation cooldown, while Settings keeps the known release.
+  contentHooks.resetExtensionUpdateStatusForTests();
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      updatePopups: false
+    }
+  });
+  const disabledPopupMessages = [];
+  contentMessageHandler = (message, callback) => {
+    contentMessages += 1;
+    disabledPopupMessages.push(plain(message));
+    callback({
+      ...knownStatus,
+      checkedAt: statusNow + 10,
+      nextNoticeAt: statusNow + 60_000,
+      nextCheckAt: statusNow + constants.cacheTtlMs + 10,
+      // Even a malformed/compromised response cannot bypass the local flag.
+      showNotice: true
+    });
+  };
+  const disabledStatus = await contentHooks.refreshExtensionUpdateFeedback();
+  assert.equal(disabledStatus.updateAvailable, true);
+  assert.deepEqual(disabledPopupMessages, [{
+    type: constants.messageType,
+    pageVisible: true,
+    claimNotice: false
+  }]);
+  assert.equal(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    null,
+    "a disabled popup setting must never create the top banner"
+  );
+  assert.equal(
+    contentHooks.renderExtensionUpdateFeedback(renderStatus),
+    null,
+    "direct rendering must also honor the current popup setting"
+  );
+  assert.equal(settingsUpdateRow.hidden, false,
+    "the Settings update row is independent from the popup preference");
+  assert.equal(
+    settingsUpdateMessage.textContent,
+    `RoTool ${AVAILABLE_VERSION} is available.`
+  );
+
+  // Switching off is synchronous: remove an existing banner before the local
+  // storage write finishes, and reject a late response that started enabled.
+  contentHooks.resetExtensionUpdateStatusForTests();
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      updatePopups: true
+    }
+  });
+  const bannerBeforeDisable = contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  assert.ok(bannerBeforeDisable);
+  let finishStalePopupRequest = null;
+  const stalePopupMessages = [];
+  contentMessageHandler = (message, callback) => {
+    contentMessages += 1;
+    stalePopupMessages.push(plain(message));
+    if (message.claimNotice) {
+      finishStalePopupRequest = callback;
+      return;
+    }
+    callback({
+      ...knownStatus,
+      checkedAt: statusNow + 19,
+      nextNoticeAt: statusNow + 60_000,
+      nextCheckAt: statusNow + constants.cacheTtlMs + 19,
+      showNotice: false
+    });
+  };
+  const stalePopupRequest = contentHooks.refreshExtensionUpdateFeedback();
+  assert.deepEqual(stalePopupMessages, [{
+    type: constants.messageType,
+    pageVisible: true,
+    claimNotice: true
+  }]);
+
+  let finishPopupDisableSave = null;
+  contentFeatureStorageSetHandler = (values, callback) => {
+    contentFeatureStorageWrites.push(plain(values));
+    finishPopupDisableSave = callback;
+  };
+  const popupDisableSave = contentHooks.saveFeatureSettingsForTests({
+    updatePopups: false
+  });
+  assert.equal(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    null,
+    "switch-off must remove the banner before persistence completes"
+  );
+  for (let index = 0; index < 4 && !finishPopupDisableSave; index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(typeof finishPopupDisableSave, "function");
+  finishPopupDisableSave();
+  const disabledSavedValue = await popupDisableSave;
+  assert.equal(disabledSavedValue.flags.updatePopups, false);
+  assert.deepEqual(
+    stalePopupMessages.map(({ claimNotice }) => claimNotice),
+    [true, false],
+    "switch-off must replace stale claiming work with a non-claiming status check"
+  );
+  contentFeatureStorageSetHandler = (values, callback) => {
+    contentFeatureStorageWrites.push(plain(values));
+    callback?.();
+  };
+
+  finishStalePopupRequest({
+    ...knownStatus,
+    checkedAt: statusNow + 20,
+    nextNoticeAt: statusNow + constants.presentationTtlMs + 20,
+    nextCheckAt: statusNow + constants.cacheTtlMs + 20,
+    showNotice: true
+  });
+  await stalePopupRequest;
+  assert.equal(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    null,
+    "an enabled request resolving after switch-off must not recreate the banner"
+  );
+  assert.equal(settingsUpdateRow.hidden, false,
+    "the late status still updates Settings while its stale popup is suppressed");
+
+  // Re-enabling during an in-flight disabled read must invalidate it and start
+  // exactly one fresh claim instead of reusing the no-claim result or waiting.
+  contentHooks.resetExtensionUpdateStatusForTests();
+  const reenableMessages = [];
+  let finishDisabledInFlight = null;
+  contentMessageHandler = (message, callback) => {
+    contentMessages += 1;
+    reenableMessages.push(plain(message));
+    if (message.claimNotice === false) {
+      finishDisabledInFlight = callback;
+      return;
+    }
+    callback({
+      ...knownStatus,
+      checkedAt: statusNow + 31,
+      nextNoticeAt: statusNow + constants.presentationTtlMs + 31,
+      nextCheckAt: statusNow + constants.cacheTtlMs + 31,
+      showNotice: true
+    });
+  };
+  const disabledInFlight = contentHooks.refreshExtensionUpdateFeedback();
+  assert.equal(typeof finishDisabledInFlight, "function");
+  assert.deepEqual(reenableMessages.map(({ claimNotice }) => claimNotice), [false]);
+
+  const enabledSavedValue = await contentHooks.saveFeatureSettingsForTests({
+    updatePopups: true
+  });
+  assert.equal(enabledSavedValue.flags.updatePopups, true);
+  for (let index = 0; index < 10 && reenableMessages.length < 2; index += 1) {
+    await Promise.resolve();
+  }
+  assert.deepEqual(
+    reenableMessages.map(({ claimNotice }) => claimNotice),
+    [false, true],
+    "re-enable must supersede a pending no-claim read with one fresh cooldown claim"
+  );
+  for (
+    let index = 0;
+    index < 10 && !fakeDocument.getElementById("rsl-extension-update-feedback");
+    index += 1
+  ) {
+    await Promise.resolve();
+  }
+  assert.ok(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    "the fresh claiming response must restore the enabled banner immediately"
+  );
+  const freshReenabledBanner = fakeDocument.getElementById(
+    "rsl-extension-update-feedback"
+  );
+  finishDisabledInFlight({
+    ...knownStatus,
+    checkedAt: statusNow + 30,
+    nextNoticeAt: statusNow + 60_000,
+    nextCheckAt: statusNow + constants.cacheTtlMs + 30,
+    showNotice: false
+  });
+  await disabledInFlight;
+  assert.strictEqual(
+    fakeDocument.getElementById("rsl-extension-update-feedback"),
+    freshReenabledBanner,
+    "the invalidated no-claim response cannot remove the newer enabled banner"
+  );
+  assert.equal(settingsUpdateRow.hidden, false);
+
   const originalDateNow = Date.now;
   let timerNow = originalDateNow();
   Date.now = () => timerNow;
@@ -1373,6 +1685,30 @@ function runtimeMessage(message, sender) {
     contentHooks.resetExtensionUpdateStatusForTests();
     timeouts.clear();
     clearedTimeouts.length = 0;
+    contentHooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: {
+        ...contentHooks.defaultFeatureSettings,
+        updatePopups: false
+      }
+    });
+    contentHooks.scheduleExtensionUpdateStatusTimer({
+      updateAvailable: true,
+      nextNoticeAt: timerNow + 60_000,
+      nextCheckAt: timerNow + 5 * 60 * 60_000
+    });
+    assert.equal(
+      [...timeouts.values()][0].delay,
+      5 * 60 * 60_000,
+      "disabled popups schedule only the next release check, never nextNoticeAt"
+    );
+    contentHooks.setFeatureSettingsForTests({
+      version: 1,
+      flags: {
+        ...contentHooks.defaultFeatureSettings,
+        updatePopups: true
+      }
+    });
     contentHooks.scheduleExtensionUpdateStatusTimer({
       updateAvailable: true,
       nextNoticeAt: timerNow + constants.presentationTtlMs,

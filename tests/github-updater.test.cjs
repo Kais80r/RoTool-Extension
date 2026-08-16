@@ -11,6 +11,7 @@ const updaterSource = fs.readFileSync(path.join(updaterRoot, "Update-RoTool.ps1"
 const commandSource = fs.readFileSync(path.join(updaterRoot, "Update RoTool.cmd"), "utf8");
 const updaterReadme = fs.readFileSync(path.join(updaterRoot, "README.md"), "utf8");
 const mainReadme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
+const updatingGuide = fs.readFileSync(path.join(projectRoot, "UPDATING.md"), "utf8");
 const gitignore = fs.readFileSync(path.join(projectRoot, ".gitignore"), "utf8");
 const ciWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "ci.yml"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(projectRoot, ".github", "workflows", "release.yml"), "utf8");
@@ -21,7 +22,7 @@ const exampleConfiguration = JSON.parse(
 );
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
 
-assert.equal(manifest.version, "0.19.3", "the current release version must match its manifest");
+assert.equal(manifest.version, "0.19.4", "the current release version must match its manifest");
 assert.match(
   updaterSource,
   /^\$script:UpdaterVersion\s*=\s*"1\.2\.3"\s*$/m,
@@ -53,6 +54,11 @@ const expectedPackageFiles = [
 ];
 
 assert.deepEqual(packageFiles, expectedPackageFiles, "managed release allowlist must stay explicit and exact");
+assert.equal(
+  packageFiles.includes("UPDATING.md"),
+  false,
+  "the GitHub-rendered short guide must not change the 21-file updater contract"
+);
 assert.equal(new Set(packageFiles.map((item) => item.toLowerCase())).size, packageFiles.length);
 for (const relative of packageFiles) {
   assert.ok(fs.statSync(path.join(projectRoot, ...relative.split("/"))).isFile(), `${relative} must exist`);
@@ -113,9 +119,17 @@ assert.match(updaterReadme, /Press \*\*Reload\*\* on that same RoTool card/i);
 assert.match(updaterReadme, /never place a GitHub access token/i);
 assert.match(updaterReadme, /Kais80r\/RoTool-Extension/);
 assert.match(mainReadme, /^## Updating an unpacked copy from GitHub$/m);
-assert.match(mainReadme, /double-click `updater\/Update RoTool\.cmd`/i);
-assert.match(mainReadme, /existing RoTool card/i);
-assert.match(mainReadme, /\[RoTool Updater guide\]\(updater\/README\.md\)/);
+assert.match(
+  mainReadme,
+  /\[How to update RoTool\]\(https:\/\/github\.com\/Kais80r\/RoTool-Extension\/blob\/main\/UPDATING\.md\)/
+);
+assert.doesNotMatch(mainReadme, /\]\(UPDATING\.md\)/);
+assert.match(mainReadme, /\[technical RoTool Updater guide\]\(updater\/README\.md\)/i);
+assert.match(updatingGuide, /^# How to update RoTool$/m);
+assert.match(updatingGuide, /open the same RoTool folder/i);
+assert.match(updatingGuide, /double-click `Update RoTool\.cmd`/i);
+assert.match(updatingGuide, /press \*\*Reload\*\* on the existing RoTool card/i);
+assert.match(updatingGuide, /\[RoTool Updater guide\]\(updater\/README\.md\)/);
 assert.match(updaterReadme, /RoTool-setup\.zip/);
 assert.match(updaterReadme, /Preferences.*Secure Preferences|Secure Preferences.*Preferences/i);
 assert.match(updaterReadme, /extension-registration metadata/i);

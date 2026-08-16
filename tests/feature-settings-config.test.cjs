@@ -11,7 +11,7 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.3");
+assert.equal(manifest.version, "0.19.4");
 assert.match(manifest.description, /Join Scheduler/i);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -26,6 +26,7 @@ for (const key of [
   "quickSettingsOnlineStatus",
   "quickSettingsCurrentExperience",
   "quickSettingsInventory",
+  "updatePopups",
   "bestFriends",
   "friendFilters",
   "quickPlay",
@@ -72,6 +73,25 @@ assert.match(
   /key: "sidebarServerHistory"[\s\S]*?label: "Server History"/,
   "the independently remembered Server History sidebar choice must default on"
 );
+assert.match(
+  content,
+  /key: "updatePopups"[\s\S]*?group: "Interface"[\s\S]*?label: "Update Popups"[\s\S]*?description: "Show update reminders at the top of Roblox\. Available updates still appear in RoTool Settings\."/,
+  "the top-of-page reminder needs an exact, non-system-notification Settings label and scope"
+);
+const friendFiltersDefinitionIndex = content.indexOf('key: "friendFilters"');
+const updatePopupsDefinitionIndex = content.indexOf('key: "updatePopups"');
+const quickPlayDefinitionIndex = content.indexOf('key: "quickPlay"');
+assert.ok(
+  friendFiltersDefinitionIndex >= 0 &&
+    updatePopupsDefinitionIndex > friendFiltersDefinitionIndex &&
+    quickPlayDefinitionIndex > updatePopupsDefinitionIndex,
+  "Update Popups must be the final Interface setting, directly before Experiences"
+);
+assert.match(
+  content,
+  /FEATURE_SETTING_DEFINITIONS\.map\(\(\{ key, defaultEnabled \}\) =>\s*\[\s*key,\s*defaultEnabled !== false\s*\]\s*\)/,
+  "missing updatePopups flags must inherit the enabled default without a storage-schema migration"
+);
 
 assert.match(content, /header\.querySelector\("#navbar-settings"\)/);
 assert.match(content, /button\.setAttribute\("aria-label", "RoTool Settings"\)/);
@@ -113,6 +133,70 @@ assert.match(content, /contentTestHooks\.setFeatureSettingsForTests/);
 assert.match(content, /contentTestHooks\.saveFeatureSettingsForTests/);
 assert.match(content, /contentTestHooks\.setBestFriendsHomeVisibility/);
 assert.match(content, /contentTestHooks\.syncFeatureSettingsButtonGeometry/);
+
+const requestUpdateWhenVisibleSource = content.slice(
+  content.indexOf("  function requestExtensionUpdateStatusWhenVisible("),
+  content.indexOf("  function isInsideRoToolDialog(")
+);
+assert.match(
+  requestUpdateWhenVisibleSource,
+  /document\.visibilityState !== "visible"[\s\S]*?!featureSettingsLoaded[\s\S]*?return;/,
+  "automatic update requests must wait for the authoritative stored updatePopups value"
+);
+assert.match(
+  content,
+  /\.finally\(\(\) => \{\s*extensionUpdatePopupPreferenceApplied =\s*featureSettings\.updatePopups !== false;[\s\S]*?featureSettingsLoaded = true;[\s\S]*?featureSettingsApplied = \{ \.\.\.featureSettings \};[\s\S]*?requestExtensionUpdateStatusWhenVisible\(\);/,
+  "startup must request update status only after feature settings become authoritative"
+);
+
+const updatePopupPreferenceSource = content.slice(
+  content.indexOf("  function applyExtensionUpdatePopupPreferenceTransition("),
+  content.indexOf("  function replaceExtensionUpdateStatusTimer(")
+);
+assert.match(updatePopupPreferenceSource, /const nextEnabled = nextSettings\?\.updatePopups !== false/);
+assert.match(
+  updatePopupPreferenceSource,
+  /nextEnabled && !authoritativeEnable[\s\S]*?return false/,
+  "a speculative local enable must wait for its storage write before claiming a cooldown"
+);
+assert.match(
+  updatePopupPreferenceSource,
+  /extensionUpdatePopupPreferenceApplied = nextEnabled[\s\S]*?invalidateExtensionUpdateFeedbackRequest\(\)[\s\S]*?clearExtensionUpdateStatusTimer\(\)[\s\S]*?removeExtensionUpdateFeedback\(\)[\s\S]*?refreshExtensionUpdateFeedback\(\)/,
+  "an authoritative preference transition must invalidate stale work and reconcile only update surfaces"
+);
+
+const featureReconcileSource = content.slice(
+  content.indexOf("  function reconcileFeatureSettings("),
+  content.indexOf("  function queueMount(")
+);
+const updatePopupsReconcileSource = featureReconcileSource.slice(
+  featureReconcileSource.indexOf("const updatePopupsChanged"),
+  featureReconcileSource.indexOf("previousSettings.sidebarShortcuts")
+);
+assert.match(
+  updatePopupsReconcileSource,
+  /applyExtensionUpdatePopupPreferenceTransition\(nextSettings, \{[\s\S]*?authoritativeEnable: featureSettingsPendingWrites === 0/
+);
+assert.match(
+  updatePopupsReconcileSource,
+  /FEATURE_SETTING_DEFINITIONS\.every\([\s\S]*?key === "updatePopups"[\s\S]*?return;/,
+  "an updatePopups-only change must stop before unrelated feature reconciliation"
+);
+assert.doesNotMatch(
+  updatePopupsReconcileSource,
+  /cleanupSidebarFeature|cleanupQuickSettingsHome|cleanupQuickPlayFeature|cleanupGameTileCcuFeature|mountExtensionFeatures/,
+  "the popup switch must not remount or clean unrelated features"
+);
+
+const featureStorageChangeSource = content.slice(
+  content.indexOf("    chrome.storage.onChanged.addListener("),
+  content.indexOf("    const featureLoadGeneration")
+);
+assert.match(
+  featureStorageChangeSource,
+  /featureSettings = nextSettings;[\s\S]*?applyExtensionUpdatePopupPreferenceTransition\(nextSettings, \{\s*authoritativeEnable: true[\s\S]*?scheduleFeatureSettingsReconcile\(\)/,
+  "a cross-tab switch-off must remove the banner immediately and then use targeted reconciliation"
+);
 
 assert.match(content, /if \(isFeatureEnabled\("sidebarShortcuts"\)\)/);
 assert.match(content, /const presenceFiltersEnabled = isFeatureEnabled\("friendFilters"\)/);
@@ -166,5 +250,10 @@ assert.match(styles, /\.rsl-feature-settings__input:focus-visible/);
 assert.match(readme, /button directly beside Roblox's Settings gear/);
 assert.match(readme, /can each be enabled or disabled independently/);
 assert.match(readme, /disabling a feature does not erase/);
+assert.match(
+  readme,
+  /\*\*Update [Pp]opups\*\* starts on; turning it off hides only the top-of-page reminder while update checks and the Settings status continue\./,
+  "documentation must preserve the distinction between the banner and update status"
+);
 
 console.log("PASS RoTool feature settings navigation, persistence, gates, and documentation");
