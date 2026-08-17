@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RoTool",
   "short_name": "RoTool",
-  "version": "0.19.5",
+  "version": "0.19.6",
   "minimum_chrome_version": "102",
   "description": "Join Scheduler, Game Events, Server History, Quick Settings, Quick Play, Random Server, Private Servers, Best Friends & ID copying.",
   "permissions": [
@@ -23,6 +23,7 @@
   },
   "host_permissions": [
     "https://www.roblox.com/*",
+    "https://create.roblox.com/*",
     "https://thumbnails.roblox.com/*",
     "https://friends.roblox.com/*",
     "https://users.roblox.com/*",
@@ -71,7 +72,7 @@
       "js": [
         "context-copy.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [

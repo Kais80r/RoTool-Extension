@@ -21,25 +21,54 @@ const EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX = 24;
 const EXPERIENCE_PLACE_THUMBNAIL_SIZE = "150x150";
 
 const CONTEXT_MENU_PREFIX = "rsl-context";
+const CONTEXT_COPY_READY_MESSAGE_TYPE = "rsl:context-copy-ready";
+const CONTEXT_COPY_TARGET_MESSAGE_TYPE = "rsl:get-context-copy-target";
+const CONTEXT_COPY_RUNTIME_VERSION = 2;
+const CONTEXT_COPY_TARGET_VERSION = 1;
+const CONTEXT_COPY_TARGET_MAX_AGE_MS = 30_000;
 const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
 const FEATURE_SETTINGS_VERSION = 1;
 const COPY_ROBLOX_IDS_FEATURE_KEY = "copyRobloxIds";
 let copyRobloxIdsEnabled = true;
+const CONTEXT_MENU_ROBLOX_LOCALE_SEGMENTS = Object.freeze([
+  "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+  "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+]);
+const CONTEXT_MENU_ROBLOX_LOCALE_SET = new Set(
+  CONTEXT_MENU_ROBLOX_LOCALE_SEGMENTS
+);
+
+function expandLocalizedContextMenuPatterns(patterns) {
+  const expanded = [];
+  const wwwPrefix = "https://www.roblox.com/";
+  for (const pattern of patterns) {
+    expanded.push(pattern);
+    if (!pattern.startsWith(wwwPrefix)) {
+      continue;
+    }
+    const suffix = pattern.slice(wwwPrefix.length);
+    for (const locale of CONTEXT_MENU_ROBLOX_LOCALE_SEGMENTS) {
+      expanded.push(`${wwwPrefix}${locale}/${suffix}`);
+    }
+  }
+  return Object.freeze(expanded);
+}
+
 const CONTEXT_MENU_DOCUMENT_PATTERNS = Object.freeze([
   "https://www.roblox.com/*",
   "https://create.roblox.com/*"
 ]);
 const CONTEXT_MENU_ROUTE_PATTERNS = Object.freeze({
-  user: Object.freeze(["https://www.roblox.com/users/*"]),
-  place: Object.freeze([
+  user: expandLocalizedContextMenuPatterns(["https://www.roblox.com/users/*"]),
+  place: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/games/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/places/*"
   ]),
-  universe: Object.freeze([
+  universe: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/games/*",
     "https://create.roblox.com/dashboard/creations/experiences/*"
   ]),
-  asset: Object.freeze([
+  asset: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/catalog/*",
     "https://www.roblox.com/library/*",
     "https://www.roblox.com/asset/*",
@@ -47,7 +76,7 @@ const CONTEXT_MENU_ROUTE_PATTERNS = Object.freeze({
     "https://create.roblox.com/marketplace/asset/*",
     "https://create.roblox.com/dashboard/creations/store/*"
   ]),
-  community: Object.freeze([
+  community: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/communities/*",
     "https://www.roblox.com/groups/*",
     "https://create.roblox.com/dashboard/group/profile*",
@@ -55,30 +84,30 @@ const CONTEXT_MENU_ROUTE_PATTERNS = Object.freeze({
     "https://create.roblox.com/dashboard/group/payouts*",
     "https://create.roblox.com/dashboard/creations/upload*"
   ]),
-  communityRole: Object.freeze([
+  communityRole: expandLocalizedContextMenuPatterns([
     "https://create.roblox.com/dashboard/group/roles/*"
   ]),
-  bundle: Object.freeze(["https://www.roblox.com/bundles/*"]),
-  badge: Object.freeze([
+  bundle: expandLocalizedContextMenuPatterns(["https://www.roblox.com/bundles/*"]),
+  badge: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/badges/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/badges/*"
   ]),
-  gamePass: Object.freeze([
+  gamePass: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/game-pass/*",
     "https://www.roblox.com/game-passes/*",
     "https://www.roblox.com/passes/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/passes/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/monetization/passes/*"
   ]),
-  outfit: Object.freeze([
+  outfit: expandLocalizedContextMenuPatterns([
     "https://www.roblox.com/outfits/*",
     "https://www.roblox.com/users/*/outfits/*"
   ]),
-  developerProduct: Object.freeze([
+  developerProduct: expandLocalizedContextMenuPatterns([
     "https://create.roblox.com/dashboard/creations/experiences/*/developer-products/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/monetization/developer-products/*"
   ]),
-  experienceSubscription: Object.freeze([
+  experienceSubscription: expandLocalizedContextMenuPatterns([
     "https://create.roblox.com/dashboard/creations/experiences/*/experience-subscriptions/*",
     "https://create.roblox.com/dashboard/creations/experiences/*/monetization/experience-subscriptions/*"
   ])
@@ -92,16 +121,22 @@ const CONTEXT_MENU_ACTIONS = Object.freeze([
     action: "userId"
   }),
   Object.freeze({
-    key: "place",
-    title: "Copy Place ID",
-    route: "place",
-    action: "placeId"
-  }),
-  Object.freeze({
-    key: "universe",
-    title: "Copy Universe ID",
-    route: "universe",
-    action: "universeId"
+    key: "game-ids",
+    title: "Copy Game IDs",
+    children: Object.freeze([
+      Object.freeze({
+        key: "place",
+        title: "Copy Place ID",
+        route: "place",
+        action: "placeId"
+      }),
+      Object.freeze({
+        key: "universe",
+        title: "Copy Universe ID / Game ID",
+        route: "universe",
+        action: "universeId"
+      })
+    ])
   }),
   Object.freeze({
     key: "asset-ids",
@@ -233,11 +268,12 @@ const EXTENSION_UPDATE_STORAGE_VERSION = 1;
 const EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY =
   "rslExtensionUpdatePreferenceV1";
 const EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION = 1;
-const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "6h";
+const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "3h";
 const EXTENSION_UPDATE_REMINDER_FREQUENCIES = Object.freeze({
   home: null,
   "30m": 30 * 60_000,
   "1h": 60 * 60_000,
+  "3h": 3 * 60 * 60_000,
   "6h": 6 * 60 * 60_000,
   "24h": 24 * 60 * 60_000
 });
@@ -313,6 +349,8 @@ const SERVER_HISTORY_MAX_SESSIONS = 30;
 const SERVER_HISTORY_MAX_ACCOUNTS = 8;
 const SERVER_HISTORY_CONTINUITY_GAP_MS = 3 * 60_000;
 const SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH = 100;
+const SERVER_HISTORY_PLACE_NAME_LOOKUP_CONCURRENCY = 6;
+const SERVER_HISTORY_PLACE_NAME_LOOKUP_DEADLINE_MS = 4_000;
 const SERVER_HISTORY_FALLBACK_LOCALE = "en-US";
 const GAME_EVENTS_FEATURE_KEY = "gameEvents";
 const GAME_EVENTS_STORAGE_KEY = "rslGameEventFavoritesV1";
@@ -1120,6 +1158,7 @@ function parseRobloxContextUrl(rawUrl) {
     url.protocol !== "https:" ||
     url.username ||
     url.password ||
+    url.port ||
     (url.hostname !== "www.roblox.com" && url.hostname !== "create.roblox.com")
   ) {
     return null;
@@ -1129,7 +1168,7 @@ function parseRobloxContextUrl(rawUrl) {
   if (
     url.hostname === "www.roblox.com" &&
     segments.length > 1 &&
-    /^[a-z]{2}(?:-[a-z]{2})?$/i.test(segments[0])
+    CONTEXT_MENU_ROBLOX_LOCALE_SET.has(segments[0].toLowerCase())
   ) {
     segments.shift();
   }
@@ -1312,6 +1351,10 @@ function getAssetDetails(assetId) {
     const creator = payload?.Creator || payload?.creator || {};
     return Object.freeze({
       assetId: normalizedAssetId,
+      name: normalizeServerHistoryText(
+        payload?.Name ?? payload?.name,
+        SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
+      ),
       productId: normalizeOptionalId(payload?.ProductId ?? payload?.productId),
       assetTypeId: normalizeOptionalId(payload?.AssetTypeId ?? payload?.assetTypeId),
       creatorId: normalizeOptionalId(
@@ -1631,6 +1674,17 @@ function getContextMenuId(scope, action) {
   return `${CONTEXT_MENU_PREFIX}:${scope}:${action}`;
 }
 
+function getContextMenuItemRoutePatterns(item) {
+  if (!item?.children) {
+    return getContextRoutePatterns(item?.route);
+  }
+  return Object.freeze(Array.from(new Set(
+    item.children.flatMap((child) =>
+      getContextRoutePatterns(child.route || item.route)
+    )
+  )));
+}
+
 function createContextMenuItem(properties) {
   chrome.contextMenus.create(properties, () => {
     void chrome.runtime.lastError;
@@ -1639,7 +1693,7 @@ function createContextMenuItem(properties) {
 
 function createContextMenuScope(scope) {
   for (const item of CONTEXT_MENU_ACTIONS) {
-    const routePatterns = getContextRoutePatterns(item.route);
+    const routePatterns = getContextMenuItemRoutePatterns(item);
     const properties = {
       id: getContextMenuId(scope, item.key),
       title: item.title,
@@ -1652,11 +1706,20 @@ function createContextMenuScope(scope) {
     if (item.children) {
       createContextMenuItem(properties);
       for (const child of item.children) {
-        createContextMenuItem({
+        const childRoutePatterns = getContextRoutePatterns(child.route || item.route);
+        const childProperties = {
           ...properties,
           id: getContextMenuId(scope, `${item.key}-${child.key}`),
           parentId: properties.id,
-          title: child.title
+          title: child.title,
+          documentUrlPatterns:
+            scope === "page" ? childRoutePatterns : CONTEXT_MENU_DOCUMENT_PATTERNS
+        };
+        if (scope === "target") {
+          childProperties.targetUrlPatterns = childRoutePatterns;
+        }
+        createContextMenuItem({
+          ...childProperties
         });
       }
       continue;
@@ -1742,26 +1805,181 @@ function isContextActionAvailable(action, context) {
   return false;
 }
 
-function sendMessageToTab(tabId, frameId, message) {
+function isTrustedContextCopyDocumentUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.protocol === "https:" &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === "" &&
+      (url.hostname === "www.roblox.com" || url.hostname === "create.roblox.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sendMessageToTab(tabId, message) {
   return new Promise((resolve) => {
-    const options = Number.isInteger(frameId) ? { frameId } : undefined;
     const callback = (response) => {
       const error = chrome.runtime.lastError;
-      resolve(error ? null : response || null);
+      resolve({
+        delivered: !error,
+        response: error ? null : response || null,
+        error: error ? String(error.message || "MESSAGE_FAILED") : null
+      });
     };
-    if (options) {
-      chrome.tabs.sendMessage(tabId, message, options, callback);
-    } else {
-      chrome.tabs.sendMessage(tabId, message, callback);
+    try {
+      chrome.tabs.sendMessage(tabId, message, { frameId: 0 }, callback);
+    } catch (error) {
+      resolve({
+        delivered: false,
+        response: null,
+        error: String(error?.message || "MESSAGE_FAILED")
+      });
     }
   });
+}
+
+function runContextCopyScriptingMethod(methodName, details) {
+  return new Promise((resolve) => {
+    const method = chrome.scripting?.[methodName];
+    if (typeof method !== "function") {
+      resolve(false);
+      return;
+    }
+    try {
+      method.call(chrome.scripting, details, () => {
+        const error = chrome.runtime.lastError;
+        resolve(!error);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+function isContextCopyHelperReady(delivery) {
+  return Boolean(
+    delivery?.delivered &&
+    delivery.response?.ok === true &&
+    delivery.response?.version === CONTEXT_COPY_RUNTIME_VERSION
+  );
+}
+
+async function ensureContextCopyHelper(tabId, tabUrl) {
+  const ready = await sendMessageToTab(tabId, {
+    type: CONTEXT_COPY_READY_MESSAGE_TYPE
+  });
+  if (isContextCopyHelperReady(ready)) {
+    return true;
+  }
+  if (!isTrustedContextCopyDocumentUrl(tabUrl)) {
+    return false;
+  }
+
+  await runContextCopyScriptingMethod("insertCSS", {
+    target: { tabId, frameIds: [0] },
+    files: ["context-copy.css"]
+  });
+  const injected = await runContextCopyScriptingMethod("executeScript", {
+    target: { tabId, frameIds: [0] },
+    files: ["context-copy.js"],
+    world: "ISOLATED"
+  });
+  if (!injected) {
+    return false;
+  }
+
+  return isContextCopyHelperReady(await sendMessageToTab(tabId, {
+    type: CONTEXT_COPY_READY_MESSAGE_TYPE
+  }));
+}
+
+function warmContextCopyHelpersInOpenTabs() {
+  if (typeof chrome.tabs?.query !== "function") {
+    return;
+  }
+  chrome.tabs.query(
+    { url: Array.from(CONTEXT_MENU_DOCUMENT_PATTERNS) },
+    (tabs) => {
+      void chrome.runtime.lastError;
+      for (const tab of Array.isArray(tabs) ? tabs : []) {
+        if (
+          Number.isInteger(tab?.id) &&
+          isTrustedContextCopyDocumentUrl(tab.url)
+        ) {
+          void ensureContextCopyHelper(tab.id, tab.url);
+        }
+      }
+    }
+  );
+}
+
+function normalizeContextCopyTargetSnapshot(rawValue, expectedPageUrl) {
+  if (
+    !rawValue ||
+    typeof rawValue !== "object" ||
+    rawValue.version !== CONTEXT_COPY_TARGET_VERSION ||
+    !Number.isFinite(rawValue.capturedAt) ||
+    Date.now() - rawValue.capturedAt < 0 ||
+    Date.now() - rawValue.capturedAt > CONTEXT_COPY_TARGET_MAX_AGE_MS ||
+    typeof rawValue.pageUrl !== "string" ||
+    rawValue.pageUrl !== expectedPageUrl ||
+    !isTrustedContextCopyDocumentUrl(rawValue.pageUrl) ||
+    !rawValue.ids ||
+    typeof rawValue.ids !== "object"
+  ) {
+    return null;
+  }
+
+  const sourceContext = typeof rawValue.sourceUrl === "string" &&
+    rawValue.sourceUrl.length <= 2_048
+    ? parseRobloxContextUrl(rawValue.sourceUrl)
+    : null;
+  const placeId = normalizeOptionalId(rawValue.ids.placeId);
+  const userId = normalizeOptionalId(rawValue.ids.userId);
+  if (
+    (placeId && sourceContext?.placeId && placeId !== sourceContext.placeId) ||
+    (userId && sourceContext?.userId && userId !== sourceContext.userId)
+  ) {
+    return null;
+  }
+  if (!sourceContext && !placeId && !userId) {
+    return null;
+  }
+  return Object.freeze({
+    ...(sourceContext || {}),
+    ...(placeId ? { placeId } : {}),
+    ...(userId ? { userId } : {})
+  });
+}
+
+async function consumeContextCopyTarget(tabId, info, tabUrl) {
+  if (Number.isInteger(info?.frameId) && info.frameId !== 0) {
+    return null;
+  }
+  const delivery = await sendMessageToTab(tabId, {
+    type: CONTEXT_COPY_TARGET_MESSAGE_TYPE
+  });
+  if (
+    !delivery.delivered ||
+    delivery.response?.ok !== true ||
+    delivery.response?.version !== CONTEXT_COPY_TARGET_VERSION
+  ) {
+    return null;
+  }
+  return normalizeContextCopyTargetSnapshot(delivery.response.snapshot, tabUrl);
 }
 
 async function handleContextMenuClick(info, tab) {
   if (
     !copyRobloxIdsEnabled ||
     !Number.isInteger(tab?.id) ||
-    typeof info?.menuItemId !== "string"
+    typeof info?.menuItemId !== "string" ||
+    !isTrustedContextCopyDocumentUrl(tab.url) ||
+    (info.pageUrl && !isTrustedContextCopyDocumentUrl(info.pageUrl))
   ) {
     return;
   }
@@ -1786,10 +2004,27 @@ async function handleContextMenuClick(info, tab) {
     return;
   }
 
-  const candidateUrls = scope === "target" ? [info.linkUrl, info.srcUrl] : [info.pageUrl];
-  const context = candidateUrls
-    .map((candidateUrl) => parseRobloxContextUrl(candidateUrl))
-    .find((candidate) => isContextActionAvailable(action, candidate)) || null;
+  if (!await ensureContextCopyHelper(tab.id, tab.url)) {
+    return;
+  }
+
+  const capturedContext = await consumeContextCopyTarget(tab.id, info, tab.url);
+  const candidateContexts = [];
+  if (scope === "target") {
+    candidateContexts.push(parseRobloxContextUrl(info.linkUrl));
+  }
+  candidateContexts.push(capturedContext);
+  if (scope === "target") {
+    candidateContexts.push(parseRobloxContextUrl(info.srcUrl));
+  }
+  candidateContexts.push(
+    parseRobloxContextUrl(info.pageUrl),
+    parseRobloxContextUrl(info.frameUrl),
+    parseRobloxContextUrl(tab.url)
+  );
+  const context = candidateContexts.find((candidate) =>
+    isContextActionAvailable(action, candidate)
+  ) || null;
   const supportedContext = isContextActionAvailable(action, context) ? context : null;
   const needsLookup =
     (action === "universeId" && !supportedContext?.universeId) ||
@@ -1800,7 +2035,7 @@ async function handleContextMenuClick(info, tab) {
     ));
 
   if (needsLookup) {
-    await sendMessageToTab(tab.id, info.frameId, {
+    await sendMessageToTab(tab.id, {
       type: "rsl:show-context-toast",
       kind: "progress",
       message: "Looking up Roblox information\u2026"
@@ -1809,11 +2044,14 @@ async function handleContextMenuClick(info, tab) {
 
   try {
     const result = await getContextCopyResult(supportedContext, action);
-    await sendMessageToTab(tab.id, info.frameId, {
+    const copied = await sendMessageToTab(tab.id, {
       type: "rsl:copy-context-text",
       text: result.text,
       confirmation: result.confirmation
     });
+    if (!copied.delivered || copied.response?.ok !== true) {
+      return;
+    }
   } catch (error) {
     const message =
       error instanceof ContextCopyError
@@ -1823,7 +2061,7 @@ async function handleContextMenuClick(info, tab) {
           : error?.status === 429
             ? "Roblox is rate-limiting lookups. Try again in a moment."
             : "That Roblox information could not be retrieved right now.";
-    await sendMessageToTab(tab.id, info.frameId, {
+    await sendMessageToTab(tab.id, {
       type: "rsl:show-context-toast",
       kind: "error",
       message
@@ -7235,19 +7473,73 @@ async function fetchServerHistoryExperienceDetails(
       experienceName: normalizeServerHistoryText(
         entry?.name,
         SERVER_HISTORY_EXPERIENCE_NAME_MAX_LENGTH
-      )
+      ),
+      rootPlaceId: normalizeOptionalId(entry?.rootPlaceId)
     });
   }
   return details;
 }
 
-function sanitizeServerHistorySessionForResponse(session, details = null) {
+async function fetchServerHistoryPlaceDetails(sessions) {
+  const candidatePlaceIds = [];
+  const seenPlaceIds = new Set();
+  for (const session of Array.isArray(sessions) ? sessions : []) {
+    const placeId = normalizeId(session?.placeId);
+    const rootPlaceId = normalizeOptionalId(session?.rootPlaceId);
+    if (
+      !placeId ||
+      (rootPlaceId && placeId === rootPlaceId) ||
+      seenPlaceIds.has(placeId)
+    ) {
+      continue;
+    }
+    seenPlaceIds.add(placeId);
+    candidatePlaceIds.push(placeId);
+    if (candidatePlaceIds.length >= SERVER_HISTORY_MAX_SESSIONS) break;
+  }
+
+  const details = new Map();
+  const lookup = runWithConcurrency(
+    candidatePlaceIds,
+    SERVER_HISTORY_PLACE_NAME_LOOKUP_CONCURRENCY,
+    async (placeId) => {
+      try {
+        const asset = await getAssetDetails(placeId);
+        if (
+          asset?.assetId !== placeId ||
+          asset?.assetTypeId !== "9" ||
+          !asset?.name
+        ) {
+          return;
+        }
+        details.set(placeId, Object.freeze({ placeName: asset.name }));
+      } catch {
+        // Place classification and the exact Place ID remain useful without a name.
+      }
+    }
+  );
+  let deadline = null;
+  const deadlineReached = new Promise((resolve) => {
+    deadline = setTimeout(resolve, SERVER_HISTORY_PLACE_NAME_LOOKUP_DEADLINE_MS);
+  });
+  await Promise.race([lookup, deadlineReached]);
+  clearTimeout(deadline);
+  return new Map(details);
+}
+
+function sanitizeServerHistorySessionForResponse(
+  session,
+  details = null,
+  placeDetails = null
+) {
   const experienceName = details?.experienceName || "Unknown Experience";
   return Object.freeze({
     sessionId: session.sessionId,
     placeId: session.placeId,
     universeId: session.universeId,
+    rootPlaceId: session.rootPlaceId || details?.rootPlaceId || null,
     experienceName,
+    placeName: placeDetails?.placeName || null,
     firstSeenAt: session.firstSeenAt,
     lastSeenAt: session.lastSeenAt
   });
@@ -7289,15 +7581,19 @@ async function getServerHistoryResponse(
     return { ok: false, requestId, errorCode: "unavailable" };
   }
   const account = storage.accounts[viewerUserId] || createEmptyServerHistoryAccount();
-  let details = new Map();
-  try {
-    details = await fetchServerHistoryExperienceDetails(
+  const [experienceDetailsResult, placeDetailsResult] = await Promise.allSettled([
+    fetchServerHistoryExperienceDetails(
       account.sessions.map((session) => session.universeId).filter(Boolean),
       locale
-    );
-  } catch {
-    // Stored place/timestamp data still makes the local history useful offline.
-  }
+    ),
+    fetchServerHistoryPlaceDetails(account.sessions)
+  ]);
+  const details = experienceDetailsResult.status === "fulfilled"
+    ? experienceDetailsResult.value
+    : new Map();
+  const placeDetails = placeDetailsResult.status === "fulfilled"
+    ? placeDetailsResult.value
+    : new Map();
   return {
     ok: true,
     requestId,
@@ -7305,7 +7601,8 @@ async function getServerHistoryResponse(
     sessions: account.sessions.map((session) =>
       sanitizeServerHistorySessionForResponse(
         session,
-        session.universeId ? details.get(session.universeId) : null
+        session.universeId ? details.get(session.universeId) : null,
+        placeDetails.get(session.placeId) || null
       )
     )
   };
@@ -15179,6 +15476,7 @@ if (globalThis.__rslBackgroundTestHooks) {
     applyServerHistoryFeatureValue,
     syncServerHistoryFeatureFromStorage,
     fetchServerHistoryExperienceDetails,
+    fetchServerHistoryPlaceDetails,
     sanitizeServerHistorySessionForResponse,
     getServerHistoryResponse,
     clearServerHistoryForViewer,
@@ -15222,6 +15520,8 @@ if (globalThis.__rslBackgroundTestHooks) {
       maxSessions: SERVER_HISTORY_MAX_SESSIONS,
       maxAccounts: SERVER_HISTORY_MAX_ACCOUNTS,
       continuityGapMs: SERVER_HISTORY_CONTINUITY_GAP_MS,
+      placeNameLookupConcurrency: SERVER_HISTORY_PLACE_NAME_LOOKUP_CONCURRENCY,
+      placeNameLookupDeadlineMs: SERVER_HISTORY_PLACE_NAME_LOOKUP_DEADLINE_MS,
       fallbackLocale: SERVER_HISTORY_FALLBACK_LOCALE
     }),
     getGameEventsFeatureValue,
@@ -15408,6 +15708,10 @@ if (globalThis.__rslBackgroundTestHooks) {
     resetPrivateServerStateForTests,
     resetFriendAggregationStateForTests,
     getCopyRobloxIdsFeatureValue,
+    handleContextMenuClick,
+    ensureContextCopyHelper,
+    warmContextCopyHelpersInOpenTabs,
+    normalizeContextCopyTargetSnapshot,
     setCopyRobloxIdsEnabledForTests(value) {
       copyRobloxIdsEnabled = value !== false;
     },
@@ -15418,6 +15722,7 @@ if (globalThis.__rslBackgroundTestHooks) {
 
 chrome.runtime.onInstalled?.addListener(() => {
   syncContextMenusFromStorage();
+  warmContextCopyHelpersInOpenTabs();
   syncGameCcuHistoryFeatureFromStorage(true);
   syncServerHistoryFeatureFromStorage(true);
   syncGameEventsFeatureFromStorage();
@@ -15425,6 +15730,7 @@ chrome.runtime.onInstalled?.addListener(() => {
 });
 
 chrome.runtime.onStartup?.addListener(() => {
+  warmContextCopyHelpersInOpenTabs();
   syncGameCcuHistoryFeatureFromStorage("stale");
   syncServerHistoryFeatureFromStorage("startup");
   syncGameEventsFeatureFromStorage();

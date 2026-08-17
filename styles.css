@@ -3139,6 +3139,16 @@
   white-space: nowrap;
 }
 
+.rsl-server-history__place {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-content-muted, var(--rsl-fallback-muted));
+  font-size: 11px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rsl-server-history__timing {
   display: grid;
   min-width: 0;

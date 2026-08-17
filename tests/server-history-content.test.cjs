@@ -22,7 +22,9 @@ function validSession(overrides = {}) {
     sessionId: "opaque_session_1",
     placeId: "12345",
     universeId: "67890",
+    rootPlaceId: "12345",
     experienceName: "Fixture Experience",
+    placeName: null,
     firstSeenAt: NOW,
     lastSeenAt: NOW + 60_000,
     isCurrent: false,
@@ -100,11 +102,15 @@ globalThis.document.documentElement.lang = "en-US";
 
 const normalizedSession = hooks.normalizeServerHistorySession(validSession({
   experienceName: "  Unsafe\n\tName <b>text</b>  ",
+  rootPlaceId: "54321",
+  placeName: "  Trade\n\tPlaza <b>text</b>  ",
   firstSeenAt: NOW + 60_000,
   lastSeenAt: NOW,
   observationCount: 999_999
 }));
 assert.equal(normalizedSession.name, "Unsafe Name <b>text</b>");
+assert.equal(normalizedSession.rootPlaceId, "54321");
+assert.equal(normalizedSession.placeName, "Trade Plaza <b>text</b>");
 assert.equal(normalizedSession.firstSeenAt, NOW);
 assert.equal(normalizedSession.lastSeenAt, NOW + 60_000);
 assert.equal(
@@ -117,6 +123,104 @@ assert.equal(Object.hasOwn(normalizedSession, "gameInstanceId"), false);
 assert.equal(Object.hasOwn(normalizedSession, "jobId"), false);
 assert.equal(hooks.normalizeServerHistorySession(validSession({ sessionId: "bad id" })), null);
 assert.equal(hooks.normalizeServerHistorySession(validSession({ placeId: "0" })), null);
+assert.equal(
+  hooks.normalizeServerHistorySession(validSession({ rootPlaceId: "invalid" })).rootPlaceId,
+  null,
+  "a missing legacy root remains a neutral place instead of guessing its type"
+);
+assert.equal(
+  hooks.normalizeServerHistorySession(validSession({ placeName: " \n\t " })).placeName,
+  null
+);
+assert.equal(
+  hooks.normalizeServerHistorySession(validSession({ placeName: "x".repeat(101) })).placeName,
+  "x".repeat(100),
+  "public Place names stay bounded in the content model"
+);
+
+const placePresentationCases = [
+  {
+    label: "main",
+    session: {
+      placeId: "1001",
+      rootPlaceId: "1001",
+      name: "Fisch",
+      placeName: "Main Lobby"
+    },
+    expected: {
+      label: "Main place",
+      viewLabel: "View Place \u2014 Fisch, main place, on Roblox",
+      rejoinTarget: "Fisch, main place"
+    }
+  },
+  {
+    label: "named subplace",
+    session: {
+      placeId: "1002",
+      rootPlaceId: "1001",
+      name: "Fisch",
+      placeName: "Trade Plaza"
+    },
+    expected: {
+      label: "Subplace \u00b7 Trade Plaza",
+      viewLabel: "View Place \u2014 Trade Plaza, a subplace of Fisch, on Roblox",
+      rejoinTarget: "Fisch, subplace Trade Plaza"
+    }
+  },
+  {
+    label: "unnamed subplace",
+    session: {
+      placeId: "1002",
+      rootPlaceId: "1001",
+      name: "Fisch",
+      placeName: null
+    },
+    expected: {
+      label: "Subplace \u00b7 Place ID 1002",
+      viewLabel: "View Place \u2014 Fisch, subplace, Place ID 1002, on Roblox",
+      rejoinTarget: "Fisch, subplace, Place ID 1002"
+    }
+  },
+  {
+    label: "named legacy place",
+    session: {
+      placeId: "1002",
+      rootPlaceId: null,
+      name: "Fisch",
+      placeName: "Trade Plaza"
+    },
+    expected: {
+      label: "Place \u00b7 Trade Plaza",
+      viewLabel: "View Place \u2014 Trade Plaza in Fisch, on Roblox",
+      rejoinTarget: "Fisch, place Trade Plaza"
+    }
+  },
+  {
+    label: "unnamed legacy place",
+    session: {
+      placeId: "1002",
+      rootPlaceId: null,
+      name: "Fisch",
+      placeName: null
+    },
+    expected: {
+      label: "Place ID 1002",
+      viewLabel: "View Place \u2014 Fisch, Place ID 1002, on Roblox",
+      rejoinTarget: "Fisch, Place ID 1002"
+    }
+  }
+];
+for (const { label, session, expected } of placePresentationCases) {
+  assert.deepEqual(
+    hooks.getServerHistoryPlacePresentation(session),
+    expected,
+    `${label} presentation must stay truthful and label-in-name accessible`
+  );
+  assert.ok(
+    expected.viewLabel.startsWith("View Place"),
+    `${label} accessible link name must begin with its visible label`
+  );
+}
 
 const unsorted = Array.from({ length: 35 }, (_, index) =>
   validSession({
@@ -454,7 +558,7 @@ for (const copy of [
   "First seen",
   "Last seen",
   "Played ",
-  "View Game",
+  "View Place",
   "Rejoin Server",
   "Loading your recent servers…",
   "No recent servers yet"
@@ -500,6 +604,11 @@ assert.match(
   renderSource,
   /const gameName = document\.createElement\("span"\)[\s\S]*?gameName\.className = "rsl-server-history__game-name"[\s\S]*?gameName\.textContent = session\.name[\s\S]*?titleRow\.append\(gameName\)/,
   "the title row should contain only the experience name"
+);
+assert.match(
+  renderSource,
+  /const placePresentation = getServerHistoryPlacePresentation\(session\)[\s\S]*?place\.className = "rsl-server-history__place"[\s\S]*?place\.textContent = placePresentation\.label[\s\S]*?place\.title = placePresentation\.label/,
+  "the saved destination must be visible as safe text beneath the experience name"
 );
 assert.doesNotMatch(
   renderSource,
@@ -579,8 +688,8 @@ assert.doesNotMatch(
 
 assert.match(
   renderSource,
-  /main\.append\(titleRow, timing, accessibleTiming\)/,
-  "the card body should contain only its title and compact timing"
+  /main\.append\(titleRow, place, timing, accessibleTiming\)/,
+  "the card body should place the destination between its title and compact timing"
 );
 assert.doesNotMatch(
   renderSource,
@@ -592,23 +701,33 @@ const cardActionsSource = renderSource.match(
   /const actions = document\.createElement\("div"\);([\s\S]*?)actions\.append\(open, rejoin\);/
 )?.[1];
 assert.ok(cardActionsSource, "missing compact Server History actions");
-assert.match(cardActionsSource, /open\.textContent = "View Game"/);
+assert.match(cardActionsSource, /open\.href = `\/games\/\$\{session\.placeId\}`/);
+assert.doesNotMatch(
+  cardActionsSource,
+  /open\.href[^\n]*(?:rootPlaceId|universeId)/,
+  "View Place must use the exact saved Place ID, never the experience root"
+);
+assert.match(cardActionsSource, /open\.textContent = "View Place"/);
 assert.match(cardActionsSource, /rejoinLabel =[\s\S]*?\? "Opening…"[\s\S]*?: "Rejoin Server"/);
 assert.match(
   cardActionsSource,
-  /const viewGameDescription = `View \$\{session\.name\} game page on Roblox`[\s\S]*?open\.setAttribute\("aria-label", viewGameDescription\)[\s\S]*?open\.title = viewGameDescription/,
-  "View Game must explain its Roblox game-page destination to assistive technology and on hover"
+  /open\.setAttribute\("aria-label", placePresentation\.viewLabel\)[\s\S]*?open\.title = placePresentation\.viewLabel/,
+  "View Place must reuse its label-in-name destination description for accessibility and hover text"
 );
-assert.match(cardActionsSource, /rejoin\.setAttribute\([\s\S]*?"aria-label"/);
+assert.match(
+  cardActionsSource,
+  /const rejoinDescription = `\$\{rejoinLabel\}[^`]*\$\{placePresentation\.rejoinTarget\}`[\s\S]*?rejoin\.setAttribute\("aria-label", rejoinDescription\)[\s\S]*?rejoin\.title = rejoinDescription/,
+  "Rejoin Server must begin its accessible name with the current visible action label"
+);
 assert.doesNotMatch(
   cardActionsSource,
   /\bcheck\b|Check status|Checking…|open\.textContent = "Open(?: Experience)?"|"Full · try anyway"|"Try rejoining anyway"/i,
-  "compact cards must expose only the clearly named View Game and Rejoin Server actions"
+  "compact cards must expose only the clearly named View Place and Rejoin Server actions"
 );
 assert.equal(
   (renderSource.match(/document\.createElement\("a"\)/g) || []).length,
   1,
-  "View Game must be the card's only anchor; Rejoin Server is its only button"
+  "View Place must be the card's only anchor; Rejoin Server is its only button"
 );
 assert.match(renderSource, /rejoin\.setAttribute\("aria-disabled", String\(rejoinPending\)\)/);
 assert.match(renderSource, /focusedSessionId/);
@@ -784,6 +903,13 @@ assert.equal(pxDeclaration(desktopThumbnailCss, "height"), desktopThumbnailSize)
 const desktopMainCss = cssBlock(".rsl-server-history__main");
 assert.match(desktopMainCss, /min-width:\s*0/);
 assert.equal(pxDeclaration(desktopMainCss, "gap"), 1);
+const desktopPlaceCss = cssBlock(".rsl-server-history__place");
+assert.match(desktopPlaceCss, /min-width:\s*0/);
+assert.match(desktopPlaceCss, /overflow:\s*hidden/);
+assert.match(desktopPlaceCss, /font-size:\s*11px/);
+assert.match(desktopPlaceCss, /line-height:\s*15px/);
+assert.match(desktopPlaceCss, /text-overflow:\s*ellipsis/);
+assert.match(desktopPlaceCss, /white-space:\s*nowrap/);
 assert.doesNotMatch(
   stylesSource,
   /\.rsl-server-history__session-state/,
@@ -872,7 +998,10 @@ assert.doesNotMatch(
   /\*\*Check status\*\*|shows? (?:the )?player count|Server status unknown|\*\*Active\*\*|automatically checks|public-server list|\*\*Recent\*\*|\*\*Past\*\*|Observed recently|Past observation/i,
   "documentation must not promise removed badge, status, or player-count UI"
 );
-assert.match(serverHistoryReadmeParagraph, /\*\*View Game\*\*[^]*\*\*Rejoin Server\*\*/);
+assert.match(serverHistoryReadmeParagraph, /\*\*Main place\*\*[^]*\*\*Subplace\*\*/);
+assert.match(serverHistoryReadmeParagraph, /current Roblox name[^]*exact Place ID visible/);
+assert.match(serverHistoryReadmeParagraph, /\*\*View Place\*\*[^]*\*\*Rejoin Server\*\*/);
+assert.match(serverHistoryReadmeParagraph, /opens the exact saved Place page/);
 assert.doesNotMatch(
   readme,
   /Server History checks a saved Job ID|choose \*\*Check status\*\*/,
@@ -884,7 +1013,9 @@ assert.match(
 );
 assert.match(readme, /viewer account IDs remain background-only/);
 assert.match(readme, /opaque RoTool session key/);
-assert.match(readme, /No Server History data is uploaded/);
+assert.match(readme, /anonymous Economy asset-details endpoint/);
+assert.match(readme, /not a historical rename snapshot/);
+assert.match(readme, /No Server History data is uploaded to a RoTool service/);
 assert.match(readme, /no inexact deep-link fallback/);
 assert.doesNotMatch(
   readme,

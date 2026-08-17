@@ -26,6 +26,8 @@ const launchCalls = [];
 let alarmListener = null;
 let runtimeMessageListener = null;
 let deferAlarmGet = false;
+let backgroundSetTimeout = (callback, delay, ...args) =>
+  setTimeout(callback, delay, ...args);
 let fetchHandler = async () => {
   throw new Error("Unexpected network request in Server History fixture");
 };
@@ -140,7 +142,8 @@ const sandbox = {
     fetchCalls.push({ url: String(input), options: plain(options) });
     return fetchHandler(input, options);
   },
-  setTimeout,
+  setTimeout: (callback, delay, ...args) =>
+    backgroundSetTimeout(callback, delay, ...args),
   clearTimeout,
   queueMicrotask,
   __rslBackgroundTestHooks: {},
@@ -267,6 +270,8 @@ async function invokeHandler(handler, message, sender = trustedSender()) {
 
 function resetFixture() {
   hooks.resetServerHistoryStateForTests();
+  backgroundSetTimeout = (callback, delay, ...args) =>
+    setTimeout(callback, delay, ...args);
   alarmCreates.length = 0;
   alarmClears.length = 0;
   alarmGets.length = 0;
@@ -290,6 +295,8 @@ test("Server History is strict opt-in and registers a one-minute alarm", async (
   assert.equal(constants.alarmPeriodMinutes, 1);
   assert.equal(constants.maxSessions, 30);
   assert.equal(constants.continuityGapMs, 3 * 60_000);
+  assert.equal(constants.placeNameLookupConcurrency, 6);
+  assert.equal(constants.placeNameLookupDeadlineMs, 4_000);
   assert.equal(hooks.getServerHistoryFeatureValue(null), false);
   assert.equal(hooks.getServerHistoryFeatureValue({ version: 1, flags: {} }), false);
   assert.equal(
@@ -642,6 +649,16 @@ test("storage validation rejects corrupt IDs and recovers duplicate open session
   ));
   assert.equal(safe.lastLocation, "Game <script>alert(1)</script>");
   assert.doesNotMatch(safe.lastLocation, /[\u0000-\u001f\u007f]/);
+  const legacyWithoutRoot = plain(hooks.normalizeStoredServerHistorySession(
+    storedSession({ rootPlaceId: undefined, placeName: "must not persist" }),
+    NOW + 120_000
+  ));
+  assert.equal(legacyWithoutRoot.rootPlaceId, null);
+  assert.equal(
+    Object.hasOwn(legacyWithoutRoot, "placeName"),
+    false,
+    "current Place names are response enrichment, not a storage migration"
+  );
 
   const recovered = plain(hooks.normalizeStoredServerHistoryAccount({
     sessions: [
@@ -756,39 +773,234 @@ test("localized experience metadata follows a validated page locale", async () =
   );
   assert.equal(fetchCalls.length, 1);
   assert.deepEqual(plain(details.get("66654135")), {
-    experienceName: "Murder Mystery 2"
+    experienceName: "Murder Mystery 2",
+    rootPlaceId: "142823291"
   });
 
   const responseSession = plain(hooks.sanitizeServerHistorySessionForResponse(
     storedSession({
+      placeId: "142823292",
       universeId: "66654135",
+      rootPlaceId: "142823290",
       lastLocation: "Mordgeheimnis 2"
     }),
-    details.get("66654135")
+    details.get("66654135"),
+    { placeName: "Trade Plaza" }
   ));
   assert.equal(
     responseSession.experienceName,
     "Murder Mystery 2",
     "Games metadata must override a previously stored localized Presence title"
   );
+  assert.equal(
+    responseSession.rootPlaceId,
+    "142823290",
+    "the root observed with the saved session must win over current Games metadata"
+  );
+  assert.equal(responseSession.placeName, "Trade Plaza");
+  const recoveredRoot = plain(hooks.sanitizeServerHistorySessionForResponse(
+    storedSession({
+      placeId: "142823292",
+      universeId: "66654135",
+      rootPlaceId: null
+    }),
+    details.get("66654135"),
+    null
+  ));
+  assert.equal(
+    recoveredRoot.rootPlaceId,
+    "142823291",
+    "current Games metadata may recover a root missing from a legacy session"
+  );
+  assert.equal(recoveredRoot.placeName, null);
   assert.deepEqual(Object.keys(responseSession).sort(), [
     "experienceName",
     "firstSeenAt",
     "lastSeenAt",
     "placeId",
+    "placeName",
+    "rootPlaceId",
     "sessionId",
     "universeId"
   ]);
   for (const privateField of [
-    "rootPlaceId",
     "endedAt",
     "observationCount",
     "isCurrent",
     "endReason",
-    "gameInstanceId"
+    "gameInstanceId",
+    "jobId",
+    "lastLocation",
+    "viewerUserId",
+    "placeKind"
   ]) {
     assert.equal(Object.hasOwn(responseSession, privateField), false);
   }
+});
+
+test("Place-name enrichment is anonymous, deduplicated, and cache-backed", async () => {
+  fetchHandler = async (input, options) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "economy.roblox.com");
+    assert.match(url.pathname, /^\/v2\/assets\/[1-9]\d*\/details$/);
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.cache, "no-store");
+    assert.equal(options.headers.Accept, "application/json");
+    const placeId = url.pathname.split("/").at(-2);
+    return jsonResponse({
+      AssetId: Number(placeId),
+      AssetTypeId: 9,
+      Name: placeId === "83001" ? "  Trade\n Plaza  " : "Teleport Hub"
+    });
+  };
+  const sessions = [
+    storedSession({ placeId: "83001", rootPlaceId: "83000" }),
+    storedSession({ sessionId: "duplicate_place", placeId: "83001", rootPlaceId: "83000" }),
+    storedSession({ sessionId: "main_place", placeId: "83000", rootPlaceId: "83000" }),
+    storedSession({ sessionId: "legacy_place", placeId: "83002", rootPlaceId: null })
+  ];
+  const details = await hooks.fetchServerHistoryPlaceDetails(sessions);
+  assert.deepEqual(
+    [...details.entries()].map(([placeId, value]) => [placeId, plain(value)]),
+    [
+      ["83001", { placeName: "Trade Plaza" }],
+      ["83002", { placeName: "Teleport Hub" }]
+    ]
+  );
+  assert.equal(fetchCalls.length, 2, "duplicates and known Main places must not be fetched");
+
+  const cached = await hooks.fetchServerHistoryPlaceDetails(sessions);
+  assert.deepEqual(
+    [...cached.entries()].map(([placeId, value]) => [placeId, plain(value)]),
+    [...details.entries()].map(([placeId, value]) => [placeId, plain(value)])
+  );
+  assert.equal(fetchCalls.length, 2, "the shared asset-details cache must prevent repeat reads");
+});
+
+test("Place-name enrichment rejects malformed assets and recovers after failure", async () => {
+  let unavailableCalls = 0;
+  fetchHandler = async (input) => {
+    const url = new URL(String(input));
+    const placeId = url.pathname.split("/").at(-2);
+    if (placeId === "83101") {
+      return jsonResponse({ AssetId: 99999, AssetTypeId: 9, Name: "Wrong ID" });
+    }
+    if (placeId === "83102") {
+      return jsonResponse({ AssetId: 83102, AssetTypeId: 10, Name: "Not a Place" });
+    }
+    if (placeId === "83103") {
+      return jsonResponse({ AssetId: 83103, AssetTypeId: 9, Name: " \n\t " });
+    }
+    if (placeId === "83104") {
+      return jsonResponse({ AssetId: 83104, AssetTypeId: 9, Name: "x".repeat(101) });
+    }
+    if (placeId === "83105") {
+      unavailableCalls += 1;
+      return unavailableCalls === 1
+        ? jsonResponse({ errors: [{ message: "missing" }] }, 404)
+        : jsonResponse({ AssetId: 83105, AssetTypeId: 9, Name: "Recovered Place" });
+    }
+    if (placeId === "83106") {
+      return jsonResponse({ assetId: 83106, assetTypeId: 9, name: "Valid Place" });
+    }
+    throw new Error(`Unexpected Place lookup ${url}`);
+  };
+  const malformed = ["83101", "83102", "83103", "83104", "83105", "83106"]
+    .map((placeId, index) => storedSession({
+      sessionId: `malformed_${index}`,
+      placeId,
+      rootPlaceId: "83000"
+    }));
+  const first = await hooks.fetchServerHistoryPlaceDetails(malformed);
+  assert.deepEqual(
+    [...first.entries()].map(([placeId, value]) => [placeId, plain(value)]),
+    [["83106", { placeName: "Valid Place" }]],
+    "mismatched IDs, non-Place assets, unsafe names, and failures must keep the ID fallback"
+  );
+  assert.equal(unavailableCalls, 1);
+
+  const recovered = await hooks.fetchServerHistoryPlaceDetails([
+    storedSession({ placeId: "83105", rootPlaceId: "83000" })
+  ]);
+  assert.deepEqual(plain(recovered.get("83105")), { placeName: "Recovered Place" });
+  assert.equal(unavailableCalls, 2, "failed cache entries must be retried later");
+});
+
+test("Place-name enrichment enforces its six-request concurrency bound", async () => {
+  let active = 0;
+  let peak = 0;
+  const releases = [];
+  fetchHandler = (input) => {
+    const url = new URL(String(input));
+    const placeId = url.pathname.split("/").at(-2);
+    active += 1;
+    peak = Math.max(peak, active);
+    return new Promise((resolve) => {
+      releases.push(() => {
+        active -= 1;
+        resolve(jsonResponse({
+          AssetId: Number(placeId),
+          AssetTypeId: 9,
+          Name: `Place ${placeId}`
+        }));
+      });
+    });
+  };
+  const sessions = Array.from({ length: 8 }, (_, index) => storedSession({
+    sessionId: `concurrency_${index}`,
+    placeId: String(83201 + index),
+    rootPlaceId: "83200"
+  }));
+  const lookup = hooks.fetchServerHistoryPlaceDetails(sessions);
+  await waitUntil(
+    () => releases.length === constants.placeNameLookupConcurrency,
+    "the initial Place lookup workers did not start"
+  );
+  assert.equal(active, 6);
+  assert.equal(peak, 6);
+  releases.slice(0, 6).forEach((release) => release());
+  await waitUntil(() => releases.length === 8, "queued Place lookups did not start");
+  releases.slice(6).forEach((release) => release());
+  const details = await lookup;
+  assert.equal(details.size, 8);
+  assert.equal(peak, constants.placeNameLookupConcurrency);
+});
+
+test("Place-name deadline returns an immutable snapshot while late work warms cache", async () => {
+  let releaseLookup = null;
+  backgroundSetTimeout = (callback, delay, ...args) =>
+    setTimeout(
+      callback,
+      delay === constants.placeNameLookupDeadlineMs ? 0 : delay,
+      ...args
+    );
+  fetchHandler = (input) => {
+    const url = new URL(String(input));
+    const placeId = url.pathname.split("/").at(-2);
+    return new Promise((resolve) => {
+      releaseLookup = () => resolve(jsonResponse({
+        AssetId: Number(placeId),
+        AssetTypeId: 9,
+        Name: "Late Place"
+      }));
+    });
+  };
+  const session = storedSession({ placeId: "83301", rootPlaceId: "83300" });
+  const timedOut = await hooks.fetchServerHistoryPlaceDetails([session]);
+  assert.equal(timedOut.size, 0, "the response must not wait past its enrichment deadline");
+  assert.equal(typeof releaseLookup, "function");
+  assert.equal(fetchCalls.length, 1);
+
+  releaseLookup();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const warmed = await hooks.fetchServerHistoryPlaceDetails([session]);
+  assert.deepEqual(plain(warmed.get("83301")), { placeName: "Late Place" });
+  assert.equal(fetchCalls.length, 1, "late completion should warm the shared cache");
+  assert.equal(
+    timedOut.size,
+    0,
+    "late completion must not mutate the Map snapshot already returned to the dialog"
+  );
 });
 
 test("Presence title fallback is requested in deterministic English", async () => {
@@ -892,7 +1104,11 @@ test("clear and rejoin resolve only the signed-in account's owned opaque session
     version: constants.storageVersion,
     accounts: {
       "701": {
-        sessions: [storedSession({ sessionId: "owned_opaque" })],
+        sessions: [storedSession({
+          sessionId: "owned_opaque",
+          placeId: "1002",
+          rootPlaceId: "1001"
+        })],
         pendingNonGameCount: 0,
         trackingState: "not-in-game",
         lastCheckedAt: NOW,
@@ -949,7 +1165,8 @@ test("clear and rejoin resolve only the signed-in account's owned opaque session
       type: constants.rejoinMessageType,
       requestId: 11,
       sessionId: "owned_opaque",
-      placeId: "666666",
+      placeId: "1001",
+      rootPlaceId: "1001",
       gameInstanceId: JOB_C
     }
   );
@@ -962,7 +1179,7 @@ test("clear and rejoin resolve only the signed-in account's owned opaque session
   assert.deepEqual(launchCalls[0], {
     target: { tabId: 17, frameIds: [0] },
     world: "MAIN",
-    args: [1001, JOB_A]
+    args: [1002, JOB_A]
   });
 
   const accountChanged = await invokeHandler(

@@ -1123,8 +1123,6 @@ backgroundScript.addEventListener("load", async () => {
     const contextActions = globalThis.__rslBackgroundTestHooks.contextMenuActions;
     const expectedDirectActions = new Map([
       ["user", "userId"],
-      ["place", "placeId"],
-      ["universe", "universeId"],
       ["community", "groupId"],
       ["community-role", "groupRoleId"],
       ["bundle", "bundleId"],
@@ -1134,13 +1132,23 @@ backgroundScript.addEventListener("load", async () => {
       ["developer-product", "developerProductId"],
       ["experience-subscription", "experienceSubscriptionId"]
     ]);
+    const gameGroup = contextActions.find((item) => item.key === "game-ids");
     const assetGroup = contextActions.find((item) => item.key === "asset-ids");
     if (
-      contextActions.length !== expectedDirectActions.size + 1 ||
+      contextActions.length !== expectedDirectActions.size + 2 ||
       contextActions.some((item) => item.title === "Roblox IDs") ||
       contextActions.some(
-        (item) => item !== assetGroup && expectedDirectActions.get(item.key) !== item.action
+        (item) =>
+          item !== gameGroup &&
+          item !== assetGroup &&
+          expectedDirectActions.get(item.key) !== item.action
       ) ||
+      gameGroup?.title !== "Copy Game IDs" ||
+      gameGroup?.children?.length !== 2 ||
+      gameGroup.children[0]?.title !== "Copy Place ID" ||
+      gameGroup.children[0]?.action !== "placeId" ||
+      gameGroup.children[1]?.title !== "Copy Universe ID / Game ID" ||
+      gameGroup.children[1]?.action !== "universeId" ||
       assetGroup?.title !== "Copy Texture ID / Asset ID" ||
       assetGroup?.children?.length !== 2 ||
       assetGroup.children[0]?.title !== "Copy Texture ID" ||

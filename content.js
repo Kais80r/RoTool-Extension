@@ -21,12 +21,13 @@
   const EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY =
     "rslExtensionUpdatePreferenceV1";
   const EXTENSION_UPDATE_PREFERENCES_STORAGE_VERSION = 1;
-  const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "6h";
+  const EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY = "3h";
   const EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS = Object.freeze([
     Object.freeze({ value: "home", label: "Every Home visit" }),
     Object.freeze({ value: "30m", label: "Every 30 minutes" }),
     Object.freeze({ value: "1h", label: "Every hour" }),
-    Object.freeze({ value: "6h", label: "Every 6 hours (default)" }),
+    Object.freeze({ value: "3h", label: "Every 3 hours (default)" }),
+    Object.freeze({ value: "6h", label: "Every 6 hours" }),
     Object.freeze({ value: "24h", label: "Every 24 hours" })
   ]);
   const EXTENSION_UPDATE_REMINDER_FREQUENCIES = new Set(
@@ -19559,6 +19560,7 @@
     const sessionId = normalizeServerHistoryOpaqueId(rawValue.sessionId);
     const placeId = normalizeQuickPlayPlaceId(rawValue.placeId);
     const universeId = normalizeQuickPlayPlaceId(rawValue.universeId);
+    const rootPlaceId = normalizeQuickPlayPlaceId(rawValue.rootPlaceId);
     const firstSeenAt = normalizeServerHistoryTimestamp(rawValue.firstSeenAt);
     const lastSeenAt = normalizeServerHistoryTimestamp(rawValue.lastSeenAt);
     if (!sessionId || !placeId || !firstSeenAt || !lastSeenAt) return null;
@@ -19568,11 +19570,19 @@
     const rawName = typeof responseName === "string"
       ? responseName.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
       : "";
+    const rawPlaceName = typeof rawValue.placeName === "string"
+      ? rawValue.placeName
+          .replace(/[\u0000-\u001f\u007f]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+      : "";
     return Object.freeze({
       sessionId,
       placeId,
       universeId,
+      rootPlaceId,
       name: (rawName || "Roblox experience").slice(0, 150),
+      placeName: rawPlaceName ? rawPlaceName.slice(0, 100) : null,
       firstSeenAt: Math.min(firstSeenAt, lastSeenAt),
       lastSeenAt: Math.max(firstSeenAt, lastSeenAt)
     });
@@ -19869,6 +19879,47 @@
     return button;
   }
 
+  function getServerHistoryPlacePresentation(session) {
+    const placeId = normalizeQuickPlayPlaceId(session?.placeId);
+    const rootPlaceId = normalizeQuickPlayPlaceId(session?.rootPlaceId);
+    const experienceName = typeof session?.name === "string" && session.name
+      ? session.name
+      : "Roblox experience";
+    const placeName = typeof session?.placeName === "string" && session.placeName
+      ? session.placeName
+      : null;
+
+    if (placeId && rootPlaceId && placeId === rootPlaceId) {
+      return Object.freeze({
+        label: "Main place",
+        viewLabel: `View Place — ${experienceName}, main place, on Roblox`,
+        rejoinTarget: `${experienceName}, main place`
+      });
+    }
+    if (placeId && rootPlaceId && placeId !== rootPlaceId) {
+      return Object.freeze({
+        label: placeName
+          ? `Subplace · ${placeName}`
+          : `Subplace · Place ID ${placeId}`,
+        viewLabel: placeName
+          ? `View Place — ${placeName}, a subplace of ${experienceName}, on Roblox`
+          : `View Place — ${experienceName}, subplace, Place ID ${placeId}, on Roblox`,
+        rejoinTarget: placeName
+          ? `${experienceName}, subplace ${placeName}`
+          : `${experienceName}, subplace, Place ID ${placeId}`
+      });
+    }
+    return Object.freeze({
+      label: placeName ? `Place · ${placeName}` : `Place ID ${placeId || "unknown"}`,
+      viewLabel: placeName
+        ? `View Place — ${placeName} in ${experienceName}, on Roblox`
+        : `View Place — ${experienceName}, Place ID ${placeId || "unknown"}, on Roblox`,
+      rejoinTarget: placeName
+        ? `${experienceName}, place ${placeName}`
+        : `${experienceName}, Place ID ${placeId || "unknown"}`
+    });
+  }
+
   function renderServerHistorySession(session) {
     const item = document.createElement("li");
     item.className = "rsl-server-history__item";
@@ -19894,6 +19945,11 @@
     gameName.textContent = session.name;
     gameName.title = session.name;
     titleRow.append(gameName);
+    const placePresentation = getServerHistoryPlacePresentation(session);
+    const place = document.createElement("div");
+    place.className = "rsl-server-history__place";
+    place.textContent = placePresentation.label;
+    place.title = placePresentation.label;
 
     const timing = document.createElement("div");
     timing.className = "rsl-server-history__timing";
@@ -19952,7 +20008,7 @@
     accessibleTiming.className = "rsl-sr-only";
     accessibleTiming.textContent = fullTimingText;
 
-    main.append(titleRow, timing, accessibleTiming);
+    main.append(titleRow, place, timing, accessibleTiming);
 
     const actions = document.createElement("div");
     actions.className = "rsl-server-history__actions";
@@ -19960,10 +20016,9 @@
     open.className = "rsl-button rsl-button--secondary rsl-server-history__action";
     open.dataset.rslServerHistoryAction = "open";
     open.href = `/games/${session.placeId}`;
-    open.textContent = "View Game";
-    const viewGameDescription = `View ${session.name} game page on Roblox`;
-    open.setAttribute("aria-label", viewGameDescription);
-    open.title = viewGameDescription;
+    open.textContent = "View Place";
+    open.setAttribute("aria-label", placePresentation.viewLabel);
+    open.title = placePresentation.viewLabel;
     const rejoinLabel = serverHistoryPendingRejoinId === session.sessionId
       ? "Opening…"
       : "Rejoin Server";
@@ -19971,8 +20026,9 @@
     rejoin.dataset.rslServerHistoryAction = "rejoin";
     const rejoinPending = serverHistoryPendingRejoinId !== null;
     rejoin.setAttribute("aria-disabled", String(rejoinPending));
-    rejoin.setAttribute("aria-label", `Rejoin server for ${session.name}`);
-    rejoin.title = `Rejoin server for ${session.name}`;
+    const rejoinDescription = `${rejoinLabel} — ${placePresentation.rejoinTarget}`;
+    rejoin.setAttribute("aria-label", rejoinDescription);
+    rejoin.title = rejoinDescription;
     rejoin.addEventListener("click", (event) => {
       if (event.isTrusted !== true || rejoinPending) return;
       void rejoinServerHistorySession(session.sessionId);
@@ -23256,6 +23312,8 @@
       normalizeServerHistoryTimestamp;
     contentTestHooks.normalizeServerHistorySession = normalizeServerHistorySession;
     contentTestHooks.normalizeServerHistoryResponse = normalizeServerHistoryResponse;
+    contentTestHooks.getServerHistoryPlacePresentation =
+      getServerHistoryPlacePresentation;
     contentTestHooks.getRobloxPageLocale = getRobloxPageLocale;
     contentTestHooks.formatServerHistoryTimestamp = formatServerHistoryTimestamp;
     contentTestHooks.formatServerHistoryDuration = formatServerHistoryDuration;

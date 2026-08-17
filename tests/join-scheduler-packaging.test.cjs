@@ -22,7 +22,7 @@ const releaseBuilderSource = fs.readFileSync(
   "utf8"
 );
 
-assert.equal(manifest.version, "0.19.5", "the current release ships as RoTool 0.19.5");
+assert.equal(manifest.version, "0.19.6", "the current release ships as RoTool 0.19.6");
 assert.equal(
   manifest.minimum_chrome_version,
   "102",
@@ -47,6 +47,7 @@ assert.deepEqual(manifest.optional_permissions, ["notifications"],
   "the game-icon path adds no optional capability");
 assert.deepEqual(manifest.host_permissions, [
   "https://www.roblox.com/*",
+  "https://create.roblox.com/*",
   "https://thumbnails.roblox.com/*",
   "https://friends.roblox.com/*",
   "https://users.roblox.com/*",

@@ -332,7 +332,9 @@ assert.match(
 
 assert.match(readme, /caches successful checks for 24 hours/i);
 assert.match(readme, /failed check, it waits at least one hour/i);
-assert.match(readme, /Reminder frequency[^\n]*defaults to \*\*Every 6 hours\*\*/i);
+assert.match(readme, /Reminder frequency[^\n]*defaults to \*\*Every 3 hours\*\*/i);
+assert.match(readme, /Every hour[^\n]*Every 6 hours[^\n]*Every 24 hours/i);
+assert.match(readme, /returns to three hours with \*\*Reset defaults\*\*/i);
 assert.match(readme, /Timed choices share one cooldown across tabs/i);
 assert.match(readme, /Every Home visit[^\n]*at most once during the current Home document\/SPA visit/i);
 assert.match(readme, /Game-page navigation never claims or shows a banner/i);
@@ -472,11 +474,12 @@ assert.deepEqual(constants, {
   storageVersion: 1,
   preferencesStorageKey: "rslExtensionUpdatePreferenceV1",
   preferencesStorageVersion: 1,
-  defaultReminderFrequency: "6h",
+  defaultReminderFrequency: "3h",
   reminderFrequencies: {
     home: null,
     "30m": 30 * 60_000,
     "1h": 60 * 60_000,
+    "3h": 3 * 60 * 60_000,
     "6h": 6 * 60 * 60_000,
     "24h": 24 * 60 * 60_000
   },
@@ -484,7 +487,7 @@ assert.deepEqual(constants, {
   latestReleaseUrl: RELEASE_API,
   howToUpdateUrl: UPDATE_GUIDE,
   cacheTtlMs: 24 * 60 * 60_000,
-  presentationTtlMs: 6 * 60 * 60_000,
+  presentationTtlMs: 3 * 60 * 60_000,
   fetchTimeoutMs: 8_000,
   maxResponseBytes: 256 * 1_024,
   failureRetryMs: 60 * 60_000,
@@ -618,7 +621,7 @@ function directPresentationClaim(tabId, overrides = {}) {
     homePage: true,
     homeVisitId: `visit-${tabId}-abcdef`,
     claimContextId: `context-${tabId}-abcdef`,
-    expectedFrequency: "6h",
+    expectedFrequency: "3h",
     presentationContextVerified: true,
     ...overrides
   };
@@ -631,16 +634,16 @@ function statusMessage(claimNotice, overrides = {}) {
     claimNotice,
     claimContextId: claimNotice ? "context-runtime-abcdef" : null,
     homeVisitId: "visit-runtime-abcdef",
-    expectedFrequency: "6h",
+    expectedFrequency: "3h",
     ...overrides
   };
 }
 
 (async () => {
   // The frequency preference is a dedicated, versioned record. Invalid or
-  // legacy values reset to 6h, valid values round-trip exactly, and writes
+  // legacy values reset to 3h, valid values round-trip exactly, and writes
   // serialize through a monotonically increasing revision.
-  for (const frequency of ["home", "30m", "1h", "6h", "24h"]) {
+  for (const frequency of ["home", "30m", "1h", "3h", "6h", "24h"]) {
     assert.equal(
       hooks.normalizeExtensionUpdateReminderFrequency(frequency),
       frequency
@@ -654,7 +657,7 @@ function statusMessage(claimNotice, overrides = {}) {
   }
   assert.deepEqual(plain(hooks.createDefaultExtensionUpdatePreferences()), {
     version: 1,
-    frequency: "6h",
+    frequency: "3h",
     revision: 0
   });
   for (const invalidPreferences of [
@@ -668,7 +671,7 @@ function statusMessage(claimNotice, overrides = {}) {
   ]) {
     assert.deepEqual(plain(hooks.normalizeExtensionUpdatePreferences(invalidPreferences)), {
       version: 1,
-      frequency: "6h",
+      frequency: "3h",
       revision: 0
     });
   }
@@ -680,6 +683,26 @@ function statusMessage(claimNotice, overrides = {}) {
       ignored: "not serialized"
     })),
     { version: 1, frequency: "30m", revision: 7 }
+  );
+
+  hooks.resetExtensionUpdateStateForTests();
+  const savedSixHourPreferenceStorage = memoryStorage({
+    version: 1,
+    frequency: "6h",
+    revision: 6
+  });
+  hooks.setExtensionUpdatePreferencesStorageOverrideForTests(
+    savedSixHourPreferenceStorage
+  );
+  assert.deepEqual(plain(await hooks.getExtensionUpdatePreferences()), {
+    version: 1,
+    frequency: "6h",
+    revision: 6
+  });
+  assert.equal(
+    savedSixHourPreferenceStorage.writes.length,
+    0,
+    "changing the default must preserve an explicitly stored six-hour choice"
   );
 
   hooks.resetExtensionUpdateStateForTests();
@@ -813,7 +836,7 @@ function statusMessage(claimNotice, overrides = {}) {
   );
   assert.deepEqual(routedDefaultPreference, {
     ok: true,
-    frequency: "6h",
+    frequency: "3h",
     revision: 0
   });
   const routedSavedPreference = await runtimeMessage({
@@ -896,7 +919,7 @@ function statusMessage(claimNotice, overrides = {}) {
   assert.equal(fetchCalls.length, 1, "fresh cache must not refetch");
 
   // A trusted, active, visible top frame atomically gets the only presentation
-  // claim for that release. Reloads/tabs remain suppressed for six hours, while
+  // claim for that release. Reloads/tabs remain suppressed for three hours, while
   // a newer cached release bypasses the previous-version marker immediately.
   const concurrentStatuses = await Promise.all([
     hooks.getExtensionUpdateStatus(directPresentationClaim(1)),
@@ -917,7 +940,7 @@ function statusMessage(claimNotice, overrides = {}) {
   assert.ok(
     first.nextNoticeAt > Date.now() + constants.presentationTtlMs - 60_000 &&
       first.nextNoticeAt <= Date.now() + constants.presentationTtlMs,
-    "a successful claim advertises the six-hour presentation boundary"
+    "a successful claim advertises the three-hour presentation boundary"
   );
   assert.ok(
     first.nextCheckAt > Date.now() &&
@@ -985,6 +1008,7 @@ function statusMessage(claimNotice, overrides = {}) {
   for (const [frequency, interval] of Object.entries({
     "30m": 30 * 60_000,
     "1h": 60 * 60_000,
+    "3h": 3 * 60 * 60_000,
     "6h": 6 * 60 * 60_000,
     "24h": 24 * 60 * 60_000
   })) {
@@ -1350,7 +1374,7 @@ function statusMessage(claimNotice, overrides = {}) {
       type: constants.contextChallengeMessageType,
       claimContextId: "context-runtime-abcdef",
       homeVisitId: "visit-runtime-abcdef",
-      expectedFrequency: "6h"
+      expectedFrequency: "3h"
     },
     options: { frameId: 0 }
   }]);
@@ -1413,7 +1437,7 @@ function statusMessage(claimNotice, overrides = {}) {
   hooks.setExtensionUpdateStorageOverrideForTests(deniedStorage);
   hooks.setExtensionUpdatePreferencesStorageOverrideForTests(memoryStorage({
     version: 1,
-    frequency: "6h",
+    frequency: "3h",
     revision: 30
   }));
   backgroundTabMessages.length = 0;
@@ -1853,10 +1877,10 @@ function statusMessage(claimNotice, overrides = {}) {
   );
   contentMessageHandler = (message, callback) => {
     assert.deepEqual(message, { type: constants.preferencesGetMessageType });
-    callback({ ok: true, frequency: "6h", revision: 0 });
+    callback({ ok: true, frequency: "3h", revision: 0 });
   };
   assert.deepEqual(await contentHooks.loadExtensionUpdatePreferences(), {
-    frequency: "6h",
+    frequency: "3h",
     revision: 0
   });
   contentMessageHandler = () => {
@@ -1913,12 +1937,13 @@ function statusMessage(claimNotice, overrides = {}) {
     statusMaxTimerMs: 24 * 60 * 60_000,
     preferencesStorageKey: "rslExtensionUpdatePreferenceV1",
     preferencesStorageVersion: 1,
-    defaultReminderFrequency: "6h",
+    defaultReminderFrequency: "3h",
     reminderFrequencyOptions: [
       { value: "home", label: "Every Home visit" },
       { value: "30m", label: "Every 30 minutes" },
       { value: "1h", label: "Every hour" },
-      { value: "6h", label: "Every 6 hours (default)" },
+      { value: "3h", label: "Every 3 hours (default)" },
+      { value: "6h", label: "Every 6 hours" },
       { value: "24h", label: "Every 24 hours" }
     ],
     messageTypes: {
@@ -1928,7 +1953,7 @@ function statusMessage(claimNotice, overrides = {}) {
       contextChallenge: constants.contextChallengeMessageType
     }
   });
-  for (const frequency of ["home", "30m", "1h", "6h", "24h"]) {
+  for (const frequency of ["home", "30m", "1h", "3h", "6h", "24h"]) {
     assert.equal(
       contentHooks.normalizeExtensionUpdateReminderFrequency(frequency),
       frequency
@@ -1970,7 +1995,7 @@ function statusMessage(claimNotice, overrides = {}) {
       frequency: "30m",
       revision: 9
     })),
-    { frequency: "6h", revision: 0 },
+    { frequency: "3h", revision: 0 },
     "invalid/legacy local records migrate to the default"
   );
   const serializedFlags = contentHooks.serializeFeatureSettings({
@@ -2216,7 +2241,7 @@ function statusMessage(claimNotice, overrides = {}) {
     latest = AVAILABLE_VERSION,
     checkedAt = statusNow,
     showNotice = false,
-    frequency = "6h",
+    frequency = "3h",
     preferenceRevision = 0
   } = {}) => {
     const updateAvailable = Boolean(
@@ -2263,7 +2288,7 @@ function statusMessage(claimNotice, overrides = {}) {
     latest: AVAILABLE_VERSION,
     updateAvailable: true,
     showNotice: false,
-    frequency: "6h",
+    frequency: "3h",
     preferenceRevision: 0,
     checkedAt: statusNow,
     nextNoticeAt: statusNow + constants.presentationTtlMs,
@@ -2345,7 +2370,7 @@ function statusMessage(claimNotice, overrides = {}) {
     claimNotice: false,
     claimContextId: null,
     homeVisitId: activeHomeVisitId,
-    expectedFrequency: "6h"
+    expectedFrequency: "3h"
   }]);
   assert.strictEqual(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
@@ -2369,7 +2394,7 @@ function statusMessage(claimNotice, overrides = {}) {
 
   // Turning off Update popups changes only the top surface. Automatic checks
   // continue as non-claiming status reads, so they cannot consume the shared
-  // six-hour presentation cooldown, while Settings keeps the known release.
+  // three-hour presentation cooldown, while Settings keeps the known release.
   contentHooks.resetExtensionUpdateStatusForTests();
   contentHooks.setFeatureSettingsForTests({
     version: 1,
@@ -2399,7 +2424,7 @@ function statusMessage(claimNotice, overrides = {}) {
     claimNotice: false,
     claimContextId: null,
     homeVisitId: activeHomeVisitId,
-    expectedFrequency: "6h"
+    expectedFrequency: "3h"
   }]);
   assert.equal(
     fakeDocument.getElementById("rsl-extension-update-feedback"),
@@ -2457,7 +2482,7 @@ function statusMessage(claimNotice, overrides = {}) {
   assert.equal(stalePopupMessages[0].pageVisible, true);
   assert.equal(stalePopupMessages[0].claimNotice, true);
   assert.equal(stalePopupMessages[0].homeVisitId, activeHomeVisitId);
-  assert.equal(stalePopupMessages[0].expectedFrequency, "6h");
+  assert.equal(stalePopupMessages[0].expectedFrequency, "3h");
   assert.match(stalePopupMessages[0].claimContextId, /-claim-[a-z0-9]+$/);
 
   let finishPopupDisableSave = null;
@@ -2780,7 +2805,7 @@ function statusMessage(claimNotice, overrides = {}) {
   };
   contentHooks.handleExtensionUpdatePreferencesStorageChange({
     version: 1,
-    frequency: "6h",
+    frequency: "3h",
     revision: 202
   });
   fakeDocument.visibilityState = "visible";
@@ -2823,7 +2848,7 @@ function statusMessage(claimNotice, overrides = {}) {
     });
     assert.equal(timeouts.size, 1);
     assert.equal([...timeouts.values()][0].delay, constants.presentationTtlMs);
-    const sixHourTimerId = [...timeouts.keys()][0];
+    const defaultTimerId = [...timeouts.keys()][0];
 
     contentHooks.scheduleExtensionUpdateStatusTimer({
       updateAvailable: true,
@@ -2831,7 +2856,7 @@ function statusMessage(claimNotice, overrides = {}) {
       nextCheckAt: timerNow + constants.cacheTtlMs
     });
     assert.equal(timeouts.size, 1, "rescheduling replaces rather than stacks timers");
-    assert.ok(clearedTimeouts.includes(sixHourTimerId));
+    assert.ok(clearedTimeouts.includes(defaultTimerId));
     assert.equal([...timeouts.values()][0].delay, 2 * 60 * 60_000);
 
     contentHooks.scheduleExtensionUpdateStatusTimer({
@@ -2925,7 +2950,7 @@ function statusMessage(claimNotice, overrides = {}) {
     assert.equal(visibleRequest.pageVisible, true);
     assert.equal(visibleRequest.claimNotice, true);
     assert.equal(visibleRequest.homeVisitId, activeHomeVisitId);
-    assert.equal(visibleRequest.expectedFrequency, "6h");
+    assert.equal(visibleRequest.expectedFrequency, "3h");
     assert.match(visibleRequest.claimContextId, /-claim-[a-z0-9]+$/);
     assert.equal(timeouts.size, 1,
       "becoming visible services the deferred due check and arms one timer");
