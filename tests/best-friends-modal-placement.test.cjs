@@ -1034,9 +1034,18 @@ const fakeNode = { ELEMENT_NODE: 1 };
 const { mutationsAffectExtensionMount } = new Function(
   "Node",
   "NATIVE_EVENT_SCHEDULE_ATTRIBUTE",
+  "getAccountRecoverySettingsPopupIds",
+  "isNativeAccountSettingsLink",
+  "getAccountRecoveryMenuSurface",
   `${source.slice(mutationStart, mutationEnd)}\n` +
     "return { mutationsAffectExtensionMount };"
-)(fakeNode, "data-rsl-native-event-schedule");
+)(
+  fakeNode,
+  "data-rsl-native-event-schedule",
+  () => new Set(),
+  () => false,
+  () => null
+);
 
 const dialog = {
   nodeType: fakeNode.ELEMENT_NODE,

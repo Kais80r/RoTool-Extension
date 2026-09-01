@@ -1629,6 +1629,14 @@ function statusMessage(claimNotice, overrides = {}) {
     contentMessages += 1;
     throw new Error("close must stay local");
   };
+  let accountRecoveryReminderMessageHandler = (message, callback) => {
+    callback?.({
+      ok: true,
+      requestId: message.requestId,
+      showNotice: false,
+      nextNoticeAt: null
+    });
+  };
 
   class FakeNode {
     constructor(tagName = "") {
@@ -1827,7 +1835,12 @@ function statusMessage(claimNotice, overrides = {}) {
       id: "content-test-extension",
       lastError: null,
       getManifest() { return { version: manifest.version }; },
-      sendMessage(message, callback) { return contentMessageHandler(message, callback); }
+      sendMessage(message, callback) {
+        if (message?.type === "rsl:account-recovery-reminder:claim") {
+          return accountRecoveryReminderMessageHandler(message, callback);
+        }
+        return contentMessageHandler(message, callback);
+      }
     },
     storage: {
       local: {
@@ -1906,9 +1919,14 @@ function statusMessage(claimNotice, overrides = {}) {
   });
   const topLevelFeatureKeys = contentHooks.featureDefinitions.map(({ key }) => key);
   assert.equal(
-    topLevelFeatureKeys.indexOf("updatePopups"),
+    topLevelFeatureKeys.indexOf("enhancedProfiles"),
     topLevelFeatureKeys.indexOf("friendFilters") + 1,
-    "RoTool Update Popups must follow Friend Lists & Filters at the end of Interface"
+    "Enhanced Profiles must follow Friend Lists & Filters"
+  );
+  assert.equal(
+    topLevelFeatureKeys.indexOf("updatePopups"),
+    topLevelFeatureKeys.indexOf("enhancedProfiles") + 1,
+    "RoTool Update Popups must follow Enhanced Profiles at the end of Interface"
   );
   assert.equal(
     topLevelFeatureKeys.indexOf("quickPlay"),
@@ -3154,6 +3172,317 @@ function statusMessage(claimNotice, overrides = {}) {
       .timerAllowsNoticeClaim,
     false,
     "update-status cleanup resets its claim-capable timer state"
+  );
+
+  // The Recovery reminder reuses Roblox's in-page system-feedback surface,
+  // keeps only the settings word interactive, and yields to an update banner.
+  setFakeLocation("https://www.roblox.com/home");
+  fakeDocument.visibilityState = "visible";
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: true,
+      updatePopups: true
+    }
+  });
+  contentHooks.resetAccountRecoveryReminderForTests();
+  const recoveryReminder = contentHooks.renderAccountRecoveryReminderFeedback({
+    showNotice: true
+  });
+  assert.ok(recoveryReminder, "eligible Home state must render the reminder");
+  assert.equal(
+    recoveryReminder.id,
+    contentHooks.accountRecoveryReminderConstants.feedbackId
+  );
+  assert.equal(recoveryReminder.hidden, false);
+  const recoveryReminderParts = walk(
+    recoveryReminder,
+    (node) => node.nodeType === 3 || node.tagName === "BUTTON"
+  ).map((node) => node.textContent);
+  assert.deepEqual(recoveryReminderParts, [
+    "Automatic snapshots are off. Change it in ",
+    "settings",
+    "."
+  ]);
+  const recoverySettingsButton = walk(
+    recoveryReminder,
+    (node) => node.tagName === "BUTTON"
+  )[0];
+  assert.equal(recoverySettingsButton.type, "button");
+  assert.equal(
+    recoverySettingsButton.getAttribute("aria-label"),
+    "Open Automatic snapshot settings"
+  );
+
+  contentHooks.syncExtensionUpdateHomeVisitState();
+  const priorityUpdate = contentHooks.renderExtensionUpdateFeedback(renderStatus);
+  assert.ok(priorityUpdate);
+  assert.equal(priorityUpdate.hidden, false);
+  assert.equal(
+    recoveryReminder.hidden,
+    true,
+    "the existing update banner must have priority over the Recovery reminder"
+  );
+  contentHooks.removeExtensionUpdateFeedback();
+  while (animationFrames.size > 0) {
+    const pendingFrames = [...animationFrames.entries()];
+    animationFrames.clear();
+    pendingFrames.forEach(([, callback]) => callback());
+  }
+  assert.equal(
+    recoveryReminder.hidden,
+    false,
+    "the Recovery reminder must return after the update banner is removed"
+  );
+  const recoveryReminderClose = walk(
+    recoveryReminder,
+    (node) =>
+      node.getAttribute("aria-label") ===
+      "Dismiss Automatic snapshots reminder"
+  )[0];
+  recoveryReminderClose.listeners.get("click")({
+    isTrusted: true,
+    type: "click"
+  });
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    null,
+    "dismissal stays local and removes only the current page copy"
+  );
+
+  // A settings-storage echo can ask the content script to recompute after the
+  // background worker has already reserved the three-hour cooldown. Keep the
+  // banner that won that claim even when duplicate recomputes are followed by
+  // a correctly denied claim for the same cooldown window.
+  contentHooks.resetAccountRecoveryReminderForTests();
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: true
+    }
+  });
+  const persistentRecoveryReminder =
+    contentHooks.renderAccountRecoveryReminderFeedback({ showNotice: true });
+  assert.ok(persistentRecoveryReminder);
+  let deniedRecoveryReminderClaims = 0;
+  accountRecoveryReminderMessageHandler = (message, callback) => {
+    deniedRecoveryReminderClaims += 1;
+    callback?.({
+      ok: true,
+      requestId: message.requestId,
+      showNotice: false,
+      nextNoticeAt:
+        Date.now() + contentHooks.accountRecoveryReminderConstants.cooldownMs
+    });
+  };
+  contentHooks.recomputeAccountRecoveryReminder();
+  contentHooks.recomputeAccountRecoveryReminder();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await contentHooks.refreshAccountRecoveryReminder();
+  assert.ok(
+    deniedRecoveryReminderClaims >= 1,
+    "the regression must include a follow-up claim denied by the active cooldown"
+  );
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    persistentRecoveryReminder,
+    "duplicate recomputes and a denied cooldown claim must preserve the eligible visible reminder"
+  );
+  fakeDocument.visibilityState = "hidden";
+  contentHooks.recomputeAccountRecoveryReminder();
+  await contentHooks.refreshAccountRecoveryReminder();
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    persistentRecoveryReminder,
+    "temporarily switching tabs must not discard a claimed Home reminder"
+  );
+  fakeDocument.visibilityState = "visible";
+  contentHooks.syncExtensionUpdateHomeVisitState();
+  contentHooks.handleExtensionUpdateNavigationStart({
+    destination: { url: "https://www.roblox.com/games/123/canceled" }
+  });
+  assert.equal(
+    contentHooks.getExtensionUpdatePreferenceStateForTests()
+      .navigationAwayFromHome,
+    true
+  );
+  contentHooks.recomputeAccountRecoveryReminder();
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    persistentRecoveryReminder,
+    "a navigation that has not committed must retain the claimed reminder"
+  );
+  contentHooks.handleExtensionUpdateNavigationError();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    persistentRecoveryReminder,
+    "a canceled navigation must restore the same claimed Home reminder"
+  );
+
+  // Recomputes that arrive while the winning claim itself is still in flight
+  // must coalesce without invalidating that response. One denied follow-up can
+  // refresh the timer, but it cannot erase the banner produced by the winner.
+  contentHooks.resetAccountRecoveryReminderForTests();
+  let winningRecoveryReminderResponse = null;
+  let winningRecoveryReminderRequest = null;
+  let coalescedRecoveryReminderClaims = 0;
+  accountRecoveryReminderMessageHandler = (message, callback) => {
+    coalescedRecoveryReminderClaims += 1;
+    if (coalescedRecoveryReminderClaims === 1) {
+      winningRecoveryReminderRequest = plain(message);
+      winningRecoveryReminderResponse = callback;
+      return;
+    }
+    callback?.({
+      ok: true,
+      requestId: message.requestId,
+      showNotice: false,
+      nextNoticeAt:
+        Date.now() + contentHooks.accountRecoveryReminderConstants.cooldownMs
+    });
+  };
+  const winningRecoveryReminderClaim =
+    contentHooks.refreshAccountRecoveryReminder();
+  assert.equal(typeof winningRecoveryReminderResponse, "function");
+  contentHooks.recomputeAccountRecoveryReminder();
+  contentHooks.recomputeAccountRecoveryReminder();
+  winningRecoveryReminderResponse({
+    ok: true,
+    requestId: winningRecoveryReminderRequest.requestId,
+    showNotice: true,
+    nextNoticeAt:
+      Date.now() + contentHooks.accountRecoveryReminderConstants.cooldownMs
+  });
+  await winningRecoveryReminderClaim;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    coalescedRecoveryReminderClaims,
+    2,
+    "duplicate in-flight recomputes must coalesce into at most one follow-up claim"
+  );
+  assert.ok(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    "an eligible winning response must survive its coalesced denied follow-up"
+  );
+
+  // Eligibility changes are different: remove the existing notice at once and
+  // invalidate an in-flight claim so its late positive response cannot revive
+  // a reminder the user has just disabled.
+  contentHooks.resetAccountRecoveryReminderForTests();
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: true
+    }
+  });
+  const reminderDisabledDuringClaim =
+    contentHooks.renderAccountRecoveryReminderFeedback({ showNotice: true });
+  assert.ok(reminderDisabledDuringClaim);
+  let lateRecoveryReminderResponse = null;
+  let lateRecoveryReminderRequest = null;
+  accountRecoveryReminderMessageHandler = (message, callback) => {
+    lateRecoveryReminderRequest = plain(message);
+    lateRecoveryReminderResponse = callback;
+  };
+  const pendingRecoveryReminderClaim =
+    contentHooks.refreshAccountRecoveryReminder();
+  assert.equal(typeof lateRecoveryReminderResponse, "function");
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: false
+    }
+  });
+  contentHooks.recomputeAccountRecoveryReminder();
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    null,
+    "turning the reminder setting off must remove its current banner immediately"
+  );
+  lateRecoveryReminderResponse({
+    ok: true,
+    requestId: lateRecoveryReminderRequest.requestId,
+    showNotice: true,
+    nextNoticeAt:
+      Date.now() + contentHooks.accountRecoveryReminderConstants.cooldownMs
+  });
+  await pendingRecoveryReminderClaim;
+  assert.equal(
+    fakeDocument.getElementById(
+      contentHooks.accountRecoveryReminderConstants.feedbackId
+    ),
+    null,
+    "a late positive claim must not restore a reminder after it becomes ineligible"
+  );
+
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: false
+    }
+  });
+  assert.equal(
+    contentHooks.renderAccountRecoveryReminderFeedback({ showNotice: true }),
+    null,
+    "the separate reminder switch must be a complete opt-out"
+  );
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: false,
+      recoverySnapshotArchive: false,
+      recoverySnapshotReminder: true
+    }
+  });
+  assert.equal(
+    contentHooks.renderAccountRecoveryReminderFeedback({ showNotice: true }),
+    null,
+    "the Recovery master switch must suppress automatic-snapshot reminders"
+  );
+  contentHooks.setFeatureSettingsForTests({
+    version: 1,
+    flags: {
+      ...contentHooks.defaultFeatureSettings,
+      recoverySnapshots: true,
+      recoverySnapshotArchive: true,
+      recoverySnapshotReminder: true
+    }
+  });
+  assert.equal(
+    contentHooks.renderAccountRecoveryReminderFeedback({ showNotice: true }),
+    null,
+    "the off reminder must stay suppressed while automatic snapshots are on"
   );
 
   Object.assign(globalThis, originalGlobals);

@@ -256,6 +256,7 @@ let createdNotifications = [];
 let clearedNotifications = [];
 let presence = { kind: "not-in-game" };
 let eventValidation = { ok: true, event: null };
+let eventValidationCalls = [];
 let modernResolution = { universeId: GAME.universeId, placeId: GAME.placeId };
 
 function resetFixture() {
@@ -269,6 +270,7 @@ function resetFixture() {
   clearedNotifications = [];
   presence = { kind: "not-in-game" };
   eventValidation = { ok: true, event: null };
+  eventValidationCalls = [];
   modernResolution = { universeId: GAME.universeId, placeId: GAME.placeId };
   notificationPermission = true;
   scriptingResult = "started";
@@ -311,7 +313,10 @@ function resetFixture() {
       launchCalls.push(plain(destination));
       return "started";
     },
-    revalidateEvent: async () => plain(eventValidation),
+    revalidateEvent: async (schedule) => {
+      eventValidationCalls.push(plain(schedule));
+      return plain(eventValidation);
+    },
     resolveModernDestination: async () => plain(modernResolution)
   });
   return memory;
@@ -829,6 +834,33 @@ test("notifications use a universe game-icon data URL and safely fall back to Ro
   assert.equal(notificationCreates[0].options.message, "Safe fallback reminder");
 });
 
+test("an early event reminder names the real event start time", async () => {
+  resetFixture();
+  const eventStartAt = now + 20 * 60_000;
+  await createSchedule({
+    startAt: eventStartAt - 10 * 60_000,
+    eventStartAt,
+    endAt: eventStartAt + 60 * 60_000,
+    eventId: "12345",
+    mode: "notify",
+    autoJoinConsent: false
+  });
+  const rawSchedule = (await hooks.getSnapshot()).schedules[0];
+  hooks.setRuntimeOverrides({
+    hasNotificationPermission: async () => notificationPermission,
+    getViewerUserId: async () => viewerUserId,
+    fetchFreshViewerUserId: async () => viewerUserId
+  });
+  fetchHandler = async () => { throw new TypeError("offline"); };
+
+  await hooks.createNotification(rawSchedule);
+  assert.equal(notificationCreates.length, 1);
+  assert.match(
+    notificationCreates[0].options.message,
+    /^Time to join\. Fixture Event starts at /i
+  );
+});
+
 test("an account, permission, or feature switch during icon loading creates no notification", async () => {
   for (const authorityChange of ["account", "permission", "feature"]) {
     resetFixture();
@@ -1162,6 +1194,52 @@ test("one named coordinator alarm targets the earliest warning", async () => {
   await hooks.ensureAlarm(now);
   assert.equal(alarmCreates.at(-1).name, constants.alarmName);
   assert.deepEqual(Object.keys(alarmCreates.at(-1).options), ["when"]);
+});
+
+test("official events can remind or join ten minutes early", async () => {
+  resetFixture();
+  const eventStartAt = now + 20 * 60_000;
+  const startAt = eventStartAt - 10 * 60_000;
+  const schedule = await createSchedule({
+    startAt,
+    eventStartAt,
+    endAt: eventStartAt + 60 * 60_000,
+    eventId: "12345",
+    mode: "notify",
+    autoJoinConsent: false
+  });
+
+  assert.equal(schedule.startAt, startAt);
+  assert.equal(schedule.eventStartAt, eventStartAt);
+  assert.equal(eventValidationCalls.length, 1);
+  assert.equal(eventValidationCalls[0].startAt, startAt);
+  assert.equal(eventValidationCalls[0].eventStartAt, eventStartAt);
+
+  createdAlarmTimes = [];
+  assert.equal(
+    await hooks.ensureAlarm(now),
+    startAt - constants.notificationLeadMs
+  );
+
+  const raw = (await hooks.getSnapshot()).schedules[0];
+  const legacy = { ...plain(raw) };
+  delete legacy.eventStartAt;
+  assert.equal(
+    plain(hooks.normalizeJoinSchedulerScheduleRecord(legacy)).eventStartAt,
+    legacy.startAt,
+    "old event schedules treat their former startAt as the official event time"
+  );
+
+  await assert.rejects(
+    () => hooks.createSchedule(createSchedulePayload({
+      startAt: eventStartAt + 60_000,
+      eventStartAt,
+      endAt: eventStartAt + 60 * 60_000,
+      eventId: "54321"
+    })),
+    (error) => error?.code === "INVALID",
+    "the chosen join time cannot be after the official event start"
+  );
 });
 
 test("late schedules become missed and cannot surprise-launch after wake", async () => {

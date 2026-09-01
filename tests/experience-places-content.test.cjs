@@ -354,7 +354,8 @@ function element(tag, { id = "", className = "", dataset = {} } = {}) {
 let pageFixture = null;
 function installPage({
   placeId = "1001", rootPlaceId = "1000", universeId = "2001",
-  events = true, description = true
+  events = true, description = true, descriptionMarkers = true,
+  btrRelocatedDescription = false
 } = {}) {
   document.body.replaceChildren();
   document.activeElement = document.body;
@@ -368,24 +369,40 @@ function installPage({
   const about = element("div", { className: "game-about-tab-container" });
   const information = element("div", { className: "game-info-container" });
   const report = element("div", { className: "report-abuse-container" });
+  const btrGameMain = element("div", { className: "btr-game-main-container" });
+  const btrDescriptionWrapper = element("div", {
+    id: "btr-description-wrapper"
+  });
   const descriptionNode = element("div", { className: "game-description-container" });
-  if (description) {
+  if (description && descriptionMarkers) {
     descriptionNode.append(
       element("div", { className: "game-stat-container" }),
       element("div", { className: "game-description-footer" })
+    );
+  } else if (description) {
+    descriptionNode.append(
+      element("div", { className: "container-header" }),
+      element("div", { className: "game-description" })
     );
   }
   const eventsNode = element("div", { className: "virtual-event-game-details-container" });
   const nativeListener = () => {};
   eventsNode.addEventListener("click", nativeListener);
   about.append(information, report);
-  if (description) about.append(descriptionNode);
+  if (description && btrRelocatedDescription) {
+    btrDescriptionWrapper.append(descriptionNode);
+    btrGameMain.append(btrDescriptionWrapper);
+    detailPage.append(btrGameMain);
+  } else if (description) {
+    about.append(descriptionNode);
+  }
   if (events) about.append(eventsNode);
   aboutRoot.append(about);
   document.body.append(detailPage, metadata, aboutRoot);
   pageFixture = {
     detailPage, metadata, aboutRoot, about, information, report,
-    description: descriptionNode, events: eventsNode, nativeListener
+    description: descriptionNode, events: eventsNode, nativeListener,
+    btrGameMain, btrDescriptionWrapper
   };
   return pageFixture;
 }
@@ -936,6 +953,33 @@ assert.match(metadataRule, /line-height:\s*18px/);
   const fallback = hooks.getExperiencePlacesMountTarget();
   assert.equal(fallback.placement, "after");
   assert.equal(fallback.anchor, pageFixture.description);
+  installPage({
+    events: false,
+    description: true,
+    descriptionMarkers: false
+  });
+  const bloxFruitsStyleFallback = hooks.getExperiencePlacesMountTarget();
+  assert.equal(bloxFruitsStyleFallback.placement, "after");
+  assert.equal(bloxFruitsStyleFallback.anchor, pageFixture.description);
+
+  const btrPage = installPage({
+    events: false,
+    description: true,
+    descriptionMarkers: false,
+    btrRelocatedDescription: true
+  });
+  const btrFallback = hooks.getExperiencePlacesMountTarget();
+  assert.equal(btrFallback.placement, "before");
+  assert.equal(btrFallback.parent, btrPage.about);
+  assert.equal(btrFallback.anchor, btrPage.information);
+  const ownedSection = element("section");
+  ownedSection.setAttribute(constants.attribute, "");
+  btrPage.about.insertBefore(ownedSection, btrPage.information);
+  const stableBtrFallback = hooks.getExperiencePlacesMountTarget();
+  assert.equal(stableBtrFallback.placement, "before");
+  assert.equal(stableBtrFallback.anchor, btrPage.information,
+    "the BTRoblox fallback must ignore RoTool's owned section");
+
   const unhydrated = installPage({ events: false, description: false });
   assert.equal(hooks.getExperiencePlacesMountTarget(), null);
   assert.equal(unhydrated.about.querySelector(`[${constants.attribute}]`), null);

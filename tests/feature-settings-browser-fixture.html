@@ -88,7 +88,13 @@
       globalThis.__rslDeferStorageCallback = false;
       globalThis.__rslFailNextStorageWrite = false;
       globalThis.chrome = {
-        runtime: { lastError: null },
+        runtime: {
+          id: "fixture-extension",
+          lastError: null,
+          getURL(relativePath = "") {
+            return new URL(`../${relativePath}`, location.href).href;
+          }
+        },
         storage: {
           local: {
             set(values, callback) {
@@ -115,6 +121,16 @@
     <script>
       (async () => {
         const hooks = globalThis.__rslContentTestHooks;
+        const nextFrame = () => new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          requestAnimationFrame(finish);
+          setTimeout(finish, 50);
+        });
         try {
           hooks.setFeatureSettingsForTests({
             version: 1,
@@ -145,8 +161,28 @@
               quickPlayActionRandom: true,
               gameCcu: true,
               gameCcuHoverGraph: true,
+              recoverySnapshots: true,
+              recoverySnapshotMenu: true,
+              recoverySnapshotArchive: false,
+              // Intentionally omit recoverySnapshotReminder: its normalized default is on.
               copyRobloxIds: true
             }
+          });
+          hooks.setAccountRecoveryArchivePreferencesForTests({
+            version: 2,
+            frequency: "daily",
+            retention: 5,
+            sections: [
+              "usernameHistory",
+              "twoStepVerification",
+              "purchases",
+              "currencyPurchases",
+              "tradeHistory",
+              "recentlyPlayed",
+              "createdExperiences",
+              "violations"
+            ],
+            revision: 1
           });
           hooks.mountFeatureSettingsButton();
           const roToolButton = document.querySelector("#rsl-navbar-settings button");
@@ -165,25 +201,64 @@
           }
           roToolButton.click();
           const dialog = document.getElementById("rsl-feature-settings-dialog");
-          const switches = Array.from(dialog?.querySelectorAll("[role='switch']") || []);
+          const switches = Array.from(
+            dialog?.querySelectorAll("[data-rsl-feature-key][role='switch']") || []
+          );
           const serverHistorySwitch = dialog?.querySelector(
             '[data-rsl-feature-key="serverHistory"]'
           );
           if (
             !dialog?.open ||
-            switches.length !== 29 ||
+            switches.length !== hooks.featureSettingDefinitions.length ||
             serverHistorySwitch?.checked !== false ||
-            switches.some((input) => input !== serverHistorySwitch && !input.checked)
+            switches.some((input) => {
+              const key = input.getAttribute("data-rsl-feature-key");
+              return input.checked !== (hooks.defaultFeatureSettings[key] !== false);
+            })
           ) {
             throw new Error(
-              "Feature settings dialog did not preserve twenty-eight enabled switches and the Server History opt-in"
+              "Feature settings dialog did not preserve the complete default switch state"
             );
+          }
+          dialog.close();
+          let rejectedSettingsResponse = null;
+          hooks.handleShowFeatureSettingsMessage(
+            { type: "rsl:show-feature-settings", unexpected: true },
+            {
+              id: chrome.runtime.id
+            },
+            (response) => {
+              rejectedSettingsResponse = response;
+            }
+          );
+          if (dialog.open || rejectedSettingsResponse !== null) {
+            throw new Error("Feature settings accepted a runtime message with extra fields");
+          }
+          let acceptedSettingsResponse = null;
+          hooks.handleShowFeatureSettingsMessage(
+            { type: "rsl:show-feature-settings" },
+            {
+              id: chrome.runtime.id
+            },
+            (response) => {
+              acceptedSettingsResponse = response;
+            }
+          );
+          if (
+            !dialog.open ||
+            JSON.stringify(acceptedSettingsResponse) !==
+              JSON.stringify({
+                ok: true,
+                type: "rsl:show-feature-settings"
+              })
+          ) {
+            throw new Error("Trusted toolbar request did not open RoTool Settings");
           }
           const advancedButtons = Array.from(
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 3 ||
+            advancedButtons.length !== 5 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
@@ -197,7 +272,9 @@
           if (
               !disclosureNames.includes("Advanced settings for Sidebar Customization") ||
               !disclosureNames.includes("Advanced settings for Quick Settings") ||
+              !disclosureNames.includes("Advanced settings for RoTool Update Popups") ||
               !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
+              !disclosureNames.includes("Advanced settings for Recovery Snapshots") ||
             new Set(disclosureNames).size !== disclosureNames.length
           ) {
             throw new Error("Advanced disclosures do not have distinct contextual accessible names");
@@ -453,6 +530,311 @@
             throw new Error("Re-enabling Player Counts changed the independent Hover Graph choice");
           }
 
+          const recoverySwitch = dialog.querySelector(
+            "[data-rsl-feature-key='recoverySnapshots']"
+          );
+          const recoveryDisclosure = dialog.querySelector(
+            '[data-rsl-feature-disclosure="recoverySnapshots"]'
+          );
+          const recoveryAdvanced = document.getElementById(
+            recoveryDisclosure?.getAttribute("aria-controls") || ""
+          );
+          const recoveryOpen = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-settings-action]"
+          );
+          const recoveryViewAll = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-archive-settings-action]"
+          );
+          const automaticRecoverySwitch = recoveryAdvanced?.querySelector(
+            "[data-rsl-feature-key='recoverySnapshotArchive']"
+          );
+          const recoverySettingsMenuSwitch = recoveryAdvanced?.querySelector(
+            "[data-rsl-feature-key='recoverySnapshotMenu']"
+          );
+          const automaticReminderSwitch = recoveryAdvanced?.querySelector(
+            "[data-rsl-feature-key='recoverySnapshotReminder']"
+          );
+          const automaticReminderRow = automaticReminderSwitch?.closest(
+            ".rsl-feature-settings__row"
+          );
+          const automaticReminderCopy = automaticReminderRow?.querySelector(
+            ".rsl-feature-settings__copy"
+          );
+          const recoveryFrequency = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-archive-preference='frequency']"
+          );
+          const recoveryRetention = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-archive-preference='retention']"
+          );
+          const recoveryRecentlyPlayed = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-archive-preference='recentlyPlayed']"
+          );
+          const recoveryTradeHistory = recoveryAdvanced?.querySelector(
+            "[data-rsl-account-recovery-archive-preference='tradeHistory']"
+          );
+          const recoverySectionSwitches = recoveryAdvanced?.querySelectorAll(
+            ".rsl-feature-settings__row--recovery-section [role='switch']"
+          );
+          const recoveryCaptureHeading = Array.from(
+            recoveryAdvanced?.querySelectorAll(
+              ".rsl-feature-settings__children-heading--recovery"
+            ) || []
+          ).find((heading) =>
+            heading.querySelector("span")?.textContent ===
+              "Information to capture automatically"
+          );
+          const recoveryItem = recoverySwitch?.closest(
+            ".rsl-feature-settings__item"
+          );
+          if (
+            recoveryItem?.querySelector(
+              ":scope > .rsl-feature-settings__row .rsl-feature-settings__copy strong"
+            )?.textContent !== "Recovery Snapshots" ||
+            !recoveryOpen ||
+            recoveryOpen.textContent !== "Open" ||
+            !recoveryViewAll ||
+            recoveryViewAll.textContent !== "Open" ||
+            !recoverySettingsMenuSwitch ||
+            recoverySettingsMenuSwitch.checked !== true ||
+            !automaticRecoverySwitch ||
+            recoveryFrequency?.value !== "daily" ||
+            recoveryRetention?.value !== "5" ||
+            recoveryTradeHistory?.checked !== true ||
+            recoveryRecentlyPlayed?.checked !== true ||
+            recoverySectionSwitches?.length !== 8 ||
+            Array.from(recoverySectionSwitches || []).some(
+              (sectionSwitch) => sectionSwitch.checked !== true
+            ) ||
+            recoveryCaptureHeading?.querySelector("small")?.textContent !==
+              "8 of 8 selected" ||
+            !automaticReminderSwitch ||
+            automaticReminderSwitch.checked !== true ||
+            automaticReminderCopy?.querySelector("strong")?.textContent !==
+              "Automatic snapshot reminders" ||
+            automaticReminderCopy?.querySelector("span")?.textContent !==
+              "Show a Home reminder every 3 hours while Automatic snapshots are off." ||
+            automaticRecoverySwitch.closest(".rsl-feature-settings__row")
+              ?.classList.contains("rsl-feature-settings__row--child") !== true ||
+            recoverySettingsMenuSwitch.closest(".rsl-feature-settings__row")
+              ?.classList.contains("rsl-feature-settings__row--child") !== true ||
+            automaticReminderRow?.classList.contains(
+              "rsl-feature-settings__row--child"
+            ) !== true
+          ) {
+            throw new Error(
+              "Recovery Snapshots was not consolidated into one Advanced settings hierarchy"
+            );
+          }
+          const settingsViewport = dialog.querySelector(
+            ".rsl-feature-settings-dialog__body"
+          );
+          recoverySwitch
+            ?.closest(".rsl-feature-settings__row")
+            ?.scrollIntoView({ block: "center" });
+          recoverySwitch?.focus({ preventScroll: true });
+          await nextFrame();
+          const recoveryScrollBefore = settingsViewport?.scrollTop ?? 0;
+          const recoveryScrollMaximum = settingsViewport
+            ? settingsViewport.scrollHeight - settingsViewport.clientHeight
+            : 0;
+          const pageScrollBefore = window.scrollY;
+          if (
+            !settingsViewport ||
+            recoveryScrollBefore <= 1 ||
+            recoveryScrollBefore >= recoveryScrollMaximum - 1
+          ) {
+            throw new Error(
+              "Recovery scroll regression test could not establish an interior Settings position"
+            );
+          }
+          await hooks.saveFeatureSettingsForTests({
+            recoverySnapshotMenu: false
+          });
+          await nextFrame();
+          if (
+            Math.abs(settingsViewport.scrollTop - recoveryScrollBefore) > 1 ||
+            window.scrollY !== pageScrollBefore ||
+            document.activeElement !== recoverySwitch
+          ) {
+            throw new Error(
+              `Hiding the Recovery shortcut moved Settings: ${recoveryScrollBefore} -> ${settingsViewport.scrollTop}`
+            );
+          }
+          if (
+            !recoverySwitch?.checked ||
+            recoverySettingsMenuSwitch?.checked ||
+            recoverySettingsMenuSwitch?.disabled ||
+            recoveryOpen?.disabled ||
+            recoveryViewAll?.disabled ||
+            automaticRecoverySwitch?.disabled ||
+            automaticReminderSwitch?.disabled ||
+            recoveryAdvanced?.hasAttribute("data-rsl-feature-parent-disabled")
+          ) {
+            throw new Error(
+              "The Advanced Roblox Settings-menu switch changed another Recovery control"
+            );
+          }
+          await hooks.saveFeatureSettingsForTests({ recoverySnapshotArchive: false });
+          if (
+            automaticRecoverySwitch.checked ||
+            !recoverySwitch.checked ||
+            recoverySettingsMenuSwitch.checked ||
+            !automaticReminderSwitch.checked ||
+            automaticReminderSwitch.disabled ||
+            recoveryOpen.disabled ||
+            recoveryViewAll.disabled ||
+            !recoveryFrequency.disabled ||
+            recoveryRetention.disabled ||
+            recoveryRecentlyPlayed.disabled
+          ) {
+            throw new Error(
+              "Automatic snapshots could not be changed independently of the Roblox Settings shortcut"
+            );
+          }
+          automaticReminderRow.scrollIntoView({ block: "center" });
+          automaticReminderSwitch.focus({ preventScroll: true });
+          await nextFrame();
+          const reminderScrollBefore = settingsViewport.scrollTop;
+          await hooks.saveFeatureSettingsForTests({
+            recoverySnapshotReminder: false
+          });
+          await nextFrame();
+          if (
+            automaticReminderSwitch.checked ||
+            automaticReminderSwitch.disabled ||
+            automaticRecoverySwitch.checked ||
+            !recoverySwitch.checked ||
+            recoverySettingsMenuSwitch.checked ||
+            Math.abs(settingsViewport.scrollTop - reminderScrollBefore) > 1
+          ) {
+            throw new Error(
+              "Automatic snapshot reminders could not be disabled independently without moving Settings"
+            );
+          }
+          await hooks.saveFeatureSettingsForTests({
+            recoverySnapshotReminder: true
+          });
+          await nextFrame();
+          if (
+            !automaticReminderSwitch.checked ||
+            automaticReminderSwitch.disabled ||
+            automaticRecoverySwitch.checked ||
+            !recoverySwitch.checked ||
+            recoverySettingsMenuSwitch.checked ||
+            Math.abs(settingsViewport.scrollTop - reminderScrollBefore) > 1
+          ) {
+            throw new Error(
+              "Automatic snapshot reminders could not be enabled independently without moving Settings"
+            );
+          }
+          recoveryDisclosure.setAttribute("aria-expanded", "false");
+          recoveryAdvanced.hidden = true;
+          if (typeof hooks.reviewAutomaticSnapshotSettings !== "function") {
+            throw new Error("Automatic snapshot settings review hook is unavailable");
+          }
+          hooks.reviewAutomaticSnapshotSettings(dialog);
+          await nextFrame();
+          await nextFrame();
+          const automaticRecoveryRow = automaticRecoverySwitch.closest(
+            ".rsl-feature-settings__row"
+          );
+          const settingsViewportRect = settingsViewport.getBoundingClientRect();
+          const automaticRecoveryRowRect =
+            automaticRecoveryRow.getBoundingClientRect();
+          if (
+            recoveryDisclosure.getAttribute("aria-expanded") !== "true" ||
+            recoveryAdvanced.hidden ||
+            document.activeElement !== automaticRecoverySwitch ||
+            automaticRecoveryRowRect.top < settingsViewportRect.top - 1 ||
+            automaticRecoveryRowRect.bottom > settingsViewportRect.bottom + 1
+          ) {
+            throw new Error(
+              "The review action did not reveal, center, and focus Automatic snapshots"
+            );
+          }
+          const automaticRecoveryRowTopBeforeEnable =
+            automaticRecoveryRow.getBoundingClientRect().top;
+          const automaticRecoveryScrollBeforeEnable = settingsViewport.scrollTop;
+          await hooks.saveFeatureSettingsForTests({ recoverySnapshotArchive: true });
+          if (
+            !automaticRecoverySwitch.checked ||
+            !automaticReminderSwitch.checked ||
+            !recoverySwitch.checked ||
+            recoverySettingsMenuSwitch.checked ||
+            document.activeElement !== automaticRecoverySwitch ||
+            Math.abs(
+              settingsViewport.scrollTop - automaticRecoveryScrollBeforeEnable
+            ) > 1 ||
+            Math.abs(
+              automaticRecoveryRow.getBoundingClientRect().top -
+                automaticRecoveryRowTopBeforeEnable
+            ) > 1
+          ) {
+            throw new Error(
+              "Enabling automatic snapshots changed another Recovery switch or moved the focused setting"
+            );
+          }
+
+          recoverySwitch
+            ?.closest(".rsl-feature-settings__row")
+            ?.scrollIntoView({ block: "center" });
+          recoverySwitch?.focus({ preventScroll: true });
+          await nextFrame();
+          const masterScrollBefore = settingsViewport.scrollTop;
+          await hooks.saveFeatureSettingsForTests({ recoverySnapshots: false });
+          await nextFrame();
+          if (
+            recoverySwitch?.checked ||
+            !recoverySettingsMenuSwitch.disabled ||
+            !automaticRecoverySwitch.checked ||
+            !automaticRecoverySwitch.disabled ||
+            !automaticReminderSwitch.checked ||
+            !automaticReminderSwitch.disabled ||
+            recoveryOpen?.disabled ||
+            recoveryViewAll?.disabled ||
+            !recoveryFrequency?.disabled ||
+            !recoveryRetention?.disabled ||
+            !recoveryTradeHistory?.disabled ||
+            !recoveryRecentlyPlayed?.disabled ||
+            recoveryAdvanced?.hasAttribute("data-rsl-feature-parent-disabled") ||
+            document.activeElement !== recoverySwitch ||
+            Math.abs(settingsViewport.scrollTop - masterScrollBefore) > 1
+          ) {
+            throw new Error(
+              "The Recovery Snapshots master switch did not gate automatic controls while leaving manual actions available without moving Settings"
+            );
+          }
+          await hooks.saveFeatureSettingsForTests({ recoverySnapshots: true });
+          if (
+            !recoverySwitch?.checked ||
+            recoverySettingsMenuSwitch.checked ||
+            recoverySettingsMenuSwitch.disabled ||
+            !automaticRecoverySwitch.checked ||
+            automaticRecoverySwitch.disabled ||
+            !automaticReminderSwitch.checked ||
+            automaticReminderSwitch.disabled ||
+            recoveryOpen?.disabled ||
+            recoveryViewAll?.disabled ||
+            recoveryFrequency?.disabled ||
+            recoveryRetention?.disabled ||
+            recoveryTradeHistory?.disabled ||
+            recoveryRecentlyPlayed?.disabled ||
+            recoveryAdvanced?.hasAttribute("data-rsl-feature-parent-disabled")
+          ) {
+            throw new Error("Recovery Snapshots did not restore its saved Advanced choices");
+          }
+          await hooks.saveFeatureSettingsForTests({
+            recoverySnapshotMenu: true
+          });
+          if (
+            !recoverySettingsMenuSwitch.checked ||
+            recoverySettingsMenuSwitch.disabled ||
+            !recoverySwitch.checked ||
+            !automaticRecoverySwitch.checked
+          ) {
+            throw new Error("The Roblox Settings-menu shortcut did not re-enable cleanly");
+          }
+
           await hooks.saveFeatureSettingsForTests({
             quickPlayActionPlay: false,
             quickPlayActionPrivate: true,
@@ -518,10 +900,34 @@
 
           document.body.dataset.testResult = "pass";
           document.body.dataset.testMessage = "Feature settings browser fixture passed";
-          if (new URL(location.href).searchParams.get("view") === "sidebar") {
+          const fixtureView = new URL(location.href).searchParams.get("view");
+          if (fixtureView === "sidebar") {
             dialog
               .querySelector('[data-rsl-feature-disclosure="sidebarShortcuts"]')
               ?.click();
+          } else if (fixtureView === "recovery") {
+            dialog.close();
+            const recovery = hooks.createAccountRecoveryModalComponent("dark");
+            recovery.frame.src = new URL(
+              "../recovery-snapshot.html?theme=dark&view=home-modal",
+              location.href
+            ).href;
+            recovery.loading.hidden = true;
+            recovery.frame.hidden = false;
+            document.body.append(recovery.host);
+            recovery.dialog.showModal();
+            recovery.title?.focus({ preventScroll: true });
+          } else if (fixtureView === "recovery-settings") {
+            await hooks.saveFeatureSettingsForTests({
+              recoverySnapshotMenu: false
+            });
+            const recoveryDisclosure = dialog.querySelector(
+              '[data-rsl-feature-disclosure="recoverySnapshots"]'
+            );
+            recoveryDisclosure?.click();
+            recoveryDisclosure
+              ?.closest(".rsl-feature-settings__item")
+              ?.scrollIntoView({ block: "center" });
           }
           document.title = "PASS: RoTool feature settings fixture";
         } catch (error) {

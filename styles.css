@@ -1,15 +1,23 @@
 /* Roblox's StyleGuide owns the normal system-feedback geometry, color,
    typography, and close sprite. RoTool adds only link/focus affordances. */
+#rsl-account-recovery-reminder-feedback .rsl-extension-update-feedback__link,
 #rsl-extension-update-feedback .rsl-extension-update-feedback__link {
   text-decoration: underline !important;
   text-decoration-thickness: 1px !important;
   text-underline-offset: 2px !important;
 }
 
+#rsl-account-recovery-reminder-feedback
+  .rsl-extension-update-feedback__link:hover,
 #rsl-extension-update-feedback .rsl-extension-update-feedback__link:hover {
   text-decoration-thickness: 2px !important;
 }
 
+#rsl-account-recovery-reminder-feedback
+  :is(
+    .rsl-extension-update-feedback__link,
+    .rsl-extension-update-feedback__close
+  ):focus-visible,
 #rsl-extension-update-feedback
   :is(
     .rsl-extension-update-feedback__link,
@@ -19,18 +27,29 @@
   outline-offset: 2px !important;
 }
 
+#rsl-account-recovery-reminder-feedback[hidden],
 #rsl-extension-update-feedback[hidden] {
   display: none !important;
 }
 
+#rsl-account-recovery-reminder-feedback
+  .rsl-account-recovery-reminder-feedback__settings {
+  all: unset;
+  cursor: pointer;
+}
+
 /* Fail safe only: these declarations reproduce Roblox's current system
    feedback contract when that StyleGuide surface is unavailable. */
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__inner,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__inner {
   position: relative;
   width: 100%;
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__alert,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__alert {
   position: fixed;
@@ -53,6 +72,13 @@
   transition: top 0.4s ease;
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__alert {
+  background-color: #335fff;
+}
+
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__content,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__content {
   display: inline-block;
@@ -60,6 +86,8 @@
   width: calc(100% - 30px);
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__close {
   position: relative;
@@ -73,6 +101,10 @@
   cursor: pointer;
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::before,
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::after,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__close::before,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
@@ -86,17 +118,23 @@
   content: "";
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::before,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__close::before {
   transform: rotate(45deg);
 }
 
+#rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+  .rsl-extension-update-feedback__close::after,
 #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
   .rsl-extension-update-feedback__close::after {
   transform: rotate(-45deg);
 }
 
 @media (max-width: 991px) {
+  #rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert,
   #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
     .rsl-extension-update-feedback__alert {
     top: 80px;
@@ -104,6 +142,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  #rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert,
   #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
     .rsl-extension-update-feedback__alert {
     transition: none !important;
@@ -111,6 +151,8 @@
 }
 
 @media (forced-colors: active) {
+  #rsl-account-recovery-reminder-feedback.rsl-extension-update-feedback--fallback
+    .rsl-extension-update-feedback__alert,
   #rsl-extension-update-feedback.rsl-extension-update-feedback--fallback
     .rsl-extension-update-feedback__alert {
     color: CanvasText !important;
@@ -119,10 +161,14 @@
     forced-color-adjust: auto;
   }
 
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__link,
   #rsl-extension-update-feedback .rsl-extension-update-feedback__link {
     color: LinkText !important;
   }
 
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__close,
   #rsl-extension-update-feedback .rsl-extension-update-feedback__close {
     position: relative !important;
     color: ButtonText !important;
@@ -130,6 +176,10 @@
     forced-color-adjust: auto;
   }
 
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__close::before,
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__close::after,
   #rsl-extension-update-feedback
     .rsl-extension-update-feedback__close::before,
   #rsl-extension-update-feedback
@@ -143,11 +193,15 @@
     content: "";
   }
 
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__close::before,
   #rsl-extension-update-feedback
     .rsl-extension-update-feedback__close::before {
     transform: rotate(45deg);
   }
 
+  #rsl-account-recovery-reminder-feedback
+    .rsl-extension-update-feedback__close::after,
   #rsl-extension-update-feedback
     .rsl-extension-update-feedback__close::after {
     transform: rotate(-45deg);
@@ -1069,6 +1123,33 @@
   border-radius: 50%;
 }
 
+.rsl-sidebar-icon--custom.rsl-owned-thumbnail-frame,
+.rsl-sidebar-icon--custom.rsl-sidebar-icon--thumbnail {
+  overflow: visible;
+  background-color: transparent;
+  border-radius: 0;
+}
+
+.rsl-sidebar-icon--custom .rsl-sidebar-thumbnail {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.rsl-sidebar-icon--custom .rsl-sidebar-thumbnail--profile {
+  border-radius: 50%;
+}
+
+.rsl-sidebar-icon--custom.rsl-owned-thumbnail-frame[data-rsl-thumbnail-state="loading"]
+  > svg {
+  opacity: 0.45;
+}
+
+.rsl-sidebar-icon--custom.rsl-owned-thumbnail-frame[data-rsl-thumbnail-state="loading"]::after {
+  display: none;
+  animation: none;
+}
+
 .rsl-dialog {
   --rsl-fallback-surface: #191a1f;
   --rsl-fallback-raised: #24262c;
@@ -1274,6 +1355,45 @@
   box-shadow: 0 0 0 2px var(--color-selection-start, rgb(65 137 255 / 25%));
 }
 
+.rsl-shortcut-tab-option {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  cursor: pointer;
+}
+
+.rsl-shortcut-tab-option > input,
+.rsl-manager__tab-option > input {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  flex: 0 0 18px;
+  accent-color: var(--color-action-emphasis-background, #335fff);
+  cursor: pointer;
+}
+
+.rsl-shortcut-tab-option > input:focus-visible,
+.rsl-manager__tab-option > input:focus-visible {
+  outline: var(--stroke-thicker, 2px) solid
+    var(--color-selection-start, #6aa7ff);
+  outline-offset: 2px;
+}
+
+.rsl-shortcut-tab-option__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.rsl-shortcut-tab-option__copy > span {
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .rsl-error {
   min-height: 20px;
   margin: 0;
@@ -1427,6 +1547,32 @@
   align-items: center;
   gap: 3px;
   flex: 0 0 auto;
+}
+
+.rsl-manager__tab-option {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 0 7px;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  border-radius: var(--radius-medium, 6px);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rsl-manager__tab-option:hover {
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  background: var(--color-action-standard-background, #34363f);
+}
+
+.rsl-manager__tab-option > input {
+  width: 16px;
+  height: 16px;
+  margin-top: 0;
+  flex-basis: 16px;
 }
 
 .rsl-manager__text strong,
@@ -2244,6 +2390,21 @@
   gap: 2px;
 }
 
+/* Roblox's cloned name lane can keep an intrinsic width. Give the Best
+   Friends name row the complete native label lane so short names do not get
+   squeezed by verified/subscription badges. Flex then reserves the badges'
+   real width once and only truncates names that genuinely do not fit. */
+.rsl-best-friends-carousel
+  [data-rsl-best-friend-id]
+  .friends-carousel-tile-name[data-rsl-friend-name-badges]:not(
+    [data-rsl-friend-name-badge-count="0"]
+  ) {
+  inline-size: 100% !important;
+  max-inline-size: 100% !important;
+  min-inline-size: 0 !important;
+  justify-content: center;
+}
+
 [data-rsl-friend-name-badges]:not([data-rsl-friend-name-badge-count="0"])
   > :is(a, strong, .friends-carousel-display-name) {
   width: auto !important;
@@ -2253,18 +2414,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Reserve the fixed badge cluster before truncating the display name. The
-   badges never participate in flex shrinking, even when both are present. */
-[data-rsl-friend-name-badge-count="1"]
-  > :is(a, strong, .friends-carousel-display-name) {
-  max-width: calc(100% - 20px) !important;
-}
-
-[data-rsl-friend-name-badge-count="2"]
-  > :is(a, strong, .friends-carousel-display-name) {
-  max-width: calc(100% - 40px) !important;
 }
 
 [data-rsl-friend-name-badge],
@@ -3003,6 +3152,111 @@
 
 .rsl-private-servers-dialog .rsl-private-servers-dialog__join[aria-busy="true"] {
   cursor: wait;
+}
+
+/* Recovery Snapshot has enough room for its capture controls while preserving
+   a larger document-preview surface once evidence has been collected. */
+.rsl-dialog.rsl-account-recovery-dialog {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.rsl-dialog.rsl-account-recovery-dialog[open] {
+  display: grid;
+  place-items: center;
+}
+
+.rsl-dialog.rsl-account-recovery-dialog .rsl-account-recovery-dialog__surface.foundation-web-dialog-content[data-size="Large"] {
+  width: min(920px, calc(100vw - 24px)) !important;
+  max-width: none !important;
+  inline-size: min(920px, calc(100vw - 24px)) !important;
+  max-inline-size: none !important;
+  height: min(820px, calc(100dvh - 24px)) !important;
+  max-height: min(820px, calc(100dvh - 24px)) !important;
+  grid-template-rows: minmax(0, 1fr);
+  border-color: var(
+    --color-stroke-muted,
+    var(--color-stroke-default, var(--rsl-fallback-stroke))
+  ) !important;
+  transition:
+    width 180ms ease,
+    inline-size 180ms ease,
+    height 180ms ease,
+    max-height 180ms ease;
+}
+
+.rsl-dialog.rsl-account-recovery-dialog[data-rsl-recovery-view="document"] .rsl-account-recovery-dialog__surface.foundation-web-dialog-content[data-size="Large"] {
+  width: min(1040px, calc(100vw - 24px)) !important;
+  inline-size: min(1040px, calc(100vw - 24px)) !important;
+  height: min(820px, calc(100dvh - 24px)) !important;
+  max-height: min(820px, calc(100dvh - 24px)) !important;
+}
+
+.rsl-account-recovery__body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+.rsl-account-recovery__header {
+  gap: 0;
+  padding: 24px 72px 16px 24px;
+}
+
+.rsl-account-recovery__header [tabindex="-1"]:focus {
+  outline: none;
+}
+
+.rsl-account-recovery__frame {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-surface-100, var(--rsl-fallback-surface));
+}
+
+.rsl-account-recovery__iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+
+.rsl-account-recovery__iframe[hidden],
+.rsl-account-recovery__loading[hidden] {
+  display: none !important;
+}
+
+.rsl-account-recovery__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  background: var(--color-surface-100, var(--rsl-fallback-surface));
+  font-weight: 600;
+}
+
+.rsl-account-recovery__spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rsl-account-recovery-spin 1s linear infinite;
+}
+
+@keyframes rsl-account-recovery-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Server History is a large local-history surface, but keeps the same Roblox
@@ -5245,6 +5499,38 @@
     max-height: calc(100dvh - 16px);
   }
 
+  .rsl-account-recovery-dialog {
+    padding: 8px;
+  }
+
+  .rsl-account-recovery-dialog .rsl-account-recovery-dialog__surface {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .rsl-dialog.rsl-account-recovery-dialog .rsl-account-recovery-dialog__surface.foundation-web-dialog-content[data-size="Large"] {
+    width: 100% !important;
+    max-width: none !important;
+    inline-size: 100% !important;
+    max-inline-size: none !important;
+    height: calc(100dvh - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  .rsl-dialog.rsl-account-recovery-dialog[data-rsl-recovery-view="document"] .rsl-account-recovery-dialog__surface.foundation-web-dialog-content[data-size="Large"] {
+    height: calc(100dvh - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+
+  .rsl-account-recovery__body {
+    padding: 0;
+  }
+
+  .rsl-account-recovery__header {
+    padding: 18px 58px 14px 18px;
+  }
+
   .rsl-server-history__body {
     padding: 18px;
   }
@@ -5282,8 +5568,23 @@
     flex-wrap: wrap;
   }
 
+  .rsl-manager__text {
+    flex: 1 1 calc(100% - 40px);
+  }
+
   .rsl-manager__controls {
+    box-sizing: border-box;
+    width: calc(100% - 40px);
     margin-left: 40px;
+    flex-wrap: wrap;
+    flex: 1 0 calc(100% - 40px);
+  }
+}
+
+@media (forced-colors: active) {
+  .rsl-shortcut-tab-option > input,
+  .rsl-manager__tab-option > input {
+    forced-color-adjust: auto;
   }
 }
 
@@ -5508,6 +5809,7 @@
 }
 
 .rsl-feature-settings__row {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -5526,6 +5828,40 @@
 
 .rsl-feature-settings__row:hover {
   background: var(--color-state-hover, rgb(255 255 255 / 6%));
+}
+
+.rsl-feature-settings__row--action {
+  cursor: default;
+}
+
+.rsl-feature-settings__action {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 6px 14px;
+  color: var(--color-content-emphasis, var(--rsl-fallback-content));
+  background: var(--color-action-standard-background, var(--color-surface-300));
+  border: var(--stroke-standard, 1px) solid
+    var(--color-stroke-default, var(--rsl-fallback-stroke));
+  border-radius: var(--radius-medium, 8px);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.rsl-feature-settings__action:hover {
+  background: var(--color-state-hover, rgb(255 255 255 / 8%));
+}
+
+.rsl-feature-settings__action:focus-visible {
+  outline: 2px solid var(--color-system-emphasis, #6aa7ff);
+  outline-offset: 2px;
+}
+
+.rsl-feature-settings__action:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .rsl-feature-settings__disclosure {
@@ -5736,6 +6072,23 @@
   text-transform: uppercase;
 }
 
+.rsl-feature-settings__children-heading--recovery {
+  display: flex;
+  min-height: 34px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rsl-feature-settings__children-heading--recovery small {
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 @media (min-width: 620px) {
   .rsl-feature-settings__children[data-rsl-feature-children="sidebarShortcuts"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5758,6 +6111,21 @@
       [data-rsl-feature-key="sidebarCustomShortcuts"]
     ) {
     grid-column: 1 / -1;
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="recoverySnapshots"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="recoverySnapshots"]
+    > [data-rsl-recovery-settings-full] {
+    grid-column: 1 / -1;
+  }
+
+  .rsl-feature-settings__children[data-rsl-feature-children="recoverySnapshots"]
+    .rsl-feature-settings__row--recovery-section[data-rsl-recovery-section-column="right"] {
+    border-left: var(--stroke-standard, 1px) solid
+      var(--color-stroke-default, var(--rsl-fallback-stroke));
   }
 }
 
@@ -5843,7 +6211,7 @@
 
 .rsl-feature-settings__input:disabled ~ .rsl-feature-settings__switch,
 .rsl-feature-settings__row:has(.rsl-feature-settings__input:disabled) {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.65;
 }
 
@@ -5925,6 +6293,10 @@
     padding: 12px;
   }
 
+  .rsl-feature-settings__action {
+    min-height: 44px;
+  }
+
   .rsl-feature-settings__disclosure {
     width: calc(100% - 24px);
     margin-right: 12px;
@@ -5968,6 +6340,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rsl-account-recovery-dialog .rsl-account-recovery-dialog__surface {
+    transition: none;
+  }
+
+  .rsl-account-recovery__spinner {
+    animation-duration: 2s;
+  }
+
   .rsl-feature-settings__disclosure-icon {
     transition: none;
   }

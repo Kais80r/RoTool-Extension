@@ -910,6 +910,44 @@ select:disabled {
   line-height: 18px;
 }
 
+.event-time-presets {
+  display: grid;
+  margin-top: 12px;
+  gap: 7px;
+}
+
+.event-time-presets[hidden] {
+  display: none !important;
+}
+
+.event-time-presets__label {
+  color: var(--color-content-default, var(--rsl-fallback-default));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.event-time-presets__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-time-presets__buttons .button {
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
+.event-time-presets__buttons .button[aria-pressed="true"] {
+  color: var(--color-action-emphasis-foreground, #fff);
+  background: var(--color-action-emphasis-background, #335fff);
+}
+
+.event-time-presets__buttons .button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .combobox-wrap {
   position: relative;
 }
@@ -1287,6 +1325,7 @@ select:disabled {
   .game-thumbnail,
   .search-result__thumbnail,
   .status-pill,
+  .event-time-presets__buttons .button,
   .inline-confirm {
     border: 1px solid CanvasText;
     forced-color-adjust: auto;
@@ -1301,5 +1340,10 @@ select:disabled {
   .destination-choice:has(input:focus-visible),
   .check-row:has(input:focus-visible) {
     outline-color: Highlight;
+  }
+
+  .event-time-presets__buttons .button[aria-pressed="true"] {
+    color: HighlightText;
+    background: Highlight;
   }
 }

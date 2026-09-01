@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; font-src https://css.rbxcdn.com; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>Recovery Snapshot</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="recovery-snapshot.css">
+    <script src="recovery-snapshot.js" defer></script>
+  </head>
+  <body class="rsl-recovery-embed">
+    <main
+      id="content"
+      class="rsl-recovery-content"
+      aria-labelledby="page-title"
+      tabindex="-1"
+    >
+      <h1 id="page-title" class="rsl-sr-only">Recovery Snapshot</h1>
+
+      <div class="rsl-recovery-viewport">
+        <aside class="rsl-recovery-help" aria-labelledby="privacy-note-title">
+          <span class="rsl-recovery-help__icon" aria-hidden="true">i</span>
+          <div>
+            <h2 id="privacy-note-title" class="content-emphasis text-label-large">Keep exported files private</h2>
+            <p class="content-default text-body-medium">
+              A snapshot may contain purchase or moderation information. It is supporting
+              material, not guaranteed proof of ownership.
+            </p>
+          </div>
+        </aside>
+
+        <details class="rsl-recovery-options" open>
+          <summary class="rsl-recovery-options__summary">
+            <span class="rsl-recovery-options__summary-copy">
+              <span id="snapshot-options-title" class="rsl-recovery-options__title content-emphasis text-label-large">Information to capture</span>
+              <span
+                id="snapshot-option-summary"
+                class="rsl-recovery-options__description content-default text-body-medium"
+              >
+                8 of 8 sections selected
+              </span>
+            </span>
+            <span class="rsl-recovery-options__chevron" aria-hidden="true"></span>
+          </summary>
+
+          <div class="rsl-recovery-options__content">
+            <p id="snapshot-options-note" class="rsl-recovery-options__note content-default text-body-medium">
+              Account identity and capture time are always requested. Unchecked information
+              is not requested from Roblox.
+            </p>
+            <fieldset class="rsl-recovery-options__list">
+              <legend class="rsl-sr-only">Information to capture</legend>
+
+              <label class="rsl-recovery-option" for="include-username-history">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Username history</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-username-history"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="usernameHistory"
+                    data-rsl-recovery-section="usernameHistory"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-two-step-verification">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Two-step verification</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-two-step-verification"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="twoStepVerification"
+                    data-rsl-recovery-section="twoStepVerification"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-purchases">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Item purchases</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-purchases"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="purchases"
+                    data-rsl-recovery-section="purchases"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-currency-purchases">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Robux purchases</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-currency-purchases"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="currencyPurchases"
+                    data-rsl-recovery-section="currencyPurchases"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-trade-history">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Trade history</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-trade-history"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="tradeHistory"
+                    data-rsl-recovery-section="tradeHistory"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-recently-played">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Recently played</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-recently-played"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="recentlyPlayed"
+                    data-rsl-recovery-section="recentlyPlayed"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-created-experiences">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Created experiences</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-created-experiences"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="createdExperiences"
+                    data-rsl-recovery-section="createdExperiences"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+
+              <label class="rsl-recovery-option" for="include-violations">
+                <span class="rsl-recovery-option__copy">
+                  <span class="rsl-recovery-option__label">Violations &amp; Appeals</span>
+                </span>
+                <span class="rsl-recovery-checkbox">
+                  <input
+                    id="include-violations"
+                    class="rsl-recovery-checkbox__input"
+                    type="checkbox"
+                    name="violations"
+                    data-rsl-recovery-section="violations"
+                    checked
+                  >
+                  <span class="rsl-recovery-checkbox__box" aria-hidden="true"></span>
+                </span>
+              </label>
+            </fieldset>
+          </div>
+        </details>
+
+        <section
+          id="snapshot-preview"
+          class="rsl-recovery-preview"
+          aria-labelledby="preview-section-title"
+          hidden
+        >
+          <h2 id="preview-section-title" class="rsl-sr-only">Document preview</h2>
+          <p class="rsl-recovery-print-hint">
+            For a clean PDF, turn off <strong>Headers and footers</strong> in the print dialog.
+          </p>
+
+          <div class="preview-canvas">
+            <article class="paper">
+              <header class="paper-heading">
+                <div>
+                  <h2 id="preview-title" tabindex="-1">Recovery Snapshot</h2>
+                </div>
+                <time id="capture-time" class="capture-time"></time>
+              </header>
+
+              <div id="snapshot-tables" class="snapshot-tables"></div>
+            </article>
+          </div>
+        </section>
+
+        <div class="collection-feedback">
+          <section
+            id="snapshot-collection-status"
+            class="collection-status"
+            aria-labelledby="collection-status-title"
+            hidden
+          >
+            <h2 id="collection-status-title" class="content-emphasis text-label-large">Collection details</h2>
+            <p class="content-default text-body-medium">
+              Unavailable or incomplete information is listed here, outside the exported document.
+            </p>
+            <ul id="snapshot-collection-status-list" class="collection-status__list"></ul>
+          </section>
+
+          <section
+            id="snapshot-limitations"
+            class="limitations"
+            aria-labelledby="snapshot-limitations-title"
+            hidden
+          >
+            <h2 id="snapshot-limitations-title" class="content-emphasis text-label-large">Snapshot limitations</h2>
+            <p class="content-default text-body-medium">These notes are not included in the JSON or PDF.</p>
+            <ul></ul>
+          </section>
+        </div>
+      </div>
+
+      <footer class="rsl-recovery-footer" aria-label="Snapshot controls">
+        <p id="snapshot-status" class="rsl-recovery-status" role="status" aria-live="polite"></p>
+        <div class="rsl-recovery-actions">
+          <button
+            id="create-snapshot"
+            class="rsl-button rsl-button--primary foundation-web-button"
+            type="button"
+          >
+            <span class="rsl-button__state-layer" aria-hidden="true" data-testid="foundation-web-state-layer"></span>
+            <span id="create-snapshot-label" class="rsl-button__label">Create snapshot</span>
+          </button>
+          <button
+            id="download-json"
+            class="rsl-button rsl-button--secondary foundation-web-button"
+            type="button"
+            disabled
+            hidden
+          >
+            <span class="rsl-button__state-layer" aria-hidden="true" data-testid="foundation-web-state-layer"></span>
+            <span class="rsl-button__label">Download JSON</span>
+          </button>
+          <button
+            id="print-snapshot"
+            class="rsl-button rsl-button--primary foundation-web-button"
+            type="button"
+            disabled
+            hidden
+          >
+            <span class="rsl-button__state-layer" aria-hidden="true" data-testid="foundation-web-state-layer"></span>
+            <span class="rsl-button__label">Print / Save PDF</span>
+          </button>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

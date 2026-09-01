@@ -561,6 +561,19 @@ assert.match(flexNameRule, /overflow:\s*hidden/);
 assert.match(flexNameRule, /text-overflow:\s*ellipsis/);
 assert.match(flexNameRule, /white-space:\s*nowrap/);
 
+const bestFriendNameRowRule = extractRule(
+  ".rsl-best-friends-carousel\n  [data-rsl-best-friend-id]\n  .friends-carousel-tile-name[data-rsl-friend-name-badges]:not("
+);
+assert.match(bestFriendNameRowRule, /inline-size:\s*100%\s*!important/);
+assert.match(bestFriendNameRowRule, /max-inline-size:\s*100%\s*!important/);
+assert.match(bestFriendNameRowRule, /min-inline-size:\s*0\s*!important/);
+assert.match(bestFriendNameRowRule, /justify-content:\s*center/);
+assert.doesNotMatch(
+  styles,
+  /\[data-rsl-friend-name-badge-count="[12]"\][^{]*\{[^}]*(?:max-width|max-inline-size):\s*calc\(100%\s*-\s*\d+px\)/s,
+  "badge space must be reserved once by flex, never a second time with a percentage calc"
+);
+
 const badgeRule = extractRule("[data-rsl-friend-name-badge],");
 assert.match(badgeRule, /flex:\s*0 0 auto\s*!important/);
 assert.match(badgeRule, /overflow:\s*visible\s*!important/);

@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en" class="dark-theme ropro-profile-theme-active">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RoTool Enhanced Profile fixture</title>
+    <style id="roproProfileThemePreinitStyle">
+      html { --color-selection-start: #fff; }
+      html, body { min-height: 100%; }
+      body {
+        margin: 0;
+        color: #f7f7f8;
+        background:
+          radial-gradient(circle at 8% 10%, rgba(0, 153, 255, .35), transparent 27%),
+          radial-gradient(circle at 92% 60%, rgba(38, 212, 132, .28), transparent 31%),
+          #090b0e;
+        font-family: Arial, sans-serif;
+      }
+      #container-main { position: relative; min-height: 100vh; padding-top: 40px; }
+      #content { position: relative; width: min(1220px, calc(100% - 32px)); margin: 0 auto; background: transparent; }
+      .profile-platform-container { min-height: 680px; padding: 24px; background: #191a1f; }
+      .currently-wearing-avatar-with-background {
+        position: relative;
+        height: 300px;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #24262d;
+      }
+      .profile-avatar-left,
+      .thumbnail-holder,
+      .avatar-thumbnail-container,
+      .thumbnail-3d-container { display: block; width: 100%; height: 100%; }
+      .thumbnail-3d-container canvas { display: block; width: 100%; height: 300px; }
+      .avatar-toggle-button { position: absolute; top: 12px; right: 12px; }
+      .avatar-toggle-button button { width: 48px; height: 48px; }
+      .profile-header-overlay { min-height: 220px; padding: 20px 0; }
+      /* Roblox's unscoped avatar default is 90px. The real large-headshot
+         override only matches below .user-profile-header. */
+      .avatar-card-fullbody {
+        position: relative;
+        width: 90px;
+        height: 90px;
+      }
+      .avatar-card-fullbody .avatar-status {
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        width: 20px;
+        height: 20px;
+      }
+      [data-test-native-overflow] {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        place-items: center;
+        border: 0;
+        border-radius: 8px;
+        color: #f7f7f8;
+        background: #272930;
+        font-size: 18px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      [data-test-native-about-dialog] {
+        position: fixed;
+        inset: 80px auto auto 50%;
+        z-index: 10000;
+        width: min(420px, calc(100vw - 32px));
+        padding: 20px;
+        transform: translateX(-50%);
+        border: 1px solid #454852;
+        border-radius: 8px;
+        color: #f7f7f8;
+        background: #191a1f;
+      }
+      .buttons-show-on-mobile { display: none; }
+      @media (max-width: 680px) {
+        .buttons-show-on-desktop { display: none; }
+        .buttons-show-on-mobile { display: block; }
+      }
+      .profile-tab-content { min-height: 360px; padding: 20px 0; }
+      #roproThemeFrame, #roproThemeBackdropFrame { pointer-events: none; z-index: -1; }
+      /* This would destroy a light-DOM replacement, but cannot cross the closed root. */
+      #rsl-enhanced-profile-host .rtp-button { height: 3px !important; background: red !important; }
+    </style>
+  </head>
+  <body class="rbx-body builder-font dark-theme ropro-profile-theme-active" data-test-result="pending">
+    <main id="container-main">
+      <div id="content" style="background-color: transparent;">
+        <div class="profile-platform-container" data-profile-type="User" data-profile-id="123" style="min-height: 680px;">
+          <div data-test-native-react-root>
+            <div class="sg-system-feedback" data-test-native-feedback>Native feedback</div>
+            <div class="relative currently-wearing-avatar-with-background" data-test-native-banner>
+              <div class="profile-avatar-left profile-avatar-background-empty-state">
+                <div class="thumbnail-holder thumbnail-holder-position">
+                  <div class="avatar-thumbnail-container">
+                    <span class="thumbnail-3d-container" id="thumbnail-3d-container-fixture">
+                      <canvas data-engine="three.js r137" data-test-native-avatar-canvas width="968" height="300"></canvas>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="avatar-toggle-button">
+                <button type="button" class="foundation-web-button" data-test-native-2d-toggle><span>2D</span></button>
+              </div>
+            </div>
+            <div class="profile-header-overlay" data-test-native-header>
+              <span data-test-native-header-copy>Native Roblox profile header</span>
+              <pre class="description-content">Native Roblox profile description that opens the native About dialog.</pre><button type="button" class="more-btn">more</button>
+              <button id="user-profile-header-Chat" class="buttons-show-on-mobile" disabled>Disabled Chat</button>
+              <button id="user-profile-header-Chat" data-test-native-chat>Chat</button>
+              <div class="buttons-show-on-desktop" data-test-native-overflow-shell="desktop">
+                <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-desktop" data-test-native-overflow="desktop"><span aria-hidden="true">•••</span></button>
+              </div>
+              <div class="buttons-show-on-mobile" data-test-native-overflow-shell="mobile">
+                <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-mobile" data-test-native-overflow="mobile"><span aria-hidden="true">•••</span></button>
+              </div>
+            </div>
+            <div class="profile-tab-content" data-test-native-body>Native Roblox profile body</div>
+          </div>
+        </div>
+      </div>
+      <iframe id="roproThemeFrame" title="" src="about:blank" style="position:absolute;inset:0;width:100%;height:100%;border:0;z-index:-1;"></iframe>
+    </main>
+    <iframe id="roproThemeBackdropFrame" title="" src="about:blank" style="position:fixed;inset:0;width:100%;height:100%;border:0;z-index:-1;"></iframe>
+    <script>
+      globalThis.__rslContentTestHooks = { skipInitialize: true };
+    </script>
+    <script src="../content.js"></script>
+    <script>
+      const hooks = globalThis.__rslContentTestHooks;
+      const nativeRoot = document.querySelector(".profile-platform-container");
+      const nativeReactRoot = nativeRoot.querySelector("[data-test-native-react-root]");
+      const nativeBanner = nativeRoot.querySelector("[data-test-native-banner]");
+      const nativeCanvas = nativeRoot.querySelector("[data-test-native-avatar-canvas]");
+      const native2dToggle = nativeRoot.querySelector("[data-test-native-2d-toggle]");
+      const nativeHeader = nativeRoot.querySelector("[data-test-native-header]");
+      const nativeHeaderCopy = nativeRoot.querySelector(
+        "[data-test-native-header-copy]"
+      );
+      const nativeBody = nativeRoot.querySelector("[data-test-native-body]");
+      const nativeFeedback = nativeRoot.querySelector("[data-test-native-feedback]");
+      const nativeDescriptionMore = nativeRoot.querySelector(
+        "pre.description-content + button.more-btn"
+      );
+      let nativeChatClicks = 0;
+      let nativeDescriptionMoreClicks = 0;
+      let native2dToggleClicks = 0;
+      let nativeDesktopOverflowClicks = 0;
+      let nativeMobileOverflowClicks = 0;
+      let nativeOverflowOptionClicks = 0;
+      const nativeOverflowTriggers = Array.from(
+        nativeRoot.querySelectorAll("[data-test-native-overflow]")
+      );
+      const originalNativeOverflowStyles = new Map(
+        nativeOverflowTriggers.map((trigger) => [
+          trigger,
+          trigger.getAttribute("style")
+        ])
+      );
+      const closeNativeOverflowMenu = (trigger) => {
+        document.querySelector("[data-test-native-context-menu]")?.remove();
+        trigger?.setAttribute("aria-expanded", "false");
+      };
+      nativeOverflowTriggers.forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+          if (trigger.getAttribute("aria-expanded") === "true") {
+            closeNativeOverflowMenu(trigger);
+            return;
+          }
+          if (trigger.dataset.testNativeOverflow === "mobile") {
+            nativeMobileOverflowClicks += 1;
+          } else {
+            nativeDesktopOverflowClicks += 1;
+          }
+          nativeOverflowTriggers.forEach((candidate) => {
+            if (candidate !== trigger) candidate.setAttribute("aria-expanded", "false");
+          });
+          document.querySelector("[data-test-native-context-menu]")?.remove();
+          trigger.setAttribute("aria-expanded", "true");
+          const menu = document.createElement("div");
+          menu.id = trigger.getAttribute("aria-controls");
+          menu.dataset.testNativeContextMenu = "";
+          menu.setAttribute("role", "dialog");
+          const makeNativeOption = (label, name) => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.setAttribute("role", "menuitem");
+            option.dataset.testNativeContextOption = name;
+            option.textContent = label;
+            return option;
+          };
+          const inventoryOption = makeNativeOption("Inventory", "inventory");
+          const favoritesOption = makeNativeOption("Favorites", "favorites");
+          const blockOption = makeNativeOption("Block user", "block");
+          blockOption.addEventListener("click", () => {
+            nativeOverflowOptionClicks += 1;
+            closeNativeOverflowMenu(trigger);
+          });
+          menu.append(inventoryOption, favoritesOption, blockOption);
+          document.body.append(menu);
+        });
+      });
+      nativeRoot.querySelector("[data-test-native-chat]").addEventListener(
+        "click",
+        () => { nativeChatClicks += 1; }
+      );
+      nativeDescriptionMore.addEventListener("click", () => {
+        nativeDescriptionMoreClicks += 1;
+        document.querySelector("[data-test-native-about-dialog]")?.remove();
+        const portal = document.createElement("div");
+        portal.dataset.testNativeAboutDialog = "";
+        portal.setAttribute("role", "dialog");
+        portal.setAttribute("aria-modal", "true");
+        portal.setAttribute("aria-label", "About");
+        portal.textContent = "Native Roblox About dialog";
+        document.body.append(portal);
+      });
+      native2dToggle.addEventListener("click", () => {
+        native2dToggleClicks += 1;
+        nativeCanvas.dataset.fixtureRenderMode =
+          native2dToggleClicks % 2 === 1 ? "2d" : "3d";
+      });
+      const originalNativeStyle = nativeRoot.getAttribute("style");
+      const originalBannerStyle = nativeBanner.getAttribute("style");
+      const originalHeaderStyle = nativeHeader.getAttribute("style");
+      const originalBodyStyle = nativeBody.getAttribute("style");
+      const originalBannerParent = nativeBanner.parentElement;
+      const originalBannerNextSibling = nativeBanner.nextElementSibling;
+      const originalHtmlClass = document.documentElement.getAttribute("class");
+      const originalBodyClass = document.body.getAttribute("class");
+      const frameState = ["roproThemeFrame", "roproThemeBackdropFrame"].map((id) => {
+        const frame = document.getElementById(id);
+        return [id, frame.getAttribute("src"), frame.getAttribute("style")];
+      });
+
+      function section(data) { return { status: "ready", data }; }
+      function makeResponse(userId, requestId, badgeCountPending = false) {
+        const other = userId === "456";
+        return {
+          ok: true,
+          requestId,
+          userId,
+          fetchedAt: Date.now(),
+          sections: {
+            identity: section({
+              userId,
+              username: other ? "SecondUser" : "Kais_80r",
+              displayName: other ? "Second User" : "Kais_80r",
+              description: other
+                ? "A second public profile."
+                : "This is a longer Roblox profile description. <img src=x onerror=alert(1)> It stays in Roblox's normal visual language while the page shows more useful public details.",
+              createdAt: "2019-01-16T12:00:00.000Z",
+              isVerified: true,
+              isRobloxPlus: true,
+              isBanned: false,
+              headshotUrl: null,
+              avatarUrl: null
+            }),
+            presence: section({
+              type: "game",
+              lastLocation: "Death Timer",
+              placeId: "1001",
+              rootPlaceId: "1001",
+              universeId: "100",
+              gameInstanceId: "11111111-2222-4333-8444-555555555555",
+              lastOnline: "2026-08-29T15:30:00.000Z",
+              iconUrl: null
+            }),
+            counts: section({ friends: 89, followers: 345, following: 67, complete: true }),
+            usernames: section({
+              items: ["Kais_80", "KaisBuilder", "KaisOld"],
+              hasMore: false
+            }),
+            wearing: section({
+              items: Array.from({ length: 8 }, (_, index) => ({
+                assetId: String(7001 + index),
+                name: `Avatar Item ${index + 1}`,
+                price: index % 2 === 0 ? 72 + index : null,
+                itemType: "Asset",
+                iconUrl: null
+              })),
+              hasMore: true
+            }),
+            experiences: section({
+              items: Array.from({ length: 8 }, (_, index) => ({
+                universeId: String(100 + index),
+                rootPlaceId: String(1001 + index),
+                name: index === 0 ? "Event Game" : `Advanced Experience ${index + 1}`,
+                description: "Public experience",
+                playing: 1200 - index * 73,
+                visits: 1200000 + index * 43210,
+                favorites: 40000 + index * 321,
+                maxPlayers: 20,
+                ratingPercent: 93 - index,
+                createdAt: "2020-01-01T00:00:00.000Z",
+                updatedAt: "2026-08-28T10:00:00.000Z",
+                genre: "Adventure",
+                iconUrl: null
+              })),
+              hasMore: false,
+              totalCount: 8,
+              countIsExact: true
+            }),
+            favorites: section({
+              items: Array.from({ length: 4 }, (_, index) => ({
+                universeId: String(300 + index),
+                rootPlaceId: String(3001 + index),
+                name: `Favorite Experience ${index + 1}`,
+                description: "Favorite",
+                playing: 800 + index * 20,
+                visits: 900000,
+                favorites: 12000,
+                maxPlayers: 12,
+                ratingPercent: 91,
+                createdAt: "2021-01-01T00:00:00.000Z",
+                updatedAt: "2026-08-27T10:00:00.000Z",
+                genre: "RPG",
+                iconUrl: null
+              })),
+              hasMore: false,
+              totalCount: 4,
+              countIsExact: true
+            }),
+            friends: section({
+              items: Array.from({ length: 10 }, (_, index) => ({
+                userId: String(500 + index),
+                username: `Friend_${index + 1}`,
+                displayName: `Friend ${index + 1}`,
+                isVerified: index === 0,
+                headshotUrl: null
+              })),
+              hasMore: true
+            }),
+            relationships: section({
+              mutualFriendsCount: 2,
+              mutualFriendsAvailable: true,
+              profileLimited: false,
+              mutualGroupsCount: 5,
+              isFriend: other,
+              canChat: other,
+              hasMore: false,
+              items: Array.from({ length: 2 }, (_, index) => ({
+                userId: String(650 + index),
+                username: `Mutual_${index + 1}`,
+                displayName: `Mutual Friend ${index + 1}`,
+                isVerified: index === 0,
+                headshotUrl: null
+              }))
+            }),
+            communities: section({
+              items: Array.from({ length: 8 }, (_, index) => ({
+                communityId: String(8001 + index),
+                name: `Community ${index + 1}`,
+                memberCount: 250000 + index * 1234,
+                role: index === 0 ? "Owner" : "Member",
+                isVerified: index === 1,
+                iconUrl: null
+              })),
+              hasMore: true,
+              totalCount: 12,
+              ownedCount: 3
+            }),
+            badges: section({
+              items: Array.from({ length: 8 }, (_, index) => ({
+                badgeId: String(9001 + index),
+                name: `Badge ${index + 1}`,
+                description: "Public badge",
+                iconUrl: null
+              })),
+              hasMore: true,
+              totalCount: badgeCountPending ? 100 : 245,
+              countIsExact: !badgeCountPending,
+              countStatus: badgeCountPending ? "pending" : "ready"
+            }),
+            inventory: section({
+              visibility: other ? "limited" : "public"
+            })
+          }
+        };
+      }
+
+      let waitForSequence = 0;
+      function waitFor(predicate, timeout = 3000) {
+        const waitId = ++waitForSequence;
+        const started = performance.now();
+        return new Promise((resolve, reject) => {
+          const check = () => {
+            let result = false;
+            try { result = predicate(); } catch {}
+            if (result) { resolve(result); return; }
+            if (performance.now() - started >= timeout) {
+              reject(new Error(`Enhanced Profile fixture timed out at wait ${waitId}`));
+              return;
+            }
+            setTimeout(check, 20);
+          };
+          check();
+        });
+      }
+
+      (async () => {
+        let initialBadgeCountRequestId = null;
+        let initialBadgeCountRequests = 0;
+        let releaseInitialBadgeCount = null;
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          if (
+            message.type ===
+            hooks.enhancedProfileConstants.badgeCountMessageType
+          ) {
+            initialBadgeCountRequests += 1;
+            initialBadgeCountRequestId = message.requestId;
+            return new Promise((resolve) => {
+              releaseInitialBadgeCount = () => resolve({
+                ok: true,
+                requestId: message.requestId,
+                userId: message.userId,
+                totalCount: 350,
+                countIsExact: true,
+                countStatus: "ready",
+                fetchedAt: Date.now()
+              });
+            });
+          }
+          return Promise.resolve(
+            makeResponse(message.userId, message.requestId, true)
+          );
+        });
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/de/users/123/profile"
+        );
+        document.body.style.minHeight = "1800px";
+        window.scrollTo(0, 240);
+        if (window.scrollY < 200) {
+          throw new Error("The fixture could not establish a carried profile scroll position");
+        }
+        const nativeTopBeforeLoading = nativeRoot.getBoundingClientRect().top;
+        hooks.mountEnhancedProfile();
+        const loadingHost = document.getElementById("rsl-enhanced-profile-host");
+        if (
+          !loadingHost?.hidden ||
+          getComputedStyle(loadingHost).display !== "none" ||
+          loadingHost.getBoundingClientRect().height !== 0 ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          Math.abs(nativeRoot.getBoundingClientRect().top - nativeTopBeforeLoading) > 0.5
+        ) {
+          throw new Error(
+            "The hidden RoTool loading host shifted the visible Roblox profile"
+          );
+        }
+        await waitFor(() => hooks.getEnhancedProfileStateForTests().loadState === "ready");
+        await waitFor(() => window.scrollY === 0).catch(() => {
+          throw new Error(`The ready profile did not reset its initial scroll: ${window.scrollY}`);
+        });
+
+        const getBadgeDetailValue = () => new Map(
+          hooks.getEnhancedProfileVisualForTests().profileDetailPairs.map(
+            (pair) => [pair.label, pair.value]
+          )
+        ).get("Badges");
+        await waitFor(() => initialBadgeCountRequests === 1).catch(() => {
+          throw new Error(`Badge request did not start: ${initialBadgeCountRequests}`);
+        });
+        hooks.mountEnhancedProfile();
+        hooks.mountEnhancedProfile();
+        if (
+          initialBadgeCountRequests !== 1 ||
+          getBadgeDetailValue() !== "100+" ||
+          hooks.getEnhancedProfileStateForTests().internalBusy !== "false" ||
+          document.getElementById("rsl-enhanced-profile-host").hidden
+        ) {
+          throw new Error("Exact badge counting blocked or duplicated the initial profile render");
+        }
+        for (const totalCount of [200, 300]) {
+          const applied = hooks.applyEnhancedProfileBadgeCountProgressForTests({
+            type: hooks.enhancedProfileConstants.badgeCountProgressMessageType,
+            requestId: initialBadgeCountRequestId,
+            userId: "123",
+            totalCount,
+            countIsExact: false,
+            countStatus: "pending"
+          });
+          if (!applied) throw new Error("A valid badge-count progress update was rejected");
+          await waitFor(() => getBadgeDetailValue() === `${totalCount}+`).catch(() => {
+            throw new Error(
+              `Badge progress ${totalCount}+ did not finish: ${getBadgeDetailValue()}`
+            );
+          });
+        }
+        releaseInitialBadgeCount?.();
+        await waitFor(() => {
+          const value = getBadgeDetailValue() || "";
+          const numeric = Number(value.replace(/[^0-9]/g, ""));
+          return value.endsWith("+") && numeric > 300 && numeric <= 350;
+        }).catch(() => {
+          throw new Error(
+            `The final badge animation claimed an intermediate exact value: ${getBadgeDetailValue()}`
+          );
+        });
+        await waitFor(() => getBadgeDetailValue() === "350").catch(() => {
+          throw new Error(`Exact badge count did not finish: ${getBadgeDetailValue()}`);
+        });
+        hooks.setEnhancedProfileMessageSenderForTests((message) =>
+          Promise.resolve(makeResponse(message.userId, message.requestId))
+        );
+
+        let state = hooks.getEnhancedProfileStateForTests();
+        if (
+          state.internalHeading !== "Kais_80r" ||
+          state.hostParentId !== "content" ||
+          state.closedShadowRoot !== true ||
+          state.roproTheme !== true ||
+          !state.internalText.includes("Currently Wearing") ||
+          !state.internalText.includes("Communities") ||
+          !state.internalText.includes("Badges") ||
+          state.internalText.includes("Profile details") ||
+          !state.internalText.includes("Account age") ||
+          !state.internalText.includes("Owned groups") ||
+          !state.internalText.includes("Inventory") ||
+          state.unsafeNodeCount !== 0 ||
+          !document.getElementById("rsl-enhanced-profile-host")
+        ) {
+          throw new Error(`Initial Enhanced Profile state was wrong: ${JSON.stringify(state)}`);
+        }
+
+        const initialHost = document.getElementById("rsl-enhanced-profile-host");
+        const nativePresenceLayer = initialHost.querySelector(
+          "[data-rsl-enhanced-profile-presence]"
+        );
+        const nativePresenceAvatar = nativePresenceLayer?.querySelector(
+          '[data-testid="avatar-card-container"].avatar.avatar-card-fullbody'
+        );
+        const nativePresenceStatus = nativePresenceLayer?.querySelector(
+          ".avatar-status"
+        );
+        const nativePresenceIcon = nativePresenceStatus?.querySelector(
+          '[data-testid="presence-icon"]'
+        );
+        const expectedPresenceSize = window.innerWidth <= 680 ? 88 : 128;
+        const nativePresenceLayerRect =
+          nativePresenceLayer?.getBoundingClientRect();
+        const nativePresenceAvatarRect =
+          nativePresenceAvatar?.getBoundingClientRect();
+        const nativePresenceStatusRect =
+          nativePresenceStatus?.getBoundingClientRect();
+        if (
+          nativeBanner.parentElement !== originalBannerParent ||
+          initialHost.parentElement !== nativeRoot.parentElement ||
+          nativeRoot.nextElementSibling !== initialHost ||
+          nativeRoot.contains(initialHost) !== false ||
+          !initialHost.hasAttribute("data-rsl-native-avatar-cover") ||
+          !nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          !nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
+          !nativeReactRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-path") ||
+          !nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
+          getComputedStyle(nativeRoot).display !== "contents" ||
+          getComputedStyle(nativeReactRoot).display !== "contents" ||
+          getComputedStyle(nativeBanner).display === "none" ||
+          nativeBanner.getBoundingClientRect().height !== 300 ||
+          nativeRoot.querySelector("[data-test-native-avatar-canvas]") !== nativeCanvas ||
+          !nativeCanvas.isConnected ||
+          nativeCanvas.dataset.engine !== "three.js r137" ||
+          nativeCanvas.width !== 968 ||
+          nativeCanvas.height !== 300 ||
+          getComputedStyle(native2dToggle).display === "none" ||
+          getComputedStyle(nativeHeader).display !== "contents" ||
+          getComputedStyle(nativeHeaderCopy).display !== "none" ||
+          getComputedStyle(nativeBody).display !== "none" ||
+          getComputedStyle(nativeFeedback).display !== "none" ||
+          initialHost.querySelectorAll(
+            "[data-rsl-enhanced-profile-presence]"
+          ).length !== 1 ||
+          nativePresenceLayer?.slot !== "rsl-enhanced-profile-presence" ||
+          nativePresenceLayer?.className !==
+            "user-profile-header-details-avatar-container avatar-headshot-lg" ||
+          nativePresenceAvatar === null ||
+          !nativePresenceLayerRect ||
+          !nativePresenceAvatarRect ||
+          !nativePresenceStatusRect ||
+          Math.abs(nativePresenceLayerRect.width - expectedPresenceSize) > 0.5 ||
+          Math.abs(nativePresenceLayerRect.height - expectedPresenceSize) > 0.5 ||
+          Math.abs(nativePresenceAvatarRect.width - expectedPresenceSize) > 0.5 ||
+          Math.abs(nativePresenceAvatarRect.height - expectedPresenceSize) > 0.5 ||
+          Math.abs(nativePresenceLayerRect.right - nativePresenceStatusRect.right - 5) > 0.5 ||
+          Math.abs(nativePresenceLayerRect.bottom - nativePresenceStatusRect.bottom - 5) > 0.5 ||
+          nativePresenceStatus?.tagName !== "A" ||
+          nativePresenceStatus?.getAttribute("href") !== "/games/1001" ||
+          nativePresenceIcon?.className !== "game icon-game" ||
+          nativePresenceIcon?.title !== "Death Timer" ||
+          nativePresenceStatus?.querySelectorAll("svg").length !== 0
+        ) {
+          throw new Error("The native live avatar banner was not preserved around the Enhanced Profile host");
+        }
+        native2dToggle.click();
+        if (
+          native2dToggleClicks !== 1 ||
+          nativeCanvas.dataset.fixtureRenderMode !== "2d"
+        ) {
+          throw new Error("The preserved native 2D avatar toggle stopped working");
+        }
+
+        const visual = hooks.getEnhancedProfileVisualForTests();
+        const isCompactMobile = window.innerWidth <= 680;
+        const isCompactTablet = window.innerWidth <= 900;
+        const expectedHeadshotWidth = isCompactMobile ? 88 : 128;
+        const expectedProfileDetailLabels = [
+          "Account age",
+          "Inventory",
+          "Badges",
+          "Games",
+          "Owned groups"
+        ];
+        const actualProfileDetailLabels = visual.profileDetailPairs.map(
+          (pair) => pair.label
+        );
+        const baseTileInRange = isCompactMobile
+          ? visual.baseTileWidth >= 195 && visual.baseTileWidth <= 220
+          : isCompactTablet
+            ? visual.baseTileWidth >= 145 && visual.baseTileWidth <= 190
+            : visual.baseTileWidth >= 150 && visual.baseTileWidth <= 165;
+        const gameCardInRange = isCompactMobile
+          ? visual.gameCardWidth >= 195 && visual.gameCardWidth <= 220
+          : isCompactTablet
+            ? visual.gameCardWidth >= 145 && visual.gameCardWidth <= 190
+            : visual.gameCardWidth >= 150 && visual.gameCardWidth <= 165;
+        if (
+          visual.headingFontSize !== (isCompactMobile ? "20px" : "28px") ||
+          Number(visual.headingFontWeight) < 700 ||
+          visual.coverHeight !== 0 ||
+          visual.headshotWidth !== expectedHeadshotWidth ||
+          visual.headerInfoHeight !== expectedHeadshotWidth ||
+          visual.socialPillHeight !== 32 ||
+          visual.socialParentClass !== "rtp-profile-header-overlay" ||
+          visual.socialGap !== (isCompactMobile ? "6px" : "8px") ||
+          visual.headerOrder.join("|") !==
+            "rtp-cover|rtp-profile-header-overlay" ||
+          visual.overlayOrder.join("|") !==
+            "rtp-hero-main|rtp-social|rtp-hero-support|rtp-actions rtp-actions--foreign" ||
+          visual.overlayMarginTop !== "-21px" ||
+          Math.abs(
+            nativeBanner.getBoundingClientRect().bottom - visual.overlayTop - 21
+          ) > 0.5 ||
+          visual.descriptionTop <= visual.socialTop ||
+          visual.profileDetailsTop <= visual.descriptionTop ||
+          visual.actionsPosition !== (isCompactMobile ? "static" : "absolute") ||
+          visual.actionLabels.length !== 0 ||
+          visual.actionOrder.join("|") !== "overflow" ||
+          !["rgba(0, 0, 0, 0)", "transparent"].includes(visual.heroBackground) ||
+          visual.heroBorderWidth !== "0px" ||
+          visual.heroBorderRadius !== "0px" ||
+          visual.heroSupportBorderWidth !== "0px" ||
+          visual.friendAvatarWidth !== 80 ||
+          !baseTileInRange ||
+          !gameCardInRange ||
+          !visual.gameFallbackPath ||
+          visual.gameFallbackPath !== visual.baseFallbackPath ||
+          visual.tabHeight !== 46 ||
+          visual.profileDetailsTagName !== "DIV" ||
+          visual.profileDetailCount !== 5 ||
+          visual.profileDetailLabels.join("|") !==
+            expectedProfileDetailLabels.join("|") ||
+          actualProfileDetailLabels.join("|") !==
+            expectedProfileDetailLabels.join("|") ||
+          visual.profileDetailsHeight < 25 ||
+          visual.profileDetailsHeight > (isCompactMobile ? 60 : 32) ||
+          visual.sectionHeadingFontSize !== "20px" ||
+          visual.gameMetricLabels.join("|") !==
+            "91% rating|800 active players" ||
+          visual.gameNameFontSize !== "13px" ||
+          visual.gameNameFontWeight !== "500" ||
+          visual.gameNameLineHeight !== "16.9px" ||
+          visual.gameNameMarginTop !== "5px" ||
+          visual.gameNameMarginBottom !== "3px" ||
+          visual.gameMetaFontSize !== "11px" ||
+          visual.gameMetaFontWeight !== "500" ||
+          visual.gameMetaLineHeight !== "16px" ||
+          Math.abs(visual.gameMetricIconWidth -
+            (window.innerWidth <= 543 ? 12 : 14)) > 0.5 ||
+          visual.itemTitleFontSize !== "13px" ||
+          visual.itemTitleFontWeight !== "700" ||
+          visual.itemTitleLineHeight !== "18.2px" ||
+          visual.itemTitleMarginTop !== "8px" ||
+          visual.itemMetaFontSize !== "12px" ||
+          visual.itemMetaFontWeight !== "400" ||
+          visual.itemMetaLineHeight !== "16.8px" ||
+          visual.itemMetaIconWidth !== 20 ||
+          visual.friendNameFontSize !== "12px" ||
+          visual.friendNameFontWeight !== "400" ||
+          visual.friendNameMarginTop !== "4px" ||
+          visual.ownerOverlayCount !== 1 ||
+          !visual.hostBackground ||
+          visual.hostBackground === "rgba(0, 0, 0, 0)" ||
+          visual.hostBackground === "transparent" ||
+          visual.tabWidthDifference > 1 ||
+          visual.boxedSectionCount !== 0 ||
+          visual.documentOverflow > 1
+        ) {
+          throw new Error(`Roblox-style visual metrics were wrong: ${JSON.stringify(visual)}`);
+        }
+
+        if (
+          typeof hooks.clickEnhancedProfileMoreForTests !== "function" ||
+          hooks.clickEnhancedProfileMoreForTests() !== true
+        ) {
+          throw new Error("The Enhanced Profile more action did not proxy Roblox's native control");
+        }
+        const nativeAboutDialog = await waitFor(() =>
+          document.querySelector("[data-test-native-about-dialog]")
+        );
+        if (
+          nativeDescriptionMoreClicks !== 1 ||
+          document.querySelectorAll("[data-test-native-about-dialog]").length !== 1 ||
+          nativeAboutDialog.hidden ||
+          getComputedStyle(nativeAboutDialog).display === "none" ||
+          getComputedStyle(nativeAboutDialog).visibility === "hidden" ||
+          nativeAboutDialog.getBoundingClientRect().width <= 0 ||
+          nativeAboutDialog.getBoundingClientRect().height <= 0
+        ) {
+          throw new Error("The Enhanced Profile more action did not open exactly one visible native About dialog");
+        }
+        nativeAboutDialog.remove();
+        const expectedOverflowVariant = isCompactMobile ? "mobile" : "desktop";
+        const nativeOverflowState = await waitFor(() => {
+          const current = hooks.getEnhancedProfileNativeOverflowStateForTests();
+          return current.bound && current.rectangleDifference <= 1 &&
+            current.hitIsTrigger ? current : false;
+        });
+        const overflowTriggerMarker =
+          hooks.enhancedProfileConstants.nativeOverflowTriggerAttribute;
+        const selectedNativeOverflow = document.querySelector(
+          `[${overflowTriggerMarker}]`
+        );
+        if (
+          nativeOverflowState.variant !== expectedOverflowVariant ||
+          nativeOverflowState.rootProfileId !== "123" ||
+          !nativeOverflowState.triggerMarker ||
+          nativeOverflowState.proxyAriaHidden !== "true" ||
+          nativeOverflowState.proxyTabIndex !== "-1" ||
+          !nativeOverflowState.proxyMarked ||
+          document.querySelectorAll(`[${overflowTriggerMarker}]`).length !== 1 ||
+          selectedNativeOverflow?.dataset.testNativeOverflow !==
+            expectedOverflowVariant
+        ) {
+          throw new Error(
+            `The real Roblox contextual control was not adopted: ${JSON.stringify(nativeOverflowState)}`
+          );
+        }
+        const proxyRect = nativeOverflowState.proxyRect;
+        const nativeOverflowHit = document.elementFromPoint(
+          proxyRect.left + proxyRect.width / 2,
+          proxyRect.top + proxyRect.height / 2
+        );
+        if (
+          !nativeOverflowHit ||
+          !(nativeOverflowHit === selectedNativeOverflow ||
+            selectedNativeOverflow.contains(nativeOverflowHit))
+        ) {
+          throw new Error("The Enhanced Profile ellipsis did not hit Roblox's native button");
+        }
+        nativeOverflowHit.click();
+        const standardActionMarker =
+          hooks.enhancedProfileConstants.nativeStandardActionAttribute;
+        const nativeContextMenu = await waitFor(() => {
+          const menu = document.querySelector("[data-test-native-context-menu]");
+          return menu?.querySelector(`[${standardActionMarker}]`) ? menu : false;
+        }).catch(() => {
+          const menu = document.querySelector("[data-test-native-context-menu]");
+          throw new Error(
+            `Native menu injection timed out; menu=${Boolean(menu)}; ` +
+            `expanded=${selectedNativeOverflow?.getAttribute("aria-expanded")}; ` +
+            `controls=${selectedNativeOverflow?.getAttribute("aria-controls")}; ` +
+            `menuId=${menu?.id}; role=${menu?.getAttribute("role")}; ` +
+            `labels=${Array.from(menu?.querySelectorAll('[role="menuitem"]') || [])
+              .map((item) => item.textContent.trim()).join("|")}`
+          );
+        });
+        const menuLabels = Array.from(
+          nativeContextMenu.querySelectorAll('[role="menuitem"]')
+        ).map((item) => item.textContent.replace(/\s+/g, " ").trim());
+        const standardAction = nativeContextMenu.querySelector(
+          `[${standardActionMarker}]`
+        );
+        const standardActionLink = standardAction.matches("a")
+          ? standardAction
+          : standardAction.querySelector("a");
+        const standardActionRoute = hooks.parseEnhancedProfileRoute(
+          standardActionLink?.href
+        );
+        if (
+          menuLabels.join("|") !==
+            "Inventory|Favorites|Block user|View standard profile" ||
+          document.querySelectorAll(`[${standardActionMarker}]`).length !== 1 ||
+          standardActionRoute?.userId !== "123" ||
+          standardActionRoute?.standardView !== true
+        ) {
+          throw new Error(
+            `The standard-profile action did not join the native menu: ${menuLabels.join("|")}`
+          );
+        }
+        if (
+          typeof hooks.switchEnhancedProfileViewForTests !== "function" ||
+          !hooks.enhancedProfileConstants.nativeReturnActionAttribute
+        ) {
+          throw new Error("The one-document profile view switch hooks were not exposed");
+        }
+        standardActionLink.click();
+        const standardViewState = await waitFor(() => {
+          const current = hooks.getEnhancedProfileStateForTests();
+          return current.standardViewUserId === "123" &&
+            !document.getElementById("rsl-enhanced-profile-host")
+            ? current
+            : false;
+        });
+        if (
+          standardViewState.hostConnected ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
+          getComputedStyle(nativeRoot).display === "none" ||
+          getComputedStyle(nativeHeader).display === "none" ||
+          getComputedStyle(nativeBody).display === "none"
+        ) {
+          throw new Error("The standard-profile action did not restore native Roblox in this document");
+        }
+        selectedNativeOverflow.click();
+        const returnActionMarker =
+          hooks.enhancedProfileConstants.nativeReturnActionAttribute;
+        const nativeReturnMenu = await waitFor(() => {
+          const menu = document.querySelector("[data-test-native-context-menu]");
+          return menu?.querySelector(`[${returnActionMarker}]`) ? menu : false;
+        });
+        const returnMenuLabels = Array.from(
+          nativeReturnMenu.querySelectorAll('[role="menuitem"]')
+        ).map((item) => item.textContent.replace(/\s+/g, " ").trim());
+        const returnAction = nativeReturnMenu.querySelector(
+          `[${returnActionMarker}]`
+        );
+        const returnActionControl = returnAction.matches("a, button")
+          ? returnAction
+          : returnAction.querySelector("a, button");
+        if (
+          returnMenuLabels.join("|") !==
+            "Inventory|Favorites|Block user|View RoTool profile" ||
+          document.querySelectorAll(`[${returnActionMarker}]`).length !== 1 ||
+          !returnActionControl
+        ) {
+          throw new Error(
+            `The RoTool return action did not join the native menu: ${returnMenuLabels.join("|")}`
+          );
+        }
+        returnActionControl.click();
+        await waitFor(() => {
+          const current = hooks.getEnhancedProfileStateForTests();
+          return current.standardViewUserId === null &&
+            current.loadState === "ready" &&
+            document.getElementById("rsl-enhanced-profile-host")
+            ? current
+            : false;
+        });
+        if (
+          !nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          document.querySelector(`[${returnActionMarker}]`)
+        ) {
+          throw new Error("The native return action did not remount the RoTool profile");
+        }
+
+        const remountedOverflow = await waitFor(() => {
+          const current = hooks.getEnhancedProfileNativeOverflowStateForTests();
+          return current.bound && current.rectangleDifference <= 1 &&
+            current.hitIsTrigger ? document.querySelector(`[${overflowTriggerMarker}]`) : false;
+        });
+        remountedOverflow.click();
+        const nativeContextOption = await waitFor(() =>
+          document.querySelector('[data-test-native-context-option="block"]')
+        );
+        nativeContextOption.click();
+        if (
+          nativeOverflowOptionClicks !== 1 ||
+          nativeDesktopOverflowClicks !== (isCompactMobile ? 0 : 3) ||
+          nativeMobileOverflowClicks !== (isCompactMobile ? 3 : 0) ||
+          document.querySelector("[data-test-native-context-menu]") ||
+          remountedOverflow.getAttribute("aria-expanded") !== "false"
+        ) {
+          throw new Error("The original Roblox contextual option did not execute");
+        }
+
+        let failedBadgeCountRequestId = null;
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          if (
+            message.type ===
+            hooks.enhancedProfileConstants.badgeCountMessageType
+          ) {
+            failedBadgeCountRequestId = message.requestId;
+            return Promise.reject(new Error("Fixture exact badge count failed"));
+          }
+          return Promise.resolve(
+            makeResponse(message.userId, message.requestId, true)
+          );
+        });
+        await hooks.loadEnhancedProfileData();
+        await waitFor(() => {
+          const failureState = hooks.getEnhancedProfileStateForTests();
+          return (
+            failedBadgeCountRequestId !== null &&
+            failureState.badgeCountStatus === "unavailable" &&
+            failureState.badgeCountRequestActive === false
+          );
+        });
+        if (
+          getBadgeDetailValue() !== "100+" ||
+          hooks.applyEnhancedProfileBadgeCountProgressForTests({
+            type: hooks.enhancedProfileConstants.badgeCountProgressMessageType,
+            requestId: failedBadgeCountRequestId,
+            userId: "123",
+            totalCount: 200,
+            countIsExact: false,
+            countStatus: "pending"
+          }) ||
+          getBadgeDetailValue() !== "100+"
+        ) {
+          throw new Error(
+            "A failed exact badge count did not preserve its verified lower bound"
+          );
+        }
+        hooks.setEnhancedProfileMessageSenderForTests((message) =>
+          Promise.resolve(makeResponse(message.userId, message.requestId))
+        );
+
+        const viewerMeta = document.createElement("meta");
+        viewerMeta.name = "user-data";
+        viewerMeta.dataset.userid = "123";
+        document.head.append(viewerMeta);
+        await hooks.loadEnhancedProfileData();
+        await waitFor(() => hooks.getEnhancedProfileStateForTests().loadState === "ready");
+        state = hooks.getEnhancedProfileStateForTests();
+        const ownVisual = hooks.getEnhancedProfileVisualForTests();
+        if (
+          !state.internalText.includes("Edit avatar") ||
+          !state.internalText.includes("Edit profile") ||
+          state.internalText.includes("Mutuals") ||
+          state.internalText.includes("Chat") ||
+          ownVisual.actionLabels.join("|") !== "Edit avatar|Edit profile" ||
+          ownVisual.actionOrder.join("|") !==
+            "Edit avatar|Edit profile|overflow"
+        ) {
+          throw new Error("The own-profile action branch rendered the wrong actions");
+        }
+
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/users/456/profile"
+        );
+        hooks.mountEnhancedProfile();
+        await waitFor(() =>
+          hooks.getEnhancedProfileStateForTests().internalHeading === "Second User"
+        );
+        state = hooks.getEnhancedProfileStateForTests();
+        const foreignVisual = hooks.getEnhancedProfileVisualForTests();
+        const foreignDetails = new Map(
+          foreignVisual.profileDetailPairs.map((pair) => [pair.label, pair.value])
+        );
+        const expectedForeignDetailLabels = [
+          "Account age",
+          "Mutual groups",
+          "Inventory",
+          "Badges",
+          "Games",
+          "Owned groups"
+        ];
+        if (
+          state.internalText.includes("Join") ||
+          !state.internalText.includes("Inventory") ||
+          !state.internalText.includes("Chat") ||
+          foreignVisual.actionLabels.join("|") !== "Chat" ||
+          foreignVisual.actionOrder.join("|") !== "Chat|overflow" ||
+          foreignVisual.profileDetailCount !== 6 ||
+          foreignVisual.profileDetailLabels.join("|") !==
+            expectedForeignDetailLabels.join("|") ||
+          !foreignVisual.socialPillTexts.some((text) => text.endsWith("Mutuals")) ||
+          foreignVisual.mutualFriendsSectionCount !== 0 ||
+          foreignVisual.mutualsTagName !== "A" ||
+          foreignVisual.mutualsHref !== "/users/456/friends#!/friends" ||
+          foreignDetails.get("Mutual groups") !== "5" ||
+          foreignDetails.get("Inventory") !== "Limited" ||
+          foreignDetails.get("Badges") !== "245" ||
+          foreignDetails.get("Games") !== "8" ||
+          foreignDetails.get("Owned groups") !== "3"
+        ) {
+          throw new Error(
+            `The other-profile enhancements were wrong: ${JSON.stringify(foreignVisual)}`
+          );
+        }
+        if (
+          document.getElementById("rsl-enhanced-profile-host")
+            .hasAttribute("data-rsl-native-avatar-cover") ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
+          nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
+          getComputedStyle(nativeRoot).display !== "none"
+        ) {
+          throw new Error("A stale native avatar banner was reused for a different SPA profile");
+        }
+        if (hooks.applyEnhancedProfileBadgeCountProgressForTests({
+          type: hooks.enhancedProfileConstants.badgeCountProgressMessageType,
+          requestId: initialBadgeCountRequestId,
+          userId: "123",
+          totalCount: 900,
+          countIsExact: false,
+          countStatus: "pending"
+        })) {
+          throw new Error("A stale badge-count update crossed an SPA profile route");
+        }
+        if (
+          hooks.testEnhancedProfileChatActionForTests() !== true ||
+          nativeChatClicks !== 0
+        ) {
+          throw new Error("Enhanced Profile Chat used a stale native profile root");
+        }
+        const staleOverflowState =
+          hooks.getEnhancedProfileNativeOverflowStateForTests();
+        if (
+          staleOverflowState.bound ||
+          document.querySelector(`[${overflowTriggerMarker}]`)
+        ) {
+          throw new Error(
+            `A stale native contextual button crossed the SPA route: ${JSON.stringify(staleOverflowState)}`
+          );
+        }
+        const overflowFallback =
+          hooks.testEnhancedProfileOverflowInteractionsForTests();
+        const fallbackRoute = hooks.parseEnhancedProfileRoute(
+          overflowFallback?.standardHref
+        );
+        if (
+          !overflowFallback?.openedBySummaryClick ||
+          !overflowFallback.linkClicked ||
+          !overflowFallback.openAfterLinkPointerDown ||
+          !overflowFallback.closedAfterShadowOutside ||
+          !overflowFallback.closedAfterDocumentOutside ||
+          fallbackRoute?.userId !== "456" ||
+          fallbackRoute?.standardView !== true
+        ) {
+          throw new Error(
+            `The safe standard-profile fallback was wrong: ${JSON.stringify(overflowFallback)}`
+          );
+        }
+        nativeRoot.dataset.profileId = "456";
+        hooks.mountEnhancedProfile();
+        const reboundOverflowState = await waitFor(() => {
+          const current = hooks.getEnhancedProfileNativeOverflowStateForTests();
+          return current.bound && current.rootProfileId === "456" &&
+            current.variant === expectedOverflowVariant &&
+            current.rectangleDifference <= 1 && current.hitIsTrigger
+            ? current
+            : false;
+        });
+        if (
+          nativeRoot.nextElementSibling !==
+            document.getElementById("rsl-enhanced-profile-host") ||
+          !document.getElementById("rsl-enhanced-profile-host")
+            .hasAttribute("data-rsl-native-avatar-cover") ||
+          !nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
+          getComputedStyle(nativeBanner).display === "none" ||
+          hooks.testEnhancedProfileChatActionForTests() !== true ||
+          nativeChatClicks !== 1
+        ) {
+          throw new Error("Enhanced Profile did not adopt the matching SPA banner and Chat control");
+        }
+
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          const response = makeResponse(message.userId, message.requestId);
+          response.sections.relationships.data.canChat = false;
+          return Promise.resolve(response);
+        });
+        await hooks.loadEnhancedProfileData();
+        if (
+          hooks.getEnhancedProfileVisualForTests().actionLabels.includes("Chat")
+        ) {
+          throw new Error("Chat rendered when the relationship disallowed it");
+        }
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          const response = makeResponse(message.userId, message.requestId);
+          response.sections.relationships.data.isFriend = false;
+          response.sections.relationships.data.canChat = true;
+          return Promise.resolve(response);
+        });
+        await hooks.loadEnhancedProfileData();
+        if (
+          hooks.getEnhancedProfileVisualForTests().actionLabels.includes("Chat")
+        ) {
+          throw new Error("Chat rendered for a user who is not a friend");
+        }
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          const response = makeResponse(message.userId, message.requestId);
+          response.sections.relationships.data.profileLimited = true;
+          return Promise.resolve(response);
+        });
+        await hooks.loadEnhancedProfileData();
+        const limitedProfileVisual = hooks.getEnhancedProfileVisualForTests();
+        const limitedProfileDetails = new Map(
+          limitedProfileVisual.profileDetailPairs.map(
+            (pair) => [pair.label, pair.value]
+          )
+        );
+        if (
+          limitedProfileDetails.has("Profile") ||
+          limitedProfileVisual.profileStatusLabels.filter(
+            (label) => label === "Profile Limited"
+          ).length !== 1
+        ) {
+          throw new Error(
+            "A privacy-limited profile did not show one compact status beside the name"
+          );
+        }
+        hooks.setEnhancedProfileMessageSenderForTests((message) =>
+          Promise.resolve(makeResponse(message.userId, message.requestId))
+        );
+        viewerMeta.remove();
+
+        const lateRoot = document.createElement("div");
+        lateRoot.className = "profile-platform-container btr-profile-container";
+        lateRoot.dataset.profileType = "User";
+        lateRoot.dataset.profileId = "123";
+        document.getElementById("content").append(lateRoot);
+        hooks.mountEnhancedProfile();
+        if (!lateRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden")) {
+          throw new Error("A late competing profile root was not suppressed");
+        }
+
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/users/123/profile"
+        );
+        nativeRoot.dataset.profileId = "123";
+        hooks.mountEnhancedProfile();
+        await waitFor(() =>
+          hooks.getEnhancedProfileStateForTests().internalHeading === "Kais_80r"
+        );
+        if (
+          nativeRoot.nextElementSibling !==
+            document.getElementById("rsl-enhanced-profile-host") ||
+          !lateRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden")
+        ) {
+          throw new Error("The matching native avatar banner was not restored after SPA navigation");
+        }
+
+        document.getElementById("rsl-enhanced-profile-host").remove();
+        hooks.mountEnhancedProfile();
+        const restoredHost = document.getElementById("rsl-enhanced-profile-host");
+        if (
+          document.querySelectorAll("#rsl-enhanced-profile-host").length !== 1 ||
+          nativeRoot.nextElementSibling !== restoredHost ||
+          !restoredHost.hasAttribute("data-rsl-native-avatar-cover") ||
+          nativeRoot.querySelector("[data-test-native-avatar-canvas]") !== nativeCanvas
+        ) {
+          throw new Error("A removed Enhanced Profile host was not restored exactly once");
+        }
+
+        hooks.cleanupEnhancedProfileFeature();
+        if (
+          document.getElementById("rsl-enhanced-profile-host") ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
+          nativeReactRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-path") ||
+          nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
+          document.querySelector(
+            "[data-rsl-enhanced-profile-native-overflow-root], " +
+            "[data-rsl-enhanced-profile-native-overflow-path], " +
+            "[data-rsl-enhanced-profile-native-overflow-trigger], " +
+            "[data-rsl-enhanced-profile-standard-profile-action]"
+          ) ||
+          document.querySelector("[data-test-native-context-menu]") ||
+          nativeOverflowTriggers.some((trigger) =>
+            (trigger.getAttribute("style") || "") !==
+              (originalNativeOverflowStyles.get(trigger) || "") ||
+            trigger.getAttribute("aria-expanded") !== "false"
+          ) ||
+          lateRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          nativeRoot.getAttribute("style") !== originalNativeStyle ||
+          nativeBanner.getAttribute("style") !== originalBannerStyle ||
+          nativeHeader.getAttribute("style") !== originalHeaderStyle ||
+          nativeBody.getAttribute("style") !== originalBodyStyle ||
+          nativeBanner.parentElement !== originalBannerParent ||
+          nativeBanner.nextElementSibling !== originalBannerNextSibling ||
+          nativeRoot.querySelector("[data-test-native-avatar-canvas]") !== nativeCanvas ||
+          !nativeCanvas.isConnected ||
+          getComputedStyle(nativeRoot).display === "none" ||
+          getComputedStyle(nativeBanner).display === "none" ||
+          getComputedStyle(nativeHeader).display === "none" ||
+          getComputedStyle(nativeBody).display === "none" ||
+          getComputedStyle(nativeFeedback).display === "none"
+        ) {
+          throw new Error("Cleanup did not restore the native profile exactly");
+        }
+        native2dToggle.click();
+        if (
+          native2dToggleClicks !== 2 ||
+          nativeCanvas.dataset.fixtureRenderMode !== "3d"
+        ) {
+          throw new Error("Cleanup did not preserve the native avatar controls");
+        }
+
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          const response = makeResponse(message.userId, message.requestId);
+          response.sections.identity = {
+            status: "unavailable",
+            code: "RATE_LIMITED"
+          };
+          return Promise.resolve(response);
+        });
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/users/123/profile"
+        );
+        hooks.mountEnhancedProfile();
+        await waitFor(() => hooks.getEnhancedProfileStateForTests().loadState === "error");
+        if (
+          hooks.getEnhancedProfileStateForTests().suppressedCount !== 0 ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
+          nativeReactRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-path") ||
+          nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
+          lateRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
+          getComputedStyle(nativeHeader).display === "none" ||
+          getComputedStyle(nativeBody).display === "none"
+        ) {
+          throw new Error("A failed Enhanced Profile did not restore native Roblox");
+        }
+        hooks.cleanupEnhancedProfileFeature();
+
+        let releaseOld;
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          if (message.userId === "123") {
+            return new Promise((resolve) => { releaseOld = () => resolve(makeResponse("123", message.requestId)); });
+          }
+          return Promise.resolve(makeResponse(message.userId, message.requestId));
+        });
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/users/123/profile"
+        );
+        hooks.mountEnhancedProfile();
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/users/456/profile"
+        );
+        hooks.mountEnhancedProfile();
+        await waitFor(() => hooks.getEnhancedProfileStateForTests().internalHeading === "Second User");
+        releaseOld?.();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (hooks.getEnhancedProfileStateForTests().internalHeading !== "Second User") {
+          throw new Error("A stale profile response replaced the current SPA route");
+        }
+
+        hooks.cleanupEnhancedProfileFeature();
+        hooks.setEnhancedProfileMessageSenderForTests((message) =>
+          Promise.resolve(makeResponse(message.userId, message.requestId))
+        );
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/de/users/123/profile"
+        );
+        hooks.mountEnhancedProfile();
+        await waitFor(() => hooks.getEnhancedProfileStateForTests().loadState === "ready");
+
+        hooks.setEnhancedProfileRouteUrlForTests(
+          "https://www.roblox.com/de/users/123/profile?foo=bar&rotoolProfile=standard#about"
+        );
+        hooks.mountEnhancedProfile();
+        await waitFor(() =>
+          hooks.getEnhancedProfileStateForTests().standardViewUserId === "123" &&
+          !document.getElementById("rsl-enhanced-profile-host")
+        );
+        if (hooks.parseEnhancedProfileRoute()?.standardView !== false) {
+          throw new Error("The temporary standard-view query was not consumed");
+        }
+        hooks.resetEnhancedProfileDocumentViewModeForTests();
+        hooks.mountEnhancedProfile();
+        await waitFor(() =>
+          hooks.getEnhancedProfileStateForTests().standardViewUserId === null &&
+          hooks.getEnhancedProfileStateForTests().loadState === "ready" &&
+          document.getElementById("rsl-enhanced-profile-host")
+        );
+
+        if (
+          document.documentElement.getAttribute("class") !== originalHtmlClass ||
+          document.body.getAttribute("class") !== originalBodyClass
+        ) {
+          throw new Error("RoPro theme classes were modified");
+        }
+        for (const [id, src, style] of frameState) {
+          const frame = document.getElementById(id);
+          if (
+            !frame?.isConnected ||
+            frame.getAttribute("src") !== src ||
+            frame.getAttribute("style") !== style
+          ) {
+            throw new Error(`${id} was modified`);
+          }
+        }
+        document.body.dataset.testResult = "pass";
+        document.body.dataset.testMessage = "Enhanced Profile browser fixture passed";
+        document.title = "PASS: RoTool Enhanced Profile browser fixture";
+      })().catch((error) => {
+        document.body.dataset.testResult = "fail";
+        document.body.dataset.testMessage = error?.message || String(error);
+        document.title = `FAIL: ${document.body.dataset.testMessage}`;
+      });
+    </script>
+  </body>
+</html>

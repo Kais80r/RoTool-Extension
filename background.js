@@ -2,6 +2,7 @@
 
 const THUMBNAIL_SPECS = Object.freeze({
   profile: { path: "/v1/users/avatar-headshot", idParameter: "userIds", circular: true },
+  avatar: { path: "/v1/users/avatar", idParameter: "userIds", circular: false, size: "420x420" },
   game: { path: "/v1/places/gameicons", idParameter: "placeIds", circular: false },
   gameUniverse: { path: "/v1/games/icons", idParameter: "universeIds", circular: false },
   eventAsset: {
@@ -11,6 +12,9 @@ const THUMBNAIL_SPECS = Object.freeze({
     size: "768x432",
     format: "Webp"
   },
+  avatarAsset: { path: "/v1/assets", idParameter: "assetIds", circular: false },
+  bundle: { path: "/v1/bundles/thumbnails", idParameter: "bundleIds", circular: false },
+  badge: { path: "/v1/badges/icons", idParameter: "badgeIds", circular: false },
   community: { path: "/v1/groups/icons", idParameter: "groupIds", circular: false }
 });
 const EXPERIENCE_PLACE_THUMBNAILS_MESSAGE_TYPE =
@@ -19,8 +23,56 @@ const EXPERIENCE_PLACES_ELIGIBILITY_MESSAGE_TYPE =
   "rsl:get-experience-places-eligibility";
 const EXPERIENCE_PLACE_THUMBNAIL_BATCH_MAX = 24;
 const EXPERIENCE_PLACE_THUMBNAIL_SIZE = "150x150";
+const ENHANCED_PROFILE_MESSAGE_TYPE = "rsl:get-enhanced-profile";
+const ENHANCED_PROFILE_FAST_MESSAGE_TYPE = "rsl:get-enhanced-profile-fast";
+const ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE =
+  "rsl:get-enhanced-profile-relationships";
+const ENHANCED_PROFILE_JOIN_MESSAGE_TYPE = "rsl:join-enhanced-profile";
+const ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE =
+  "rsl:get-enhanced-profile-badge-count";
+const ENHANCED_PROFILE_CACHE_TTL_MS = 2 * 60_000;
+const ENHANCED_PROFILE_BADGE_COUNT_CACHE_TTL_MS = 2 * 60_000;
+const ENHANCED_PROFILE_MAX_DESCRIPTION_LENGTH = 1_000;
+const ENHANCED_PROFILE_MAX_USERNAME_HISTORY = 12;
+const ENHANCED_PROFILE_MAX_EXPERIENCES = 50;
+const ENHANCED_PROFILE_MAX_FAVORITES = 8;
+const ENHANCED_PROFILE_MAX_FRIENDS = 10;
+const ENHANCED_PROFILE_MAX_WEARING = 50;
+const ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_IDS = new Set([
+  17, // Head / classic body bundles
+  51, // IdleAnimation / animation packs
+  70, // LeftShoeAccessory / shoe bundles
+  71, // RightShoeAccessory / shoe bundles
+  79  // DynamicHead / dynamic-head bundles
+]);
+const ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_NAMES = new Map([
+  ["head", "body"],
+  ["idleanimation", "animation"],
+  ["leftshoeaccessory", "shoes"],
+  ["rightshoeaccessory", "shoes"],
+  ["dynamichead", "dynamic-head"]
+]);
+const ENHANCED_PROFILE_MAX_COMMUNITIES = 12;
+const ENHANCED_PROFILE_MAX_BADGES = 12;
+const ENHANCED_PROFILE_MAX_BADGE_COUNT_PAGES = 1_000;
+const ENHANCED_PROFILE_SECTION_TIMEOUT_MS = 12_000;
+const enhancedProfileRequests = new Map();
+const enhancedProfileRelationshipRequests = new Map();
+const enhancedProfileBadgeCountRequests = new Map();
 
 const CONTEXT_MENU_PREFIX = "rsl-context";
+const FEATURE_SETTINGS_ACTION_MENU_ID =
+  `${CONTEXT_MENU_PREFIX}:feature-settings:open`;
+const ACCOUNT_RECOVERY_ARCHIVE_ACTION_MENU_ID =
+  `${CONTEXT_MENU_PREFIX}:account-recovery-archive:open`;
+const FEATURE_SETTINGS_SHOW_MESSAGE_TYPE = "rsl:show-feature-settings";
+const TOOLBAR_POPUP_PAGE_PATH = "popup.html";
+const TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE =
+  "rsl:toolbar-popup:open-settings";
+const TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE =
+  "rsl:toolbar-popup:open-recovery-snapshots";
+const FEATURE_SETTINGS_SHOW_MESSAGE_TIMEOUT_MS = 4_000;
+const FEATURE_SETTINGS_NEW_TAB_READY_TIMEOUT_MS = 12_000;
 const CONTEXT_COPY_READY_MESSAGE_TYPE = "rsl:context-copy-ready";
 const CONTEXT_COPY_TARGET_MESSAGE_TYPE = "rsl:get-context-copy-target";
 const CONTEXT_COPY_RUNTIME_VERSION = 2;
@@ -28,8 +80,102 @@ const CONTEXT_COPY_TARGET_VERSION = 1;
 const CONTEXT_COPY_TARGET_MAX_AGE_MS = 30_000;
 const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
 const FEATURE_SETTINGS_VERSION = 1;
+const ACCOUNT_RECOVERY_COLLECT_MESSAGE_TYPE =
+  "rsl:account-recovery:collect";
+const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE =
+  "rsl:get-account-recovery-archive-preferences";
+const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE =
+  "rsl:set-account-recovery-archive-preferences";
+const ACCOUNT_RECOVERY_PAGE_PATH = "recovery-snapshot.html";
+const ACCOUNT_RECOVERY_PAGE_THEMES = new Set(["dark", "light"]);
+const ACCOUNT_RECOVERY_PAGE_VIEW = "home-modal";
+const ACCOUNT_RECOVERY_FETCH_TIMEOUT_MS = 10_000;
+const ACCOUNT_RECOVERY_MAX_RESPONSE_BYTES = 1_048_576;
+const ACCOUNT_RECOVERY_MAX_TEXT_LENGTH = 500;
+const ACCOUNT_RECOVERY_MAX_USERNAME_HISTORY = 100;
+const ACCOUNT_RECOVERY_MAX_CREATED_EXPERIENCES = 200;
+const ACCOUNT_RECOVERY_MAX_RECENT_GAMES = 50;
+const ACCOUNT_RECOVERY_MAX_PURCHASES = 100;
+const ACCOUNT_RECOVERY_MAX_CURRENCY_PURCHASES = 100;
+const ACCOUNT_RECOVERY_MAX_TRADES = 100;
+const ACCOUNT_RECOVERY_MAX_VIOLATIONS = 18;
+const ACCOUNT_RECOVERY_MAX_TWO_STEP_METHODS = 8;
+const ACCOUNT_RECOVERY_SECTION_KEYS = Object.freeze([
+  "usernameHistory",
+  "twoStepVerification",
+  "purchases",
+  "currencyPurchases",
+  "tradeHistory",
+  "recentlyPlayed",
+  "createdExperiences",
+  "violations"
+]);
+const ACCOUNT_RECOVERY_SECTION_KEY_SET = new Set(
+  ACCOUNT_RECOVERY_SECTION_KEYS
+);
+const ACCOUNT_RECOVERY_ARCHIVE_PAGE_PATH = "recovery-archive.html";
+const ACCOUNT_RECOVERY_ARCHIVE_CAPTURE_QUERY_PARAMETER = "captureId";
+const ACCOUNT_RECOVERY_MASTER_FEATURE_KEY = "recoverySnapshots";
+const ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY = "recoverySnapshotArchive";
+const ACCOUNT_RECOVERY_REMINDER_FEATURE_KEY = "recoverySnapshotReminder";
+const ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE =
+  "rsl:account-recovery-reminder:claim";
+const ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY =
+  "rslRecoverySnapshotReminderStateV1";
+const ACCOUNT_RECOVERY_REMINDER_STORAGE_VERSION = 1;
+const ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS = 3 * 60 * 60_000;
+const ACCOUNT_RECOVERY_REMINDER_MAX_FUTURE_SKEW_MS = 5 * 60_000;
+const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY =
+  "rslAccountRecoveryArchivePreferencesV1";
+const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION = 2;
+const ACCOUNT_RECOVERY_ARCHIVE_DB_NAME = "rslRecoveryArchiveV1";
+const ACCOUNT_RECOVERY_ARCHIVE_DB_VERSION = 1;
+const ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE = "snapshots";
+const ACCOUNT_RECOVERY_ARCHIVE_META_STORE = "meta";
+const ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION = 1;
+const ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME =
+  "rsl-account-recovery-archive-v1";
+const ACCOUNT_RECOVERY_ARCHIVE_ALARM_PERIOD_MINUTES = 24 * 60;
+const ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_FREQUENCY = "daily";
+const ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS = Object.freeze({
+  daily: 24 * 60 * 60_000,
+  weekly: 7 * 24 * 60 * 60_000,
+  monthly: 30 * 24 * 60 * 60_000
+});
+const ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS = new Set([3, 5, 10]);
+const ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_RETENTION = 5;
+const ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_SECTIONS = Object.freeze([
+  ...ACCOUNT_RECOVERY_SECTION_KEYS
+]);
+const ACCOUNT_RECOVERY_ARCHIVE_MAX_RECORD_BYTES = 512 * 1_024;
+const ACCOUNT_RECOVERY_ARCHIVE_MAX_TOTAL_BYTES = 8 * 1_024 * 1_024;
+const ACCOUNT_RECOVERY_ARCHIVE_MAX_ACCOUNTS = 8;
+const ACCOUNT_RECOVERY_ARCHIVE_CAPABILITY_TTL_MS = 30 * 60_000;
+const ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX =
+  "rsl:account-recovery-archive:";
+const ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES = Object.freeze({
+  open: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}open`,
+  getState: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}get-state`,
+  setPreferences: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}set-preferences`,
+  captureNow: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}capture-now`,
+  getSnapshot: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}get-snapshot`,
+  deleteSnapshot: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}delete-snapshot`,
+  clearAll: `${ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX}clear-all`
+});
+let accountRecoveryArchiveFeatureEnabled = false;
+let accountRecoveryArchiveFeatureReady = false;
+let accountRecoveryArchiveFeatureSyncPromise = null;
+let accountRecoveryArchiveDbPromise = null;
+let accountRecoveryArchiveStorageOverride = null;
+let accountRecoveryArchiveWriteTail = Promise.resolve();
+let accountRecoveryArchivePreferencesWriteTail = Promise.resolve();
+let accountRecoveryArchiveRunPromise = null;
+let accountRecoveryArchiveLifecycleGeneration = 0;
+const accountRecoveryArchiveCapabilities = new Map();
+let accountRecoveryReminderMutationTail = Promise.resolve();
 const COPY_ROBLOX_IDS_FEATURE_KEY = "copyRobloxIds";
 let copyRobloxIdsEnabled = true;
+let recoverySnapshotsEnabled = true;
 const CONTEXT_MENU_ROBLOX_LOCALE_SEGMENTS = Object.freeze([
   "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
   "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
@@ -1735,6 +1881,16 @@ function setupContextMenus() {
 
   chrome.contextMenus.removeAll(() => {
     void chrome.runtime.lastError;
+    createContextMenuItem({
+      id: FEATURE_SETTINGS_ACTION_MENU_ID,
+      title: "Open RoTool Settings",
+      contexts: ["action"]
+    });
+    createContextMenuItem({
+      id: ACCOUNT_RECOVERY_ARCHIVE_ACTION_MENU_ID,
+      title: "Recovery Snapshots",
+      contexts: ["action"]
+    });
     if (!copyRobloxIdsEnabled) {
       return;
     }
@@ -1754,9 +1910,47 @@ function getCopyRobloxIdsFeatureValue(rawValue) {
   );
 }
 
+function getRecoverySnapshotsFeatureValue(rawValue) {
+  if (rawValue == null) return true;
+  return Boolean(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === FEATURE_SETTINGS_VERSION &&
+    rawValue.flags &&
+    typeof rawValue.flags === "object" &&
+    !Array.isArray(rawValue.flags) &&
+    rawValue.flags[ACCOUNT_RECOVERY_MASTER_FEATURE_KEY] !== false
+  );
+}
+
+function readRecoverySnapshotsFeatureEnabled() {
+  if (!chrome.storage?.local?.get) {
+    return Promise.resolve(recoverySnapshotsEnabled);
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(
+      { [FEATURE_SETTINGS_STORAGE_KEY]: null },
+      (result) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        const enabled = getRecoverySnapshotsFeatureValue(
+          result?.[FEATURE_SETTINGS_STORAGE_KEY]
+        );
+        recoverySnapshotsEnabled = enabled;
+        resolve(enabled);
+      }
+    );
+  });
+}
+
 function syncContextMenusFromStorage() {
   if (!chrome.storage?.local?.get) {
     copyRobloxIdsEnabled = true;
+    recoverySnapshotsEnabled = true;
     setupContextMenus();
     return;
   }
@@ -1765,6 +1959,9 @@ function syncContextMenusFromStorage() {
     (result) => {
       void chrome.runtime.lastError;
       copyRobloxIdsEnabled = getCopyRobloxIdsFeatureValue(
+        result?.[FEATURE_SETTINGS_STORAGE_KEY]
+      );
+      recoverySnapshotsEnabled = getRecoverySnapshotsFeatureValue(
         result?.[FEATURE_SETTINGS_STORAGE_KEY]
       );
       setupContextMenus();
@@ -1973,7 +2170,232 @@ async function consumeContextCopyTarget(tabId, info, tabUrl) {
   return normalizeContextCopyTargetSnapshot(delivery.response.snapshot, tabUrl);
 }
 
+function sendFeatureSettingsShowMessageToTab(
+  tabId,
+  timeoutMs = FEATURE_SETTINGS_SHOW_MESSAGE_TIMEOUT_MS
+) {
+  if (!Number.isSafeInteger(tabId) || tabId < 0 || !chrome.tabs?.sendMessage) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (response, runtimeFailed = false) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      const keys = response && typeof response === "object" &&
+        !Array.isArray(response)
+        ? Object.keys(response).sort()
+        : [];
+      resolve(Boolean(
+        !runtimeFailed &&
+        keys.length === 2 &&
+        keys[0] === "ok" &&
+        keys[1] === "type" &&
+        response.ok === true &&
+        response.type === FEATURE_SETTINGS_SHOW_MESSAGE_TYPE
+      ));
+    };
+    const timeoutId = setTimeout(
+      () => finish(null, true),
+      Math.max(100, timeoutMs)
+    );
+    try {
+      const returned = chrome.tabs.sendMessage(
+        tabId,
+        { type: FEATURE_SETTINGS_SHOW_MESSAGE_TYPE },
+        { frameId: 0 },
+        (response) => finish(response, Boolean(chrome.runtime?.lastError))
+      );
+      if (returned && typeof returned.then === "function") {
+        returned.then(
+          (response) => finish(response),
+          () => finish(null, true)
+        );
+      }
+    } catch {
+      finish(null, true);
+    }
+  });
+}
+
+async function sendFeatureSettingsShowMessageUntilReady(tabId) {
+  const deadline = Date.now() + FEATURE_SETTINGS_NEW_TAB_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (
+      await sendFeatureSettingsShowMessageToTab(
+        tabId,
+        Math.min(750, remaining)
+      )
+    ) {
+      return true;
+    }
+    const delay = Math.min(250, deadline - Date.now());
+    if (delay <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  return false;
+}
+
+async function showFeatureSettingsInRobloxTab(preferredTab = null) {
+  // Never cross from an incognito toolbar gesture into the normal profile.
+  if (preferredTab?.incognito === true) return false;
+
+  if (isSafeJoinSchedulerRobloxTab(preferredTab)) {
+    await focusJoinSchedulerRobloxTab(preferredTab);
+    if (await sendFeatureSettingsShowMessageToTab(preferredTab.id)) {
+      return true;
+    }
+  }
+
+  if (!chrome.tabs?.query || !chrome.tabs?.sendMessage) return false;
+  let candidates = [];
+  try {
+    const tabs = await runJoinSchedulerBrowserApi(() =>
+      chrome.tabs.query({ url: "https://www.roblox.com/*" })
+    );
+    candidates = (Array.isArray(tabs) ? tabs : [])
+      .filter((tab) =>
+        tab?.id !== preferredTab?.id &&
+        isSafeJoinSchedulerRobloxTab(tab)
+      )
+      .sort((left, right) => {
+        if (left.active !== right.active) return left.active ? -1 : 1;
+        return (Number(right.lastAccessed) || 0) -
+          (Number(left.lastAccessed) || 0);
+      });
+  } catch {
+    candidates = [];
+  }
+
+  for (const tab of candidates) {
+    await focusJoinSchedulerRobloxTab(tab);
+    if (await sendFeatureSettingsShowMessageToTab(tab.id)) {
+      return true;
+    }
+  }
+
+  const created = await createJoinSchedulerRobloxHomeTab();
+  if (!isSafeJoinSchedulerRobloxTab(created, "https://www.roblox.com/home")) {
+    return false;
+  }
+  await focusJoinSchedulerRobloxTab(created);
+  return sendFeatureSettingsShowMessageUntilReady(created.id);
+}
+
+async function handleFeatureSettingsActionClick(tab) {
+  try {
+    return await showFeatureSettingsInRobloxTab(tab);
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedToolbarPopupSender(sender) {
+  const senderUrl = typeof sender?.url === "string" ? sender.url : "";
+  if (
+    sender?.id !== chrome.runtime.id ||
+    sender?.tab ||
+    chrome.extension?.inIncognitoContext === true
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(senderUrl);
+    const extensionRoot = chrome.runtime.getURL("");
+    const extensionOrigin = extensionRoot.endsWith("/")
+      ? extensionRoot.slice(0, -1)
+      : extensionRoot;
+    return Boolean(
+      url.href === chrome.runtime.getURL(TOOLBAR_POPUP_PAGE_PATH) &&
+      url.protocol === "chrome-extension:" &&
+      url.hostname === chrome.runtime.id &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      (typeof sender?.origin !== "string" ||
+        sender.origin === extensionOrigin)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function handleToolbarPopupSettingsMessage(message, sender, sendResponse) {
+  const keys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message)
+    : [];
+  if (
+    message?.type !== TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE ||
+    keys.length !== 1 ||
+    keys[0] !== "type" ||
+    !isTrustedToolbarPopupSender(sender)
+  ) {
+    return false;
+  }
+  handleFeatureSettingsActionClick(null)
+    .then((opened) => sendResponse({
+      ok: opened === true,
+      type: TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE
+    }))
+    .catch(() => sendResponse({
+      ok: false,
+      type: TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE
+    }));
+  return true;
+}
+
+function handleToolbarPopupRecoveryMessage(message, sender, sendResponse) {
+  const keys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message)
+    : [];
+  if (
+    message?.type !== TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE ||
+    keys.length !== 1 ||
+    keys[0] !== "type" ||
+    !isTrustedToolbarPopupSender(sender)
+  ) {
+    return false;
+  }
+  openAccountRecoveryArchivePage()
+    .then(() => sendResponse({
+      ok: true,
+      type: TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE
+    }))
+    .catch((error) => sendResponse({
+      ok: false,
+      type: TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE,
+      code: error instanceof AccountRecoveryError
+        ? error.code
+        : "UNAVAILABLE"
+    }));
+  return true;
+}
+
 async function handleContextMenuClick(info, tab) {
+  if (info?.menuItemId === FEATURE_SETTINGS_ACTION_MENU_ID) {
+    await handleFeatureSettingsActionClick(tab);
+    return;
+  }
+  if (info?.menuItemId === ACCOUNT_RECOVERY_ARCHIVE_ACTION_MENU_ID) {
+    if (
+      tab?.incognito === true ||
+      chrome.extension?.inIncognitoContext === true
+    ) {
+      return;
+    }
+    try {
+      await openAccountRecoveryArchivePage();
+    } catch {
+      // The extension-owned archive remains closed when a tab cannot be created.
+    }
+    return;
+  }
   if (
     !copyRobloxIdsEnabled ||
     !Number.isInteger(tab?.id) ||
@@ -2188,14 +2610,14 @@ function normalizeFriendListItems(items) {
   return { userIds, profilesByUserId };
 }
 
-async function fetchFriendIdsFromListEndpoint(viewerUserId) {
+async function fetchFriendIdsFromListEndpoint(viewerUserId, credentials = "include") {
   const endpoint = new URL(
     `/v1/users/${viewerUserId}/friends`,
     "https://friends.roblox.com"
   );
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
-    credentials: "include",
+    credentials: credentials === "omit" ? "omit" : "include",
     headers: { Accept: "application/json" }
   });
   if (!Array.isArray(payload?.data)) {
@@ -2204,7 +2626,10 @@ async function fetchFriendIdsFromListEndpoint(viewerUserId) {
   return normalizeFriendListItems(payload.data);
 }
 
-async function fetchFriendIdsFromPaginatedEndpoint(viewerUserId) {
+async function fetchFriendIdsFromPaginatedEndpoint(
+  viewerUserId,
+  credentials = "include"
+) {
   const friendItems = [];
   const seenCursors = new Set();
   let cursor = null;
@@ -2222,7 +2647,7 @@ async function fetchFriendIdsFromPaginatedEndpoint(viewerUserId) {
 
     const payload = await fetchJson(endpoint, {
       cache: "no-store",
-      credentials: "include",
+      credentials: credentials === "omit" ? "omit" : "include",
       headers: { Accept: "application/json" }
     });
     const pageItems = payload?.PageItems ?? payload?.pageItems;
@@ -2297,10 +2722,10 @@ function mergeFriendListResults(results) {
   return { userIds, profilesByUserId };
 }
 
-async function loadAllFriendIds(viewerUserId) {
+async function fetchCompleteFriendList(viewerUserId, credentials = "include") {
   const [paginatedResult, listResult] = await Promise.allSettled([
-    fetchFriendIdsFromPaginatedEndpoint(viewerUserId),
-    fetchFriendIdsFromListEndpoint(viewerUserId)
+    fetchFriendIdsFromPaginatedEndpoint(viewerUserId, credentials),
+    fetchFriendIdsFromListEndpoint(viewerUserId, credentials)
   ]);
   // Cursor pagination defines the complete ordering. The legacy list response is
   // still useful as a fast source of names, but it can stop at 200 friends and
@@ -2320,7 +2745,14 @@ async function loadAllFriendIds(viewerUserId) {
     successfulResults.push(listResult.value);
   }
 
-  const { userIds, profilesByUserId } = mergeFriendListResults(successfulResults);
+  return mergeFriendListResults(successfulResults);
+}
+
+async function loadAllFriendIds(viewerUserId) {
+  const { userIds, profilesByUserId } = await fetchCompleteFriendList(
+    viewerUserId,
+    "include"
+  );
 
   friendIdsCache = {
     viewerUserId,
@@ -9437,6 +9869,16 @@ function normalizeJoinSchedulerScheduleRecord(rawRecord) {
   const eventId = rawRecord.eventId === null
     ? null
     : normalizeGameEventId(rawRecord.eventId);
+  const hasEventStartAt = Object.prototype.hasOwnProperty.call(
+    rawRecord,
+    "eventStartAt"
+  );
+  const normalizedEventStartAt = normalizeJoinSchedulerTimestamp(
+    rawRecord.eventStartAt
+  );
+  const eventStartAt = eventId
+    ? (hasEventStartAt ? normalizedEventStartAt : startAt)
+    : null;
   const mode = ["notify", "auto"].includes(rawRecord.mode)
     ? rawRecord.mode
     : null;
@@ -9469,7 +9911,10 @@ function normalizeJoinSchedulerScheduleRecord(rawRecord) {
     !gameName ||
     !title ||
     !startAt ||
-    (endAt !== null && endAt <= startAt) ||
+    (eventId && !eventStartAt) ||
+    (!eventId && hasEventStartAt && rawRecord.eventStartAt !== null) ||
+    (eventStartAt !== null && eventStartAt < startAt) ||
+    (endAt !== null && endAt <= (eventStartAt || startAt)) ||
     !mode ||
     !revision ||
     typeof rawRecord.allowSwitch !== "boolean" ||
@@ -9499,6 +9944,7 @@ function normalizeJoinSchedulerScheduleRecord(rawRecord) {
     gameName,
     title,
     startAt,
+    eventStartAt,
     endAt,
     eventId,
     mode,
@@ -9886,6 +10332,7 @@ function sanitizeJoinSchedulerSchedule(schedule) {
     gameName: schedule.gameName,
     title: schedule.title,
     startAt: schedule.startAt,
+    eventStartAt: schedule.eventStartAt,
     endAt: schedule.endAt,
     eventId: schedule.eventId,
     mode: schedule.mode,
@@ -10480,7 +10927,7 @@ async function revalidateJoinSchedulerEvent(scheduleOrDraft, now = joinScheduler
   );
   if (!event) throw new JoinSchedulerError("EVENT_UNAVAILABLE");
   if (
-    event.startAt !== scheduleOrDraft.startAt ||
+    event.startAt !== (scheduleOrDraft.eventStartAt || scheduleOrDraft.startAt) ||
     event.placeId !== scheduleOrDraft.placeId ||
     (scheduleOrDraft.endAt !== null && event.endAt !== scheduleOrDraft.endAt)
   ) {
@@ -10508,6 +10955,16 @@ function normalizeJoinSchedulerScheduleInput(message, now = joinSchedulerNow()) 
   const endAt = rawEndAt || null;
   const eventId = message?.eventId === null || message?.eventId === undefined ||
     message?.eventId === "" ? null : normalizeGameEventId(message.eventId);
+  const hasEventStartAt = Object.prototype.hasOwnProperty.call(
+    message || {},
+    "eventStartAt"
+  );
+  const normalizedEventStartAt = normalizeJoinSchedulerTimestamp(
+    message?.eventStartAt
+  );
+  const eventStartAt = eventId
+    ? (hasEventStartAt ? normalizedEventStartAt : startAt)
+    : null;
   const mode = ["notify", "auto"].includes(message?.mode)
     ? message.mode
     : null;
@@ -10522,7 +10979,13 @@ function normalizeJoinSchedulerScheduleInput(message, now = joinSchedulerNow()) 
     !startAt ||
     startAt <= now ||
     startAt - now > JOIN_SCHEDULER_MAX_FUTURE_MS ||
-    (endAt !== null && endAt <= startAt) ||
+    (eventId && !eventStartAt) ||
+    (!eventId && hasEventStartAt && message?.eventStartAt !== null) ||
+    (eventStartAt !== null && (
+      eventStartAt < startAt ||
+      eventStartAt - now > JOIN_SCHEDULER_MAX_FUTURE_MS
+    )) ||
+    (endAt !== null && endAt <= (eventStartAt || startAt)) ||
     (message?.eventId !== null && message?.eventId !== undefined &&
       message?.eventId !== "" && !eventId) ||
     !mode ||
@@ -10540,6 +11003,7 @@ function normalizeJoinSchedulerScheduleInput(message, now = joinSchedulerNow()) 
     gameName,
     title,
     startAt,
+    eventStartAt,
     endAt,
     eventId,
     mode,
@@ -10657,6 +11121,7 @@ async function createJoinSchedulerSchedule(message) {
       gameName: input.gameName,
       title: input.title,
       startAt: input.startAt,
+      eventStartAt: input.eventStartAt,
       endAt: input.endAt,
       eventId: input.eventId,
       mode: input.mode,
@@ -11152,6 +11617,13 @@ async function createJoinSchedulerNotification(schedule, message = null) {
     hour: "2-digit",
     minute: "2-digit"
   });
+  const eventWhen = schedule.eventStartAt &&
+    schedule.eventStartAt !== schedule.startAt
+    ? new Date(schedule.eventStartAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : null;
   const notificationId = getJoinSchedulerNotificationId(
     schedule.id,
     schedule.revision
@@ -11166,7 +11638,9 @@ async function createJoinSchedulerNotification(schedule, message = null) {
     type: "basic",
     iconUrl,
     title: `Join ${schedule.gameName}`,
-    message: message || `${schedule.title} starts at ${when}.`,
+    message: message || (eventWhen
+      ? `Time to join. ${schedule.title} starts at ${eventWhen}.`
+      : `${schedule.title} starts at ${when}.`),
     priority: 2,
     requireInteraction: true,
     buttons: [{ title: "Join now" }, { title: "Remove" }]
@@ -13755,6 +14229,307 @@ function getTrustedRobloxTopFrameTabId(sender) {
   return tabId;
 }
 
+function normalizeAccountRecoveryReminderRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function getAccountRecoveryReminderFeatureState(rawValue) {
+  if (rawValue == null) {
+    return Object.freeze({
+      valid: true,
+      recoverySnapshotsEnabled: true,
+      automaticSnapshotsEnabled: false,
+      remindersEnabled: true
+    });
+  }
+  const valid = Boolean(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === FEATURE_SETTINGS_VERSION &&
+    rawValue.flags &&
+    typeof rawValue.flags === "object" &&
+    !Array.isArray(rawValue.flags)
+  );
+  if (!valid) {
+    return Object.freeze({
+      valid: false,
+      recoverySnapshotsEnabled: false,
+      automaticSnapshotsEnabled: false,
+      remindersEnabled: false
+    });
+  }
+  return Object.freeze({
+    valid: true,
+    recoverySnapshotsEnabled:
+      rawValue.flags[ACCOUNT_RECOVERY_MASTER_FEATURE_KEY] !== false,
+    automaticSnapshotsEnabled:
+      rawValue.flags[ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY] === true,
+    remindersEnabled:
+      rawValue.flags[ACCOUNT_RECOVERY_REMINDER_FEATURE_KEY] !== false
+  });
+}
+
+function shouldResetAccountRecoveryReminderCooldown(
+  previousRawValue,
+  nextRawValue
+) {
+  const previous = getAccountRecoveryReminderFeatureState(previousRawValue);
+  const next = getAccountRecoveryReminderFeatureState(nextRawValue);
+  if (
+    !previous.valid ||
+    !next.valid ||
+    !next.recoverySnapshotsEnabled ||
+    !next.remindersEnabled ||
+    next.automaticSnapshotsEnabled
+  ) {
+    return false;
+  }
+  return (
+    !previous.recoverySnapshotsEnabled ||
+    previous.automaticSnapshotsEnabled ||
+    !previous.remindersEnabled
+  );
+}
+
+function normalizeAccountRecoveryReminderState(rawValue, now = Date.now()) {
+  const normalizedNow = Number.isSafeInteger(now) && now >= 0
+    ? now
+    : Date.now();
+  const lastPresentedAt = Boolean(
+    rawValue &&
+    typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    rawValue.version === ACCOUNT_RECOVERY_REMINDER_STORAGE_VERSION &&
+    Number.isSafeInteger(rawValue.lastPresentedAt) &&
+    rawValue.lastPresentedAt > 0 &&
+    rawValue.lastPresentedAt <=
+      normalizedNow + ACCOUNT_RECOVERY_REMINDER_MAX_FUTURE_SKEW_MS
+  )
+    ? rawValue.lastPresentedAt
+    : 0;
+  return Object.freeze({
+    version: ACCOUNT_RECOVERY_REMINDER_STORAGE_VERSION,
+    lastPresentedAt
+  });
+}
+
+function evaluateAccountRecoveryReminderClaim(
+  rawState,
+  rawFeatureSettings,
+  now = Date.now()
+) {
+  const normalizedNow = Number.isSafeInteger(now) && now >= 0
+    ? now
+    : Date.now();
+  const state = normalizeAccountRecoveryReminderState(
+    rawState,
+    normalizedNow
+  );
+  const featureState = getAccountRecoveryReminderFeatureState(
+    rawFeatureSettings
+  );
+  if (
+    !featureState.valid ||
+    !featureState.recoverySnapshotsEnabled ||
+    !featureState.remindersEnabled ||
+    featureState.automaticSnapshotsEnabled
+  ) {
+    return Object.freeze({
+      showNotice: false,
+      nextNoticeAt: null,
+      nextState: state
+    });
+  }
+  const nextNoticeAt = state.lastPresentedAt > 0
+    ? state.lastPresentedAt + ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS
+    : 0;
+  if (nextNoticeAt > normalizedNow) {
+    return Object.freeze({
+      showNotice: false,
+      nextNoticeAt,
+      nextState: state
+    });
+  }
+  return Object.freeze({
+    showNotice: true,
+    nextNoticeAt: normalizedNow + ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS,
+    nextState: Object.freeze({
+      version: ACCOUNT_RECOVERY_REMINDER_STORAGE_VERSION,
+      lastPresentedAt: normalizedNow
+    })
+  });
+}
+
+function readAccountRecoveryReminderStorage(defaults) {
+  if (!chrome.storage?.local?.get) {
+    return Promise.reject(new Error("Recovery reminder storage unavailable"));
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(defaults, (result) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve(result && typeof result === "object" ? result : { ...defaults });
+    });
+  });
+}
+
+function writeAccountRecoveryReminderStorage(state) {
+  if (!chrome.storage?.local?.set) {
+    return Promise.reject(new Error("Recovery reminder storage unavailable"));
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(
+      { [ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY]: { ...state } },
+      () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+function clearAccountRecoveryReminderStorage() {
+  if (!chrome.storage?.local?.remove) {
+    return Promise.reject(new Error("Recovery reminder storage unavailable"));
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.remove(ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function resetAccountRecoveryReminderCooldown() {
+  return enqueueAccountRecoveryReminderClaim(
+    clearAccountRecoveryReminderStorage
+  );
+}
+
+function enqueueAccountRecoveryReminderClaim(operation) {
+  const run = accountRecoveryReminderMutationTail
+    .catch(() => undefined)
+    .then(operation);
+  accountRecoveryReminderMutationTail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+function claimAccountRecoveryReminder({ tabId, senderUrl }) {
+  return enqueueAccountRecoveryReminderClaim(async () => {
+    const now = Date.now();
+    const defaults = {
+      [ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY]: null,
+      [FEATURE_SETTINGS_STORAGE_KEY]: null
+    };
+    const stored = await readAccountRecoveryReminderStorage(defaults);
+    let decision = evaluateAccountRecoveryReminderClaim(
+      stored[ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY],
+      stored[FEATURE_SETTINGS_STORAGE_KEY],
+      now
+    );
+    if (!decision.showNotice) {
+      return decision;
+    }
+
+    if (!(await verifyTrustedActiveRobloxHomeTab(tabId, senderUrl))) {
+      return Object.freeze({
+        showNotice: false,
+        nextNoticeAt: null,
+        nextState: decision.nextState
+      });
+    }
+
+    // Re-read the switches immediately before reserving the global cooldown.
+    // A tab that just enabled automatic snapshots or disabled reminders must
+    // not lose a notification slot to stale content-script state.
+    const latestSettings = await readAccountRecoveryReminderStorage({
+      [FEATURE_SETTINGS_STORAGE_KEY]: null
+    });
+    decision = evaluateAccountRecoveryReminderClaim(
+      stored[ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY],
+      latestSettings[FEATURE_SETTINGS_STORAGE_KEY],
+      now
+    );
+    if (!decision.showNotice) {
+      return decision;
+    }
+    await writeAccountRecoveryReminderStorage(decision.nextState);
+    return decision;
+  });
+}
+
+function handleAccountRecoveryReminderClaimMessage(
+  message,
+  sender,
+  sendResponse
+) {
+  const requestId = normalizeAccountRecoveryReminderRequestId(
+    message?.requestId
+  );
+  const messageKeys = message && typeof message === "object" &&
+    !Array.isArray(message)
+    ? Object.keys(message).sort()
+    : [];
+  const tabId = getTrustedRobloxTopFrameTabId(sender);
+  const senderUrl = typeof sender?.url === "string"
+    ? sender.url
+    : sender?.tab?.url;
+  if (
+    sender?.id !== chrome.runtime.id ||
+    sender?.tab?.incognito === true ||
+    requestId === null ||
+    messageKeys.length !== 2 ||
+    messageKeys[0] !== "requestId" ||
+    messageKeys[1] !== "type" ||
+    tabId === null ||
+    !isTrustedRobloxHomePageUrl(senderUrl)
+  ) {
+    sendResponse({ ok: false, requestId: requestId ?? 0 });
+    return false;
+  }
+
+  verifyTrustedActiveRobloxHomeTab(tabId, senderUrl)
+    .then((trusted) => {
+      if (!trusted) {
+        return null;
+      }
+      return claimAccountRecoveryReminder({ tabId, senderUrl });
+    })
+    .then((decision) => {
+      if (!decision) {
+        sendResponse({ ok: false, requestId });
+        return;
+      }
+      sendResponse({
+        ok: true,
+        requestId,
+        showNotice: decision.showNotice,
+        nextNoticeAt: decision.nextNoticeAt
+      });
+    })
+    .catch(() => {
+      // Fail closed: a storage or validation failure never displays or spends
+      // a reminder outside the persisted three-hour claim path.
+      sendResponse({ ok: false, requestId });
+    });
+  return true;
+}
+
 function normalizeExtensionUpdateVersion(value, requireTagPrefix = false) {
   if (typeof value !== "string" || value.length === 0 || value.length > 64) {
     return null;
@@ -15638,6 +16413,25 @@ if (globalThis.__rslBackgroundTestHooks) {
     normalizeExtensionUpdateClaimContextId,
     isTrustedRobloxHomePageUrl,
     verifyTrustedActiveRobloxHomeTab,
+    normalizeAccountRecoveryReminderRequestId,
+    getAccountRecoveryReminderFeatureState,
+    shouldResetAccountRecoveryReminderCooldown,
+    normalizeAccountRecoveryReminderState,
+    evaluateAccountRecoveryReminderClaim,
+    claimAccountRecoveryReminder,
+    handleAccountRecoveryReminderClaimMessage,
+    resetAccountRecoveryReminderStateForTests() {
+      accountRecoveryReminderMutationTail = Promise.resolve();
+    },
+    accountRecoveryReminderConstants: Object.freeze({
+      messageType: ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE,
+      masterFeatureKey: ACCOUNT_RECOVERY_MASTER_FEATURE_KEY,
+      featureKey: ACCOUNT_RECOVERY_REMINDER_FEATURE_KEY,
+      automaticFeatureKey: ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY,
+      storageKey: ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY,
+      storageVersion: ACCOUNT_RECOVERY_REMINDER_STORAGE_VERSION,
+      cooldownMs: ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS
+    }),
     challengeExtensionUpdateClaimContext,
     verifyExtensionUpdatePresentationContext,
     createEmptyExtensionUpdateState,
@@ -15700,6 +16494,68 @@ if (globalThis.__rslBackgroundTestHooks) {
     handleQuickSettingsReadMessage,
     handleQuickSettingUpdateMessage,
     handleOnlineStatusUpdateMessage,
+    normalizeAccountRecoveryText,
+    normalizeAccountRecoveryId,
+    normalizeAccountRecoveryDate,
+    normalizeAccountRecoverySectionSelection,
+    normalizeAccountRecoveryAuthenticatedUser,
+    normalizeAccountRecoveryExperience,
+    normalizeAccountRecoveryPurchase,
+    normalizeAccountRecoveryTrade,
+    normalizeAccountRecoveryRecentGame,
+    normalizeAccountRecoveryViolation,
+    collectAccountRecoverySnapshot,
+    isTrustedAccountRecoveryPageSender,
+    handleCollectAccountRecoveryMessage,
+    accountRecoveryConstants: Object.freeze({
+      collectMessageType: ACCOUNT_RECOVERY_COLLECT_MESSAGE_TYPE,
+      pagePath: ACCOUNT_RECOVERY_PAGE_PATH,
+      pageView: ACCOUNT_RECOVERY_PAGE_VIEW,
+      maxResponseBytes: ACCOUNT_RECOVERY_MAX_RESPONSE_BYTES,
+      sectionKeys: ACCOUNT_RECOVERY_SECTION_KEYS
+    }),
+    normalizeAccountRecoveryArchivePreferences,
+    getAccountRecoveryArchiveFeatureValue,
+    isTrustedAccountRecoveryArchivePreferencesSender,
+    writeAccountRecoveryArchivePreferencesOnly,
+    handleAccountRecoveryArchivePreferencesMessage,
+    sanitizeAccountRecoveryArchiveSnapshot,
+    normalizeAccountRecoveryArchiveRecord,
+    getNextAccountRecoveryArchiveDueAt,
+    applyAccountRecoveryArchiveRetention,
+    createAccountRecoveryArchiveMemoryStorageForTests,
+    isTrustedAccountRecoveryArchivePageSender,
+    handleAccountRecoveryArchiveMessage,
+    getAccountRecoveryArchiveState,
+    runAccountRecoveryArchiveCoordinator,
+    setAccountRecoveryArchiveStorageOverrideForTests(value) {
+      accountRecoveryArchiveStorageOverride = value;
+      accountRecoveryArchiveWriteTail = Promise.resolve();
+    },
+    resetAccountRecoveryArchiveStateForTests() {
+      accountRecoveryArchiveFeatureEnabled = false;
+      accountRecoveryArchiveFeatureReady = false;
+      accountRecoveryArchiveFeatureSyncPromise = null;
+      accountRecoveryArchiveRunPromise = null;
+      accountRecoveryArchivePreferencesWriteTail = Promise.resolve();
+      accountRecoveryArchiveLifecycleGeneration = 0;
+      accountRecoveryArchiveCapabilities.clear();
+    },
+    accountRecoveryArchiveConstants: Object.freeze({
+      pagePath: ACCOUNT_RECOVERY_ARCHIVE_PAGE_PATH,
+      masterFeatureKey: ACCOUNT_RECOVERY_MASTER_FEATURE_KEY,
+      featureKey: ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY,
+      alarmName: ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME,
+      alarmPeriodMinutes: ACCOUNT_RECOVERY_ARCHIVE_ALARM_PERIOD_MINUTES,
+      defaultFrequency: ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_FREQUENCY,
+      defaultRetention: ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_RETENTION,
+      defaultSections: ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_SECTIONS,
+      preferencesGetMessageType:
+        ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE,
+      preferencesSetMessageType:
+        ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE,
+      messageTypes: ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES
+    }),
     executePrivateServerJoin,
     handleJoinPrivateServerMessage,
     handleRuntimeMessage,
@@ -15708,6 +16564,14 @@ if (globalThis.__rslBackgroundTestHooks) {
     resetPrivateServerStateForTests,
     resetFriendAggregationStateForTests,
     getCopyRobloxIdsFeatureValue,
+    getRecoverySnapshotsFeatureValue,
+    sendFeatureSettingsShowMessageToTab,
+    sendFeatureSettingsShowMessageUntilReady,
+    showFeatureSettingsInRobloxTab,
+    handleFeatureSettingsActionClick,
+    isTrustedToolbarPopupSender,
+    handleToolbarPopupSettingsMessage,
+    handleToolbarPopupRecoveryMessage,
     handleContextMenuClick,
     ensureContextCopyHelper,
     warmContextCopyHelpersInOpenTabs,
@@ -15715,6 +16579,23 @@ if (globalThis.__rslBackgroundTestHooks) {
     setCopyRobloxIdsEnabledForTests(value) {
       copyRobloxIdsEnabled = value !== false;
     },
+    setRecoverySnapshotsEnabledForTests(value) {
+      recoverySnapshotsEnabled = value !== false;
+    },
+    featureSettingsLauncherConstants: Object.freeze({
+      actionMenuId: FEATURE_SETTINGS_ACTION_MENU_ID,
+      recoverySnapshotsActionMenuId:
+        ACCOUNT_RECOVERY_ARCHIVE_ACTION_MENU_ID,
+      recoverySnapshotsMasterFeatureKey:
+        ACCOUNT_RECOVERY_MASTER_FEATURE_KEY,
+      showMessageType: FEATURE_SETTINGS_SHOW_MESSAGE_TYPE,
+      popupPagePath: TOOLBAR_POPUP_PAGE_PATH,
+      popupSettingsMessageType: TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE,
+      popupRecoverySnapshotsMessageType:
+        TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE,
+      showMessageTimeoutMs: FEATURE_SETTINGS_SHOW_MESSAGE_TIMEOUT_MS,
+      newTabReadyTimeoutMs: FEATURE_SETTINGS_NEW_TAB_READY_TIMEOUT_MS
+    }),
     contextMenuActions: CONTEXT_MENU_ACTIONS,
     contextMenuRoutePatterns: CONTEXT_MENU_ROUTE_PATTERNS
   });
@@ -15727,14 +16608,17 @@ chrome.runtime.onInstalled?.addListener(() => {
   syncServerHistoryFeatureFromStorage(true);
   syncGameEventsFeatureFromStorage();
   syncJoinSchedulerFeatureFromStorage("startup");
+  syncAccountRecoveryArchiveFeatureFromStorage("startup");
 });
 
 chrome.runtime.onStartup?.addListener(() => {
+  syncContextMenusFromStorage();
   warmContextCopyHelpersInOpenTabs();
   syncGameCcuHistoryFeatureFromStorage("stale");
   syncServerHistoryFeatureFromStorage("startup");
   syncGameEventsFeatureFromStorage();
   syncJoinSchedulerFeatureFromStorage("startup");
+  syncAccountRecoveryArchiveFeatureFromStorage("startup");
 });
 
 chrome.alarms?.onAlarm?.addListener((alarm) => {
@@ -15754,31 +16638,43 @@ chrome.alarms?.onAlarm?.addListener((alarm) => {
   if (alarm?.name === JOIN_SCHEDULER_ALARM_NAME) {
     void runJoinSchedulerCoordinator();
   }
+  if (alarm?.name === ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME) {
+    void runAccountRecoveryArchiveCoordinator("scheduled");
+  }
 });
 
 chrome.storage?.onChanged?.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes?.[FEATURE_SETTINGS_STORAGE_KEY]) {
+  if (areaName !== "local") {
     return;
   }
-  copyRobloxIdsEnabled = getCopyRobloxIdsFeatureValue(
-    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
-  );
-  applyGameCcuHistoryFeatureValue(
-    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
-    true
-  );
-  applyServerHistoryFeatureValue(
-    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
-    true
-  );
-  applyGameEventsFeatureValue(
-    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
-  );
-  applyJoinSchedulerFeatureValue(
-    changes[FEATURE_SETTINGS_STORAGE_KEY].newValue,
-    true
-  );
-  setupContextMenus();
+  if (changes?.[FEATURE_SETTINGS_STORAGE_KEY]) {
+    if (
+      shouldResetAccountRecoveryReminderCooldown(
+        changes[FEATURE_SETTINGS_STORAGE_KEY].oldValue,
+        changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
+      )
+    ) {
+      void resetAccountRecoveryReminderCooldown().catch(() => undefined);
+    }
+    const nextFeatureSettings =
+      changes[FEATURE_SETTINGS_STORAGE_KEY].newValue;
+    copyRobloxIdsEnabled = getCopyRobloxIdsFeatureValue(nextFeatureSettings);
+    recoverySnapshotsEnabled = getRecoverySnapshotsFeatureValue(
+      nextFeatureSettings
+    );
+    applyGameCcuHistoryFeatureValue(nextFeatureSettings, true);
+    applyServerHistoryFeatureValue(nextFeatureSettings, true);
+    applyGameEventsFeatureValue(nextFeatureSettings);
+    applyJoinSchedulerFeatureValue(nextFeatureSettings, true);
+    applyAccountRecoveryArchiveFeatureValue(nextFeatureSettings, true);
+    setupContextMenus();
+  }
+  if (changes?.[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]) {
+    accountRecoveryArchiveLifecycleGeneration += 1;
+    if (accountRecoveryArchiveFeatureEnabled) {
+      void ensureAccountRecoveryArchiveAlarm().catch(() => undefined);
+    }
+  }
 });
 
 chrome.permissions?.onRemoved?.addListener((permissions) => {
@@ -15804,9 +16700,2900 @@ chrome.contextMenus?.onClicked?.addListener((info, tab) => {
   void handleContextMenuClick(info, tab);
 });
 
+chrome.action?.onClicked?.addListener((tab) => {
+  void handleFeatureSettingsActionClick(tab);
+});
+
+class AccountRecoveryError extends Error {
+  constructor(code, status = 0) {
+    super(code);
+    this.name = "AccountRecoveryError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function normalizeAccountRecoveryRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeAccountRecoverySectionSelection(value) {
+  if (!Array.isArray(value) || value.length > ACCOUNT_RECOVERY_SECTION_KEYS.length) {
+    return null;
+  }
+  const selected = [];
+  const seen = new Set();
+  for (const key of value) {
+    if (
+      typeof key !== "string" ||
+      !ACCOUNT_RECOVERY_SECTION_KEY_SET.has(key) ||
+      seen.has(key)
+    ) {
+      return null;
+    }
+    seen.add(key);
+    selected.push(key);
+  }
+  return selected;
+}
+
+function normalizeAccountRecoveryText(
+  value,
+  maxLength = ACCOUNT_RECOVERY_MAX_TEXT_LENGTH
+) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeAccountRecoveryId(value) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+  const text = typeof value === "string" ? value.trim() : "";
+  return /^[1-9]\d{0,19}$/.test(text) ? text : null;
+}
+
+function normalizeAccountRecoveryOpaqueId(value, maxLength = 128) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (/^\d+$/.test(text)) return normalizeAccountRecoveryId(text);
+  return text && text.length <= maxLength && /^[A-Za-z0-9._:/-]+$/.test(text)
+    ? text
+    : normalizeAccountRecoveryId(value);
+}
+
+function normalizeAccountRecoveryDate(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/i.exec(text);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const daysInMonth = month >= 1 && month <= 12
+    ? new Date(Date.UTC(year, month, 0)).getUTCDate()
+    : 0;
+  if (
+    year < 1970 || year > 9999 || day < 1 || day > daysInMonth ||
+    hour > 23 || minute > 59 || second > 59
+  ) {
+    return null;
+  }
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function getAccountRecoveryPath(source, path) {
+  let value = source;
+  for (const key of path) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    value = value[key];
+  }
+  return value;
+}
+
+function firstAccountRecoveryValue(source, paths) {
+  for (const path of paths) {
+    const value = getAccountRecoveryPath(source, path);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+async function readAccountRecoveryResponse(response, controller) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > ACCOUNT_RECOVERY_MAX_RESPONSE_BYTES
+  ) {
+    controller.abort();
+    throw new AccountRecoveryError("RESPONSE_TOO_LARGE", 413);
+  }
+
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let total = 0;
+    let text = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > ACCOUNT_RECOVERY_MAX_RESPONSE_BYTES) {
+          controller.abort();
+          throw new AccountRecoveryError("RESPONSE_TOO_LARGE", 413);
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    } finally {
+      reader.releaseLock?.();
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+    }
+  }
+
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > ACCOUNT_RECOVERY_MAX_RESPONSE_BYTES) {
+    throw new AccountRecoveryError("RESPONSE_TOO_LARGE", 413);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+}
+
+async function fetchAccountRecoveryJson(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    ACCOUNT_RECOVERY_FETCH_TIMEOUT_MS
+  );
+  try {
+    const {
+      headers: optionHeaders = {},
+      ...requestOptions
+    } = options;
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      redirect: "error",
+      ...requestOptions,
+      headers: { Accept: "application/json", ...optionHeaders },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new AccountRecoveryError(
+        response.status === 401
+          ? "UNAUTHENTICATED"
+          : response.status === 403
+            ? "FORBIDDEN"
+            : response.status === 429
+              ? "RATE_LIMITED"
+              : "ROBLOX_UNAVAILABLE",
+        response.status
+      );
+    }
+    return await readAccountRecoveryResponse(response, controller);
+  } catch (error) {
+    if (error instanceof AccountRecoveryError) throw error;
+    if (error?.name === "AbortError") {
+      throw new AccountRecoveryError("TIMEOUT", 408);
+    }
+    throw new AccountRecoveryError("ROBLOX_UNAVAILABLE");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeAccountRecoveryAuthenticatedUser(payload) {
+  const userId = normalizeAccountRecoveryId(payload?.id);
+  const username = normalizeAccountRecoveryText(payload?.name, 100);
+  const displayName = normalizeAccountRecoveryText(payload?.displayName, 100);
+  if (!userId || !username) {
+    throw new AccountRecoveryError("UNAUTHENTICATED", 401);
+  }
+  return { userId, username, displayName: displayName || username };
+}
+
+async function fetchAccountRecoveryAuthenticatedUser() {
+  return normalizeAccountRecoveryAuthenticatedUser(
+    await fetchAccountRecoveryJson(
+      "https://users.roblox.com/v1/users/authenticated"
+    )
+  );
+}
+
+async function assertAccountRecoveryViewer(expectedUserId) {
+  const viewer = await fetchAccountRecoveryAuthenticatedUser();
+  if (viewer.userId !== expectedUserId) {
+    throw new AccountRecoveryError("ACCOUNT_CHANGED", 409);
+  }
+  return viewer;
+}
+
+async function collectAccountRecoverySection(loader, options = {}) {
+  try {
+    const result = await loader();
+    const items = Array.isArray(result?.items) ? result.items : [];
+    const hasMore = result?.hasMore === true;
+    return {
+      status: hasMore ? "partial" : "complete",
+      count: items.length,
+      limit: Number.isSafeInteger(options.limit) ? options.limit : null,
+      hasMore,
+      items,
+      note: normalizeAccountRecoveryText(result?.note, 300) || null
+    };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      count: 0,
+      limit: Number.isSafeInteger(options.limit) ? options.limit : null,
+      hasMore: false,
+      items: [],
+      code: error instanceof AccountRecoveryError
+        ? error.code
+        : "ROBLOX_UNAVAILABLE"
+    };
+  }
+}
+
+function createAccountRecoveryExcludedSection(limit = null) {
+  return {
+    status: "not-requested",
+    count: 0,
+    limit: Number.isSafeInteger(limit) ? limit : null,
+    hasMore: false,
+    items: [],
+    note: "Excluded by the snapshot choices for this capture."
+  };
+}
+
+function getAccountRecoverySectionCoverage(sectionKey, section) {
+  const count = Number.isSafeInteger(section?.count) ? section.count : 0;
+  const hasMore = section?.hasMore === true;
+  switch (sectionKey) {
+    case "purchases":
+      if (count === 0) return "No item purchases were returned by Roblox at capture time.";
+      return hasMore
+        ? `Latest ${count} item purchases returned by Roblox; older purchases exist and are not included.`
+        : `All ${count} item purchases returned by Roblox at capture time.`;
+    case "currencyPurchases":
+      if (count === 0) return "No Robux purchases were returned by Roblox at capture time.";
+      return hasMore
+        ? `Latest ${count} Robux purchases returned by Roblox; older purchases exist and are not included.`
+        : `All ${count} Robux purchases returned by Roblox at capture time.`;
+    case "tradeHistory":
+      if (count === 0) return "No completed trades were returned by Roblox at capture time.";
+      return hasMore
+        ? `Latest ${count} completed trades returned by Roblox; older trades exist and are not included.`
+        : `All ${count} completed trades returned by Roblox at capture time.`;
+    case "recentlyPlayed":
+      if (count === 0) return "Roblox returned no games in the Continue row at capture time.";
+      return `${count} games from Roblox's Continue row at capture time. Roblox does not provide play dates, so this does not mean they were played on the capture date.`;
+    case "usernameHistory":
+      return hasMore
+        ? `Latest ${count} previous usernames returned by Roblox; older names may exist.`
+        : `${count} previous usernames returned by Roblox at capture time.`;
+    case "createdExperiences":
+      return hasMore
+        ? `${count} public user-owned experiences returned by Roblox; more may exist.`
+        : `${count} public user-owned experiences returned by Roblox at capture time.`;
+    case "violations":
+      return hasMore
+        ? `${count} Violations & Appeals records returned by Roblox; more records exist and are not included.`
+        : `${count} Violations & Appeals records returned by Roblox at capture time.`;
+    case "twoStepVerification":
+      return `${count} enabled 2-step verification methods returned by Roblox at capture time. This is current security information, not proof of ownership.`;
+    default:
+      return `${count} records returned by Roblox at capture time.`;
+  }
+}
+
+function annotateAccountRecoverySection(sectionKey, section, capturedAt) {
+  if (!section || !["complete", "partial"].includes(section.status)) return section;
+  return {
+    ...section,
+    capturedAt,
+    coverage: getAccountRecoverySectionCoverage(sectionKey, section)
+  };
+}
+
+async function collectAccountRecoveryPrivateSection(
+  viewerUserId,
+  loader,
+  options = {}
+) {
+  return collectAccountRecoverySection(async () => {
+    const result = await loader();
+    await assertAccountRecoveryViewer(viewerUserId);
+    return result;
+  }, options);
+}
+
+async function collectAccountRecoveryProfile(viewer) {
+  try {
+    const payload = await fetchAccountRecoveryJson(
+      `https://users.roblox.com/v1/users/${viewer.userId}`
+    );
+    const responseUserId = normalizeAccountRecoveryId(payload?.id);
+    if (responseUserId !== viewer.userId) {
+      throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+    }
+    return {
+      account: {
+        userId: viewer.userId,
+        username: normalizeAccountRecoveryText(payload?.name, 100) || viewer.username,
+        displayName:
+          normalizeAccountRecoveryText(payload?.displayName, 100) ||
+          viewer.displayName,
+        createdAt: normalizeAccountRecoveryDate(payload?.created),
+        ...(payload?.isBanned === true ? { accountStatus: "Banned" } : {}),
+        profileUrl: `https://www.roblox.com/users/${viewer.userId}/profile`
+      },
+      diagnostic: null
+    };
+  } catch {
+    return {
+      account: {
+        userId: viewer.userId,
+        username: viewer.username,
+        displayName: viewer.displayName,
+        createdAt: null,
+        profileUrl: `https://www.roblox.com/users/${viewer.userId}/profile`
+      },
+      diagnostic: {
+        status: "partial",
+        count: 0,
+        limit: null,
+        hasMore: false,
+        items: [],
+        note: "Roblox profile details could not be loaded. The signed-in account ID and username are still included."
+      }
+    };
+  }
+}
+
+async function collectAccountRecoveryUsernameHistory(viewerUserId) {
+  const endpoint = new URL(
+    `/v1/users/${viewerUserId}/username-history`,
+    "https://users.roblox.com"
+  );
+  endpoint.searchParams.set("limit", String(ACCOUNT_RECOVERY_MAX_USERNAME_HISTORY));
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchAccountRecoveryJson(endpoint);
+  if (!Array.isArray(payload?.data)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  return {
+    items: payload.data
+      .slice(0, ACCOUNT_RECOVERY_MAX_USERNAME_HISTORY)
+      .map((entry) => ({ username: normalizeAccountRecoveryText(entry?.name, 100) }))
+      .filter((entry) => entry.username),
+    hasMore: Boolean(payload?.nextPageCursor)
+  };
+}
+
+function normalizeAccountRecoveryExperience(entry) {
+  const universeId = normalizeAccountRecoveryId(entry?.id);
+  const rootPlaceId = normalizeAccountRecoveryId(
+    entry?.rootPlace?.id ?? entry?.rootPlaceId
+  );
+  const name = normalizeAccountRecoveryText(entry?.name, 200);
+  if (!universeId || !name) return null;
+  return {
+    universeId,
+    rootPlaceId,
+    name,
+    createdAt: normalizeAccountRecoveryDate(entry?.created),
+    updatedAt: normalizeAccountRecoveryDate(entry?.updated),
+    gameUrl: rootPlaceId
+      ? `https://www.roblox.com/games/${rootPlaceId}`
+      : null
+  };
+}
+
+async function collectAccountRecoveryCreatedExperiences(viewerUserId) {
+  const items = [];
+  const seenCursors = new Set();
+  let cursor = "";
+  let hasMore = false;
+  while (items.length < ACCOUNT_RECOVERY_MAX_CREATED_EXPERIENCES) {
+    const endpoint = new URL(
+      `/v2/users/${viewerUserId}/games`,
+      "https://games.roblox.com"
+    );
+    endpoint.searchParams.set("accessFilter", "2");
+    endpoint.searchParams.set("limit", "50");
+    endpoint.searchParams.set("sortOrder", "Asc");
+    if (cursor) endpoint.searchParams.set("cursor", cursor);
+    const payload = await fetchAccountRecoveryJson(endpoint);
+    if (!Array.isArray(payload?.data)) {
+      throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+    }
+    for (const entry of payload.data) {
+      const normalized = normalizeAccountRecoveryExperience(entry);
+      if (normalized) items.push(normalized);
+      if (items.length >= ACCOUNT_RECOVERY_MAX_CREATED_EXPERIENCES) break;
+    }
+    const nextCursor =
+      typeof payload?.nextPageCursor === "string"
+        ? payload.nextPageCursor.trim()
+        : "";
+    if (!nextCursor) {
+      hasMore = false;
+      break;
+    }
+    if (
+      nextCursor.length > 2_048 ||
+      nextCursor === cursor ||
+      seenCursors.has(nextCursor)
+    ) {
+      hasMore = true;
+      break;
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+    hasMore = true;
+  }
+  return {
+    items,
+    hasMore,
+    note: "Public user-owned experiences returned by Roblox; private and group-owned experiences may be absent."
+  };
+}
+
+function getAccountRecoveryTwoStepMethodLabel(value) {
+  const labels = [
+    "Email",
+    "SMS",
+    "Authenticator",
+    "Recovery code",
+    "Security key",
+    "Cross-device",
+    "Password",
+    "Passkey"
+  ];
+  if (Number.isSafeInteger(value)) {
+    return value >= 0 && value < labels.length ? labels[value] : null;
+  }
+  if (typeof value !== "string") return null;
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  if (!normalized) return null;
+  if (/^\d+$/.test(normalized)) {
+    const numericValue = Number(normalized);
+    return Number.isSafeInteger(numericValue) && numericValue < labels.length
+      ? labels[numericValue]
+      : null;
+  }
+  return new Map([
+    ["email", "Email"],
+    ["sms", "SMS"],
+    ["phone", "SMS"],
+    ["authenticator", "Authenticator"],
+    ["authenticatorapp", "Authenticator"],
+    ["totp", "Authenticator"],
+    ["recoverycode", "Recovery code"],
+    ["recoverycodes", "Recovery code"],
+    ["securitykey", "Security key"],
+    ["securitykeys", "Security key"],
+    ["crossdevice", "Cross-device"],
+    ["password", "Password"],
+    ["passkey", "Passkey"],
+    ["passkeys", "Passkey"]
+  ]).get(normalized) || null;
+}
+
+function hasAccountRecoveryTwoStepMethodValue(value) {
+  return Number.isSafeInteger(value) && value >= 0 ||
+    typeof value === "string" && value.trim().length > 0;
+}
+
+async function collectAccountRecoveryTwoStepVerification(viewerUserId) {
+  const payload = await fetchAccountRecoveryJson(
+    `https://twostepverification.roblox.com/v1/users/${viewerUserId}/configuration`
+  );
+  if (!Array.isArray(payload?.methods)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  const primaryMethod = getAccountRecoveryTwoStepMethodLabel(
+    payload?.primaryMediaType
+  );
+  const enabledItems = payload.methods
+    .map((entry) => {
+      if (
+        entry?.enabled !== true ||
+        !hasAccountRecoveryTwoStepMethodValue(entry?.mediaType)
+      ) {
+        return null;
+      }
+      const method =
+        getAccountRecoveryTwoStepMethodLabel(entry.mediaType) ||
+        "Other 2-step method";
+      const updatedAt = normalizeAccountRecoveryDate(entry?.updated);
+      return {
+        method,
+        role: method === primaryMethod ? "Primary method" : "Additional method",
+        ...(updatedAt ? { updatedAt } : {})
+      };
+    })
+    .filter(Boolean)
+    .slice(0, ACCOUNT_RECOVERY_MAX_TWO_STEP_METHODS);
+  return {
+    items: enabledItems,
+    hasMore: payload.methods.length > ACCOUNT_RECOVERY_MAX_TWO_STEP_METHODS,
+    note: enabledItems.length > 0
+      ? "Only enabled 2-step verification methods are included."
+      : "Roblox returned no enabled 2-step verification method, so this section is omitted from the support document."
+  };
+}
+
+function normalizeAccountRecoveryPurchase(entry) {
+  const purchasedAt = normalizeAccountRecoveryDate(entry?.created);
+  // Roblox documents this as a transaction hold/database ID, not a receipt ID.
+  // Completed records commonly use 0 as a sentinel, which is deliberately omitted.
+  const holdId = normalizeAccountRecoveryId(entry?.id);
+  const itemId = normalizeAccountRecoveryId(entry?.details?.id);
+  const itemName = normalizeAccountRecoveryText(entry?.details?.name, 200);
+  const itemType = normalizeAccountRecoveryText(entry?.details?.type, 100);
+  const amount = Number(entry?.currency?.amount);
+  if (!purchasedAt && !holdId && !itemId && !itemName) return null;
+  return {
+    ...(holdId ? { holdId } : {}),
+    purchasedAt,
+    itemId,
+    itemName: itemName || null,
+    itemType: itemType || null,
+    robuxChange: Number.isSafeInteger(amount) ? amount : null
+  };
+}
+
+async function collectAccountRecoveryPurchases(viewerUserId) {
+  const endpoint = new URL(
+    `/v2/users/${viewerUserId}/transactions`,
+    "https://economy.roblox.com"
+  );
+  endpoint.searchParams.set("transactionType", "Purchase");
+  endpoint.searchParams.set("limit", String(ACCOUNT_RECOVERY_MAX_PURCHASES));
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchAccountRecoveryJson(endpoint);
+  if (!Array.isArray(payload?.data)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  return {
+    items: payload.data
+      .slice(0, ACCOUNT_RECOVERY_MAX_PURCHASES)
+      .map(normalizeAccountRecoveryPurchase)
+      .filter(Boolean),
+    hasMore: Boolean(payload?.nextPageCursor),
+    note: "Recent Roblox item purchases paid in Robux. Zero hold identifiers returned by Roblox are omitted; this is not card, bank, app-store, or payment-provider receipt history."
+  };
+}
+
+function normalizeAccountRecoveryCurrencyPurchase(entry) {
+  const purchasedAt = normalizeAccountRecoveryDate(entry?.created);
+  const holdId = normalizeAccountRecoveryId(entry?.id);
+  const packageId = normalizeAccountRecoveryId(entry?.details?.id);
+  const packageName = normalizeAccountRecoveryText(entry?.details?.name, 200);
+  const robuxAmount = Number(entry?.currency?.amount);
+  if (!purchasedAt && !holdId && !packageId && !packageName) return null;
+  return {
+    ...(holdId ? { holdId } : {}),
+    purchasedAt,
+    packageId,
+    packageName: packageName || null,
+    robuxReceived: Number.isSafeInteger(robuxAmount) ? robuxAmount : null
+  };
+}
+
+async function collectAccountRecoveryCurrencyPurchases(viewerUserId) {
+  const endpoint = new URL(
+    `/v2/users/${viewerUserId}/transactions`,
+    "https://economy.roblox.com"
+  );
+  endpoint.searchParams.set("transactionType", "CurrencyPurchase");
+  endpoint.searchParams.set(
+    "limit",
+    String(ACCOUNT_RECOVERY_MAX_CURRENCY_PURCHASES)
+  );
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchAccountRecoveryJson(endpoint);
+  if (!Array.isArray(payload?.data)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  return {
+    items: payload.data
+      .slice(0, ACCOUNT_RECOVERY_MAX_CURRENCY_PURCHASES)
+      .map(normalizeAccountRecoveryCurrencyPurchase)
+      .filter(Boolean),
+    hasMore: Boolean(payload?.nextPageCursor),
+    note: "Robux currency purchases returned by Roblox. Roblox does not provide the payment method, local-currency price, receipt, invoice, or app-store order ID here."
+  };
+}
+
+function normalizeAccountRecoveryTrade(entry) {
+  const tradeId = normalizeAccountRecoveryId(entry?.id);
+  const tradeCreatedAt = normalizeAccountRecoveryDate(entry?.created);
+  const partnerUserId = normalizeAccountRecoveryId(entry?.user?.id);
+  const partnerUsername = normalizeAccountRecoveryText(entry?.user?.name, 100);
+  if (!tradeId || (!tradeCreatedAt && !partnerUserId && !partnerUsername)) {
+    return null;
+  }
+  return {
+    tradeId,
+    tradeCreatedAt,
+    partnerUserId,
+    partnerUsername: partnerUsername || null
+  };
+}
+
+async function collectAccountRecoveryTradeHistory() {
+  const endpoint = new URL(
+    "/v1/trades/Completed",
+    "https://trades.roblox.com"
+  );
+  endpoint.searchParams.set("limit", String(ACCOUNT_RECOVERY_MAX_TRADES));
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchAccountRecoveryJson(endpoint);
+  if (!Array.isArray(payload?.data)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  return {
+    items: payload.data
+      .slice(0, ACCOUNT_RECOVERY_MAX_TRADES)
+      .map(normalizeAccountRecoveryTrade)
+      .filter(Boolean),
+    hasMore: Boolean(payload?.nextPageCursor),
+    note: "Completed-trade summaries returned by Roblox. The timestamp is when the trade was created, not when it completed; the summary endpoint does not include the exchanged items or Robux."
+  };
+}
+
+function createAccountRecoverySessionId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
+    .slice(6, 8)
+    .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+function normalizeAccountRecoveryRecentGame(entry, fallbackUniverseId = null) {
+  const universeId = normalizeAccountRecoveryId(
+    entry?.universeId ?? entry?.id ?? fallbackUniverseId
+  );
+  const rootPlaceId = normalizeAccountRecoveryId(
+    entry?.placeId ?? entry?.rootPlaceId
+  );
+  const name = normalizeAccountRecoveryText(entry?.name, 200);
+  if (!universeId) return null;
+  return {
+    universeId,
+    rootPlaceId,
+    name: name || "Unknown experience",
+    gameUrl: rootPlaceId
+      ? `https://www.roblox.com/games/${rootPlaceId}`
+      : null
+  };
+}
+
+async function collectAccountRecoveryRecentGames() {
+  const payload = await fetchAccountRecoveryJson(
+    "https://apis.roblox.com/discovery-api/omni-recommendation",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pageType: "Home",
+        sessionId: createAccountRecoverySessionId()
+      })
+    }
+  );
+  const sorts = Array.isArray(payload?.sorts)
+    ? payload.sorts
+    : Array.isArray(payload?.Sorts)
+      ? payload.Sorts
+      : [];
+  const continueSort = sorts.find((sort) => {
+    const topic = normalizeAccountRecoveryText(sort?.topic ?? sort?.Topic, 100)
+      .toLowerCase();
+    const topicId = normalizeAccountRecoveryId(sort?.topicId ?? sort?.TopicId);
+    const gameSetTypeId = normalizeAccountRecoveryId(
+      sort?.gameSetTypeId ?? sort?.GameSetTypeId
+    );
+    return topicId === "100000003" || gameSetTypeId === "100000003" ||
+      topic === "continue" || topic.includes("continue playing");
+  });
+  const recommendations = Array.isArray(continueSort?.recommendationList)
+    ? continueSort.recommendationList
+    : Array.isArray(continueSort?.RecommendationList)
+      ? continueSort.RecommendationList
+      : [];
+  const hydratedGames = Array.isArray(continueSort?.games)
+    ? continueSort.games
+    : Array.isArray(continueSort?.Games)
+      ? continueSort.Games
+      : [];
+  if (!continueSort || (recommendations.length === 0 && hydratedGames.length === 0)) {
+    return {
+      items: [],
+      hasMore: false,
+      note: "Roblox returned no games in the Continue row at capture time."
+    };
+  }
+  const metadataRoot = payload?.contentMetadata ?? payload?.ContentMetadata;
+  const gameMetadata =
+    metadataRoot?.Game && typeof metadataRoot.Game === "object"
+      ? metadataRoot.Game
+      : metadataRoot?.game && typeof metadataRoot.game === "object"
+        ? metadataRoot.game
+        : {};
+  const items = [];
+  const seen = new Set();
+  for (const game of hydratedGames) {
+    const normalized = normalizeAccountRecoveryRecentGame(game);
+    if (!normalized || seen.has(normalized.universeId)) continue;
+    seen.add(normalized.universeId);
+    items.push(normalized);
+    if (items.length >= ACCOUNT_RECOVERY_MAX_RECENT_GAMES) break;
+  }
+  for (const recommendation of recommendations) {
+    const contentType = normalizeAccountRecoveryText(
+      recommendation?.contentType ?? recommendation?.ContentType,
+      30
+    ).toLowerCase();
+    const universeId = normalizeAccountRecoveryId(
+      recommendation?.contentId ?? recommendation?.ContentId
+    );
+    if (!universeId || seen.has(universeId) || (contentType && contentType !== "game")) {
+      continue;
+    }
+    const metadata = gameMetadata[universeId] || {};
+    const normalized = normalizeAccountRecoveryRecentGame(metadata, universeId);
+    if (normalized) {
+      seen.add(universeId);
+      items.push(normalized);
+    }
+    if (items.length >= ACCOUNT_RECOVERY_MAX_RECENT_GAMES) break;
+  }
+  return {
+    items,
+    hasMore: Boolean(
+      continueSort?.nextPageToken ?? continueSort?.NextPageToken
+    ) || recommendations.length + hydratedGames.length > items.length,
+    note: "The ordered Continue row returned by Roblox; Roblox does not provide last-played timestamps here."
+  };
+}
+
+function normalizeAccountRecoveryViolation(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const resourceName = normalizeAccountRecoveryText(entry?.name, 200);
+  const violationId = normalizeAccountRecoveryOpaqueId(
+    firstAccountRecoveryValue(entry, [
+      ["id"],
+      ["violationId"],
+      ["violation_id"]
+    ]) ?? resourceName?.split("/").at(-1)
+  );
+  const category = normalizeAccountRecoveryText(
+    firstAccountRecoveryValue(entry, [
+      ["category"],
+      ["violationCategory"],
+      ["policyCategory"],
+      ["reason"],
+      ["title"]
+    ]),
+    200
+  );
+  const consequence = normalizeAccountRecoveryText(
+    firstAccountRecoveryValue(entry, [
+      ["consequence"],
+      ["consequenceType"],
+      ["enforcementAction"],
+      ["moderationAction"],
+      ["action"]
+    ]),
+    200
+  );
+  const appealStatus = normalizeAccountRecoveryText(
+    firstAccountRecoveryValue(entry, [
+      ["appealStatus"],
+      ["appeal", "status"],
+      ["reviewStatus"],
+      ["status"],
+      ["state"]
+    ]),
+    100
+  );
+  const description = normalizeAccountRecoveryText(
+    firstAccountRecoveryValue(entry, [
+      ["description"],
+      ["message"],
+      ["displayMessage"]
+    ]),
+    500
+  );
+  const createdAt = normalizeAccountRecoveryDate(
+    firstAccountRecoveryValue(entry, [
+      ["createdAt"],
+      ["createTime"],
+      ["created"],
+      ["decisionTime"],
+      ["violationTime"]
+    ])
+  );
+  const reviewedAt = normalizeAccountRecoveryDate(
+    firstAccountRecoveryValue(entry, [
+      ["reviewedAt"],
+      ["reviewTime"],
+      ["updatedAt"],
+      ["updateTime"]
+    ])
+  );
+  const appealDeadline = normalizeAccountRecoveryDate(
+    firstAccountRecoveryValue(entry, [
+      ["appealDeadline"],
+      ["appeal", "deadline"],
+      ["appealExpirationTime"]
+    ])
+  );
+  const rawCanAppeal = firstAccountRecoveryValue(entry, [
+    ["canAppeal"],
+    ["appealable"],
+    ["appeal", "eligible"]
+  ]);
+  const assetId = normalizeAccountRecoveryId(
+    firstAccountRecoveryValue(entry, [
+      ["assetId"],
+      ["subject", "id"],
+      ["resource", "id"]
+    ])
+  );
+  const assetName = normalizeAccountRecoveryText(
+    firstAccountRecoveryValue(entry, [
+      ["assetName"],
+      ["subject", "name"],
+      ["resource", "displayName"]
+    ]),
+    200
+  );
+  if (
+    !violationId && !category && !consequence && !appealStatus &&
+    !description && !createdAt && !assetId
+  ) {
+    return null;
+  }
+  return {
+    violationId,
+    category: category || null,
+    consequence: consequence || null,
+    createdAt,
+    reviewedAt,
+    appealStatus: appealStatus || null,
+    canAppeal: typeof rawCanAppeal === "boolean" ? rawCanAppeal : null,
+    appealDeadline,
+    assetId,
+    assetName: assetName || null,
+    description: description || null
+  };
+}
+
+async function collectAccountRecoveryViolations(viewerUserId) {
+  const endpoint = new URL(
+    `/moderation-appeal-service/v1/users/${viewerUserId}/violations`,
+    "https://apis.roblox.com"
+  );
+  endpoint.searchParams.set("page_size", String(ACCOUNT_RECOVERY_MAX_VIOLATIONS));
+  const payload = await fetchAccountRecoveryJson(endpoint);
+  if (!Array.isArray(payload?.violations)) {
+    throw new AccountRecoveryError("INVALID_RESPONSE", 502);
+  }
+  const items = payload.violations
+    .slice(0, ACCOUNT_RECOVERY_MAX_VIOLATIONS)
+    .map(normalizeAccountRecoveryViolation)
+    .filter(Boolean);
+  const hasMore = Boolean(
+    payload?.nextPageToken ?? payload?.next_page_token ?? payload?.nextPageCursor
+  );
+  return {
+    items,
+    hasMore,
+    note: items.length === 0
+      ? "Roblox returned no records from Violations & Appeals. This does not prove that no moderation action exists."
+      : "Records returned by Roblox's Violations & Appeals service; some moderation actions may not appear there."
+  };
+}
+
+async function collectAccountRecoverySnapshot(
+  requestedSectionKeys = ACCOUNT_RECOVERY_SECTION_KEYS
+) {
+  const normalizedSectionKeys = normalizeAccountRecoverySectionSelection(
+    requestedSectionKeys
+  );
+  if (!normalizedSectionKeys) {
+    throw new AccountRecoveryError("INVALID", 400);
+  }
+  const selectedSections = new Set(normalizedSectionKeys);
+  const viewer = await fetchAccountRecoveryAuthenticatedUser();
+  const viewerUserId = viewer.userId;
+  const [
+    profile,
+    usernameHistory,
+    createdExperiences,
+    twoStepVerification,
+    purchases,
+    currencyPurchases,
+    tradeHistory,
+    recentlyPlayed,
+    violations
+  ] = await Promise.all([
+    collectAccountRecoveryProfile(viewer),
+    selectedSections.has("usernameHistory") ? collectAccountRecoverySection(
+      () => collectAccountRecoveryUsernameHistory(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_USERNAME_HISTORY }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_USERNAME_HISTORY
+    )),
+    selectedSections.has("createdExperiences") ? collectAccountRecoverySection(
+      () => collectAccountRecoveryCreatedExperiences(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_CREATED_EXPERIENCES }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_CREATED_EXPERIENCES
+    )),
+    selectedSections.has("twoStepVerification") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      () => collectAccountRecoveryTwoStepVerification(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_TWO_STEP_METHODS }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_TWO_STEP_METHODS
+    )),
+    selectedSections.has("purchases") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      () => collectAccountRecoveryPurchases(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_PURCHASES }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_PURCHASES
+    )),
+    selectedSections.has("currencyPurchases") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      () => collectAccountRecoveryCurrencyPurchases(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_CURRENCY_PURCHASES }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_CURRENCY_PURCHASES
+    )),
+    selectedSections.has("tradeHistory") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      collectAccountRecoveryTradeHistory,
+      { limit: ACCOUNT_RECOVERY_MAX_TRADES }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_TRADES
+    )),
+    selectedSections.has("recentlyPlayed") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      collectAccountRecoveryRecentGames,
+      { limit: ACCOUNT_RECOVERY_MAX_RECENT_GAMES }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_RECENT_GAMES
+    )),
+    selectedSections.has("violations") ? collectAccountRecoveryPrivateSection(
+      viewerUserId,
+      () => collectAccountRecoveryViolations(viewerUserId),
+      { limit: ACCOUNT_RECOVERY_MAX_VIOLATIONS }
+    ) : Promise.resolve(createAccountRecoveryExcludedSection(
+      ACCOUNT_RECOVERY_MAX_VIOLATIONS
+    ))
+  ]);
+  const confirmedViewer = await assertAccountRecoveryViewer(viewerUserId);
+  const capturedAt = new Date().toISOString();
+  return {
+    schemaVersion: 2,
+    capturedAt,
+    account: {
+      ...profile.account,
+      username: profile.account.username || confirmedViewer.username,
+      displayName: profile.account.displayName || confirmedViewer.displayName
+    },
+    sections: {
+      ...(profile.diagnostic
+        ? { profileDetails: profile.diagnostic }
+        : {}),
+      usernameHistory: annotateAccountRecoverySection(
+        "usernameHistory",
+        usernameHistory,
+        capturedAt
+      ),
+      ...(twoStepVerification.status === "complete" &&
+      twoStepVerification.count === 0
+        ? {}
+        : { twoStepVerification: annotateAccountRecoverySection(
+          "twoStepVerification",
+          twoStepVerification,
+          capturedAt
+        ) }),
+      purchases: annotateAccountRecoverySection("purchases", purchases, capturedAt),
+      currencyPurchases: annotateAccountRecoverySection(
+        "currencyPurchases",
+        currencyPurchases,
+        capturedAt
+      ),
+      tradeHistory: annotateAccountRecoverySection(
+        "tradeHistory",
+        tradeHistory,
+        capturedAt
+      ),
+      recentlyPlayed: annotateAccountRecoverySection(
+        "recentlyPlayed",
+        recentlyPlayed,
+        capturedAt
+      ),
+      createdExperiences: annotateAccountRecoverySection(
+        "createdExperiences",
+        createdExperiences,
+        capturedAt
+      ),
+      violations: annotateAccountRecoverySection("violations", violations, capturedAt)
+    },
+    limitations: [
+      "This support snapshot contains selected account evidence returned by Roblox at capture time; it is not a Roblox-issued or cryptographically signed record.",
+      "Roblox transaction history does not include the payment method, local-currency price, receipt, invoice, or app-store order ID. Attach an original payment receipt separately when available.",
+      "Roblox's completed-trade list provides trade IDs, trade partners, and creation times, but not the exchanged items, Robux, or completion times.",
+      "Email is omitted because Roblox exposes only a masked address here. Attach independent email evidence separately when available.",
+      "Recently played games reflect Roblox's Continue row and do not include last-played timestamps.",
+      "An empty Violations & Appeals response does not prove that no moderation action exists.",
+      "Private, unpublished, group-owned, removed, or otherwise unavailable records can be absent."
+    ]
+  };
+}
+
+function isTrustedAccountRecoveryPageSender(sender) {
+  const senderUrl = typeof sender?.url === "string" ? sender.url : "";
+  if (
+    sender?.id !== chrome.runtime.id ||
+    !Number.isSafeInteger(sender?.frameId) ||
+    sender.frameId <= 0 ||
+    !Number.isSafeInteger(sender?.tab?.id) ||
+    sender.tab.id < 0 ||
+    !isTrustedRobloxHomePageUrl(sender?.tab?.url) ||
+    (typeof sender?.tab?.pendingUrl === "string" &&
+      sender.tab.pendingUrl &&
+      !isTrustedRobloxHomePageUrl(sender.tab.pendingUrl)) ||
+    (typeof sender?.documentLifecycle === "string" &&
+      sender.documentLifecycle !== "active") ||
+    (typeof sender?.frameType === "string" && sender.frameType !== "sub_frame")
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(senderUrl);
+    const entries = Array.from(url.searchParams.entries());
+    const keys = entries.map(([key]) => key).sort();
+    return Boolean(
+      url.protocol === "chrome-extension:" &&
+      url.pathname === `/${ACCOUNT_RECOVERY_PAGE_PATH}` &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.hash === "" &&
+      entries.length === 2 &&
+      keys.join(",") === "theme,view" &&
+      ACCOUNT_RECOVERY_PAGE_THEMES.has(url.searchParams.get("theme")) &&
+      url.searchParams.get("view") === ACCOUNT_RECOVERY_PAGE_VIEW &&
+      (typeof sender?.origin !== "string" || sender.origin === url.origin)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function handleCollectAccountRecoveryMessage(message, sender, sendResponse) {
+  const requestId = normalizeAccountRecoveryRequestId(message?.requestId);
+  const selectedSections = normalizeAccountRecoverySectionSelection(
+    message?.sections
+  );
+  const messageKeys =
+    message && typeof message === "object" && !Array.isArray(message)
+      ? Object.keys(message).sort()
+      : [];
+  if (
+    requestId === null ||
+    selectedSections === null ||
+    messageKeys.join(",") !== "requestId,sections,type" ||
+    !isTrustedAccountRecoveryPageSender(sender)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  collectAccountRecoverySnapshot(selectedSections)
+    .then((snapshot) => {
+      sendResponse({ ok: true, requestId, snapshot });
+    })
+    .catch((error) => {
+      if (
+        error instanceof AccountRecoveryError &&
+        ["UNAUTHENTICATED", "ACCOUNT_CHANGED"].includes(error.code)
+      ) {
+        authenticatedUserRequest = null;
+      }
+      sendResponse({
+        ok: false,
+        requestId,
+        code: error instanceof AccountRecoveryError
+          ? error.code
+          : "ROBLOX_UNAVAILABLE"
+      });
+    });
+  return true;
+}
+
+function normalizeEnhancedProfileRequestId(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function normalizeEnhancedProfileText(value, maxLength = 160) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, maxLength);
+}
+
+function normalizeEnhancedProfileDescription(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, ENHANCED_PROFILE_MAX_DESCRIPTION_LENGTH);
+}
+
+function normalizeEnhancedProfileDate(value) {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const timestamp = Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) return null;
+  try {
+    return new Date(timestamp).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeEnhancedProfileCount(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function getEnhancedProfileErrorCode(error) {
+  if (error?.status === 400) return "INVALID";
+  if (error?.status === 401) return "UNAUTHENTICATED";
+  if (error?.status === 403) return "PRIVATE";
+  if (error?.status === 404) return "NOT_FOUND";
+  if (error?.status === 429) return "RATE_LIMITED";
+  if (error?.name === "AbortError" || error instanceof TypeError) {
+    return "NETWORK";
+  }
+  return "ROBLOX_UNAVAILABLE";
+}
+
+function parseEnhancedProfileRouteUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl) return null;
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "www.roblox.com" ||
+    url.port ||
+    url.username ||
+    url.password
+  ) {
+    return null;
+  }
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (
+    segments.length > 0 &&
+    CONTEXT_MENU_ROBLOX_LOCALE_SET.has(segments[0].toLowerCase())
+  ) {
+    segments.shift();
+  }
+  if (
+    segments.length < 2 ||
+    segments.length > 3 ||
+    segments[0].toLowerCase() !== "users" ||
+    (segments.length === 3 && segments[2].toLowerCase() !== "profile")
+  ) {
+    return null;
+  }
+  return normalizeId(segments[1]);
+}
+
+function hasExactEnhancedProfileMessageKeys(message) {
+  return Boolean(
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    Object.keys(message).sort().join(",") ===
+      "requestId,type,userId"
+  );
+}
+
+function isTrustedEnhancedProfileSender(sender, userId) {
+  if (
+    getTrustedRobloxTopFrameTabId(sender) === null ||
+    typeof sender?.url !== "string" ||
+    typeof sender?.tab?.url !== "string" ||
+    (typeof sender.documentLifecycle === "string" &&
+      sender.documentLifecycle !== "active") ||
+    (typeof sender.frameType === "string" &&
+      sender.frameType !== "outermost_frame")
+  ) {
+    return false;
+  }
+  return (
+    parseEnhancedProfileRouteUrl(sender.url) === userId &&
+    parseEnhancedProfileRouteUrl(sender.tab.url) === userId
+  );
+}
+
+function createEnhancedProfileSection(data) {
+  return { status: "ready", data };
+}
+
+async function collectEnhancedProfileSection(loader) {
+  let timeoutId = null;
+  try {
+    const deadline = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const error = new Error("Enhanced profile section timed out.");
+        error.name = "AbortError";
+        reject(error);
+      }, ENHANCED_PROFILE_SECTION_TIMEOUT_MS);
+    });
+    return createEnhancedProfileSection(await Promise.race([
+      Promise.resolve().then(loader),
+      deadline
+    ]));
+  } catch (error) {
+    return {
+      status: "unavailable",
+      code: getEnhancedProfileErrorCode(error)
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function resolveEnhancedProfileOptional(promise, fallback = null, timeoutMs = 4_000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    };
+    const timeoutId = setTimeout(() => finish(fallback), timeoutMs);
+    Promise.resolve(promise).then(finish, () => finish(fallback));
+  });
+}
+
+async function fetchEnhancedProfileThumbnailBatch(
+  spec,
+  rawIds,
+  size = null
+) {
+  const ids = Array.from(
+    new Set((Array.isArray(rawIds) ? rawIds : []).map(normalizeId).filter(Boolean))
+  ).slice(0, 100);
+  const images = new Map();
+  if (!spec || ids.length === 0) return images;
+  let pendingIds = ids;
+  for (
+    let attempt = 0;
+    attempt <= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    const endpoint = new URL(spec.path, "https://thumbnails.roblox.com");
+    endpoint.searchParams.set(spec.idParameter, pendingIds.join(","));
+    endpoint.searchParams.set("size", size || spec.size || "150x150");
+    endpoint.searchParams.set("format", spec.format || "Webp");
+    endpoint.searchParams.set("isCircular", String(spec.circular === true));
+    const payload = await fetchJson(endpoint, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    });
+    if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+    const nextPending = [];
+    for (const result of payload.data) {
+      const id = normalizeId(result?.targetId);
+      if (!id || !ids.includes(id)) continue;
+      if (
+        result?.state === "Completed" &&
+        isSafeThumbnailUrl(result.imageUrl)
+      ) {
+        images.set(id, result.imageUrl);
+      } else if (result?.state === "Pending") {
+        nextPending.push(id);
+      }
+    }
+    pendingIds = nextPending;
+    if (
+      pendingIds.length === 0 ||
+      attempt >= THUMBNAIL_PENDING_RETRY_DELAYS_MS.length
+    ) {
+      break;
+    }
+    await wait(THUMBNAIL_PENDING_RETRY_DELAYS_MS[attempt]);
+  }
+  return images;
+}
+
+async function fetchEnhancedProfileIdentity(userId) {
+  const endpoint = new URL(`/v1/users/${userId}`, "https://users.roblox.com");
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  if (normalizeId(payload?.id) !== userId) throw new RobloxApiError(502);
+
+  const enrichmentMap = await resolveEnhancedProfileOptional(
+    fetchUserProfiles([userId]),
+    new Map(),
+    1_200
+  );
+  const enrichment = enrichmentMap.get(userId) || null;
+  const username = normalizeEnhancedProfileText(payload?.name, 100);
+  const displayName = normalizeEnhancedProfileText(payload?.displayName, 100);
+  return {
+    userId,
+    username: username || displayName || `User ${userId}`,
+    displayName: displayName || username || `User ${userId}`,
+    description: normalizeEnhancedProfileDescription(payload?.description),
+    createdAt: normalizeEnhancedProfileDate(payload?.created),
+    isVerified:
+      payload?.hasVerifiedBadge === true || enrichment?.isVerified === true,
+    isRobloxPlus: enrichment?.hasRobloxSubscription === true,
+    isBanned: payload?.isBanned === true,
+    // Decorative media is hydrated after the profile text is visible. Keeping
+    // thumbnails out of the critical path prevents a slow CDN request from
+    // delaying or permanently poisoning the cached profile response.
+    headshotUrl: null,
+    avatarUrl: null,
+    profileUrl: `https://www.roblox.com/users/${userId}/profile`
+  };
+}
+
+async function fetchEnhancedProfilePresence(userId) {
+  const payload = await fetchJson(
+    "https://presence.roblox.com/v1/presence/users",
+    {
+      method: "POST",
+      cache: "no-store",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ userIds: [Number(userId)] })
+    }
+  );
+  const presence = Array.isArray(payload?.userPresences)
+    ? payload.userPresences.find(
+        (item) => normalizeId(item?.userId) === userId
+      )
+    : null;
+  if (!presence) throw new RobloxApiError(502);
+  const typeNumber = Number(presence.userPresenceType);
+  const type = ["offline", "online", "game", "studio"][typeNumber];
+  if (!type) throw new RobloxApiError(502);
+  const universeId = normalizeOptionalId(presence.universeId);
+  return {
+    type,
+    lastLocation: normalizeEnhancedProfileText(presence.lastLocation, 160),
+    placeId: normalizeOptionalId(presence.placeId),
+    rootPlaceId: normalizeOptionalId(presence.rootPlaceId),
+    universeId,
+    gameInstanceId: normalizeGameInstanceId(presence.gameId),
+    lastOnline: normalizeEnhancedProfileDate(presence.lastOnline),
+    iconUrl: null
+  };
+}
+
+async function fetchEnhancedProfileCounts(userId) {
+  const definitions = [
+    ["friends", `/v1/users/${userId}/friends/count`],
+    ["followers", `/v1/users/${userId}/followers/count`],
+    ["following", `/v1/users/${userId}/followings/count`]
+  ];
+  const settled = await Promise.allSettled(
+    definitions.map(([, path]) =>
+      fetchJson(new URL(path, "https://friends.roblox.com"), {
+        cache: "no-store",
+        credentials: "omit",
+        headers: { Accept: "application/json" }
+      })
+    )
+  );
+  const counts = {};
+  let readyCount = 0;
+  definitions.forEach(([key], index) => {
+    const count = settled[index].status === "fulfilled"
+      ? normalizeEnhancedProfileCount(settled[index].value?.count)
+      : null;
+    counts[key] = count;
+    if (count !== null) readyCount += 1;
+  });
+  if (readyCount === 0) throw new RobloxApiError(502);
+  return { ...counts, complete: readyCount === definitions.length };
+}
+
+async function fetchEnhancedProfileFriendCount(userId) {
+  const payload = await fetchJson(
+    new URL(`/v1/users/${userId}/friends/count`, "https://friends.roblox.com"),
+    {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    },
+    { maxAttempts: 1 }
+  );
+  const count = normalizeEnhancedProfileCount(payload?.count);
+  if (count === null) throw new RobloxApiError(502);
+  return count;
+}
+
+async function fetchEnhancedProfileUsernameHistory(userId) {
+  const endpoint = new URL(
+    `/v1/users/${userId}/username-history`,
+    "https://users.roblox.com"
+  );
+  endpoint.searchParams.set("limit", "100");
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  const items = payload.data
+    .map((item) => normalizeEnhancedProfileText(item?.name, 100))
+    .filter(Boolean)
+    .slice(0, ENHANCED_PROFILE_MAX_USERNAME_HISTORY);
+  return {
+    items,
+    hasMore:
+      Boolean(payload.nextPageCursor) ||
+      payload.data.length > ENHANCED_PROFILE_MAX_USERNAME_HISTORY
+  };
+}
+
+function normalizeEnhancedProfileGame(entry, details, iconUrl, ratingPercent) {
+  const universeId = normalizeId(details?.id ?? entry?.id);
+  const rootPlaceId = normalizeId(
+    details?.rootPlaceId ?? entry?.rootPlace?.id ?? entry?.rootPlaceId
+  );
+  const name =
+    normalizeEnhancedProfileText(entry?.name, 200) ||
+    normalizeEnhancedProfileText(details?.name, 200);
+  if (!universeId || !rootPlaceId || !name) return null;
+  const safeRating = normalizeEnhancedProfileCount(ratingPercent);
+  return {
+    universeId,
+    rootPlaceId,
+    name,
+    description:
+      normalizeEnhancedProfileDescription(entry?.description) ||
+      normalizeEnhancedProfileDescription(details?.description),
+    playing: normalizeEnhancedProfileCount(details?.playing ?? entry?.playing),
+    visits: normalizeEnhancedProfileCount(details?.visits ?? entry?.visits),
+    favorites: normalizeEnhancedProfileCount(
+      details?.favoritedCount ?? entry?.favoritedCount
+    ),
+    maxPlayers: normalizeEnhancedProfileCount(
+      details?.maxPlayers ?? entry?.maxPlayers
+    ),
+    ratingPercent:
+      safeRating !== null && safeRating <= 100 ? safeRating : null,
+    createdAt: normalizeEnhancedProfileDate(details?.created ?? entry?.created),
+    updatedAt: normalizeEnhancedProfileDate(details?.updated ?? entry?.updated),
+    genre: normalizeEnhancedProfileText(
+      details?.genre_l1 ?? details?.genre ?? entry?.genre,
+      80
+    ),
+    iconUrl: isSafeThumbnailUrl(iconUrl) ? iconUrl : null,
+    gameUrl: `https://www.roblox.com/games/${rootPlaceId}`
+  };
+}
+
+async function fetchEnhancedProfileGameList(userId, favorite = false) {
+  const endpoint = new URL(
+    favorite
+      ? `/v2/users/${userId}/favorite/games`
+      : `/v2/users/${userId}/games`,
+    "https://games.roblox.com"
+  );
+  endpoint.searchParams.set("accessFilter", "2");
+  endpoint.searchParams.set("limit", "50");
+  endpoint.searchParams.set("sortOrder", "Desc");
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  const limit = favorite
+    ? ENHANCED_PROFILE_MAX_FAVORITES
+    : ENHANCED_PROFILE_MAX_EXPERIENCES;
+  const entries = payload.data
+    .filter((entry) => normalizeId(entry?.id))
+    .slice(0, limit);
+  const universeIds = entries.map((entry) => normalizeId(entry.id));
+  if (universeIds.length === 0) {
+    return {
+      items: [],
+      hasMore: Boolean(payload.nextPageCursor) || payload.data.length > limit,
+      totalCount: payload.data.length,
+      countIsExact:
+        !payload.nextPageCursor && payload.data.length <= limit
+    };
+  }
+  const detailEndpoint = new URL("/v1/games", "https://games.roblox.com");
+  detailEndpoint.searchParams.set("universeIds", universeIds.join(","));
+  const [detailPayload, ratings] = await Promise.all([
+    resolveEnhancedProfileOptional(fetchJson(detailEndpoint, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    }), null),
+    resolveEnhancedProfileOptional(
+      getGameRatingsByUniverseIds(universeIds),
+      new Map()
+    )
+  ]);
+  const detailsById = new Map(
+    Array.isArray(detailPayload?.data)
+      ? detailPayload.data
+          .map((item) => [normalizeId(item?.id), item])
+          .filter(([id]) => id)
+      : []
+  );
+  return {
+    items: entries
+      .map((entry) => {
+        const universeId = normalizeId(entry.id);
+        return normalizeEnhancedProfileGame(
+          entry,
+          detailsById.get(universeId),
+          null,
+          ratings.get(universeId)
+        );
+      })
+      .filter(Boolean),
+    hasMore: Boolean(payload.nextPageCursor) || payload.data.length > limit,
+    totalCount: payload.data.length,
+    countIsExact:
+      !payload.nextPageCursor && payload.data.length <= limit
+  };
+}
+
+function normalizeEnhancedProfileCatalogItemType(rawValue) {
+  const value = typeof rawValue === "string"
+    ? rawValue.trim().toLowerCase()
+    : "";
+  if (value === "asset") return "Asset";
+  if (value === "bundle") return "Bundle";
+  return null;
+}
+
+function getEnhancedProfileCatalogItemKey(itemType, itemId) {
+  return `${itemType}:${itemId}`;
+}
+
+function normalizeEnhancedProfileCatalogRequestItem(rawItem) {
+  const itemType = normalizeEnhancedProfileCatalogItemType(rawItem?.itemType);
+  const itemId = normalizeId(rawItem?.itemId ?? rawItem?.assetId);
+  return itemType && itemId ? { itemType, itemId } : null;
+}
+
+function normalizeEnhancedProfileBundleDetail(rawDetail) {
+  const itemId = normalizeId(rawDetail?.id);
+  if (!itemId) return null;
+  const product = rawDetail?.product && typeof rawDetail.product === "object"
+    ? rawDetail.product
+    : null;
+  const productPrice = normalizeEnhancedProfileCount(
+    product?.priceInRobux ?? rawDetail?.collectibleItemDetail?.price
+  );
+  const isFree = product?.isPublicDomain === true || productPrice === 0;
+  const isOffSale = product?.isForSale === false;
+  return {
+    ...rawDetail,
+    id: itemId,
+    itemType: "Bundle",
+    price: isFree || isOffSale ? null : productPrice,
+    priceStatus: isFree
+      ? "Free"
+      : normalizeEnhancedProfileText(product?.noPriceText, 40) ||
+        (isOffSale ? "Off Sale" : null),
+    isOffSale
+  };
+}
+
+async function fetchEnhancedProfileCatalogDetails(rawItems) {
+  const requestItems = [];
+  const requestedKeys = new Set();
+  const requestedKeysById = new Map();
+  for (const rawItem of Array.isArray(rawItems) ? rawItems : []) {
+    const item = normalizeEnhancedProfileCatalogRequestItem(rawItem);
+    if (!item) continue;
+    const key = getEnhancedProfileCatalogItemKey(item.itemType, item.itemId);
+    if (requestedKeys.has(key)) continue;
+    requestedKeys.add(key);
+    requestItems.push(item);
+    if (!requestedKeysById.has(item.itemId)) {
+      requestedKeysById.set(item.itemId, []);
+    }
+    requestedKeysById.get(item.itemId).push(key);
+  }
+  const detailsByKey = new Map();
+  if (requestItems.length === 0) return detailsByKey;
+  const endpoint = "https://catalog.roblox.com/v1/catalog/items/details";
+  const body = JSON.stringify({
+    items: requestItems.map((item) => ({
+      itemType: item.itemType,
+      id: Number(item.itemId)
+    }))
+  });
+  const sendBatch = (csrfToken = "") => fetch(endpoint, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {})
+    },
+    body
+  });
+  try {
+    let response = await sendBatch();
+    if (response?.status === 403) {
+      const csrfToken = response.headers.get("x-csrf-token") || "";
+      if (/^[\x21-\x7e]{1,1024}$/.test(csrfToken)) {
+        response = await sendBatch(csrfToken);
+      }
+    }
+    if (response?.ok) {
+      const payload = await response.json();
+      for (const detail of Array.isArray(payload?.data) ? payload.data : []) {
+        const itemId = normalizeId(detail?.id);
+        if (!itemId) continue;
+        const itemType = normalizeEnhancedProfileCatalogItemType(
+          detail?.itemType
+        );
+        let key = itemType
+          ? getEnhancedProfileCatalogItemKey(itemType, itemId)
+          : null;
+        if (!key || !requestedKeys.has(key)) {
+          const candidates = requestedKeysById.get(itemId) || [];
+          key = candidates.length === 1 ? candidates[0] : null;
+        }
+        if (key) detailsByKey.set(key, detail);
+      }
+    }
+  } catch {
+    // Missing entries are recovered individually below.
+  }
+  const missingItems = requestItems.filter((item) =>
+    !detailsByKey.has(
+      getEnhancedProfileCatalogItemKey(item.itemType, item.itemId)
+    )
+  );
+  await runWithConcurrency(missingItems, 4, async (item) => {
+    try {
+      const itemEndpoint = item.itemType === "Bundle"
+        ? new URL(
+            `/v1/bundles/${item.itemId}/details`,
+            "https://catalog.roblox.com"
+          )
+        : new URL(
+            `/v1/catalog/items/${item.itemId}/details`,
+            "https://catalog.roblox.com"
+          );
+      if (item.itemType === "Asset") {
+        itemEndpoint.searchParams.set("itemType", "asset");
+      }
+      const rawDetail = await fetchJson(itemEndpoint, {
+        cache: "no-store",
+        credentials: "omit",
+        headers: { Accept: "application/json" }
+      }, { maxAttempts: 1 });
+      const detail = item.itemType === "Bundle"
+        ? normalizeEnhancedProfileBundleDetail(rawDetail)
+        : rawDetail;
+      if (normalizeId(detail?.id) === item.itemId) {
+        detailsByKey.set(
+          getEnhancedProfileCatalogItemKey(item.itemType, item.itemId),
+          detail
+        );
+      }
+    } catch {
+      // One unavailable catalog item must not hide the rest of the outfit.
+    }
+  });
+  return detailsByKey;
+}
+
+function getEnhancedProfileBundleAnchorFamily(item) {
+  const assetTypeName = normalizeEnhancedProfileText(
+    item?.assetTypeName,
+    80
+  )?.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const namedFamily = assetTypeName
+    ? ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_NAMES.get(assetTypeName)
+    : null;
+  if (namedFamily) return namedFamily;
+  const assetTypeId = normalizeEnhancedProfileCount(item?.assetTypeId);
+  if (!ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_IDS.has(assetTypeId)) {
+    return null;
+  }
+  if (assetTypeId === 17) return "body";
+  if (assetTypeId === 51) return "animation";
+  if (assetTypeId === 70 || assetTypeId === 71) return "shoes";
+  return assetTypeId === 79 ? "dynamic-head" : null;
+}
+
+async function fetchEnhancedProfileAssetBundles(assetId) {
+  const endpoint = new URL(
+    `/v1/assets/${assetId}/bundles`,
+    "https://catalog.roblox.com"
+  );
+  endpoint.searchParams.set("limit", "100");
+  endpoint.searchParams.set("sortOrder", "Asc");
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  }, { maxAttempts: 1 });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  return payload.data;
+}
+
+function normalizeEnhancedProfileCompleteBundle(rawBundle, listedById) {
+  const itemId = normalizeId(rawBundle?.id);
+  const name = normalizeEnhancedProfileText(rawBundle?.name, 160);
+  if (!itemId || !name || !Array.isArray(rawBundle?.items)) return null;
+  const componentIds = Array.from(new Set(rawBundle.items
+    .filter((item) => String(item?.type || "").toLowerCase() === "asset")
+    .map((item) => normalizeId(item?.id))
+    .filter(Boolean)));
+  if (
+    componentIds.length < 2 ||
+    !componentIds.every((componentId) => listedById.has(componentId))
+  ) {
+    return null;
+  }
+  const orders = componentIds.map((componentId) =>
+    listedById.get(componentId).order
+  );
+  return {
+    itemType: "Bundle",
+    itemId,
+    assetId: null,
+    name,
+    order: Math.min(...orders),
+    componentIds
+  };
+}
+
+async function collapseEnhancedProfileCompleteBundles(listedItems) {
+  const listedById = new Map(listedItems.map((item) => [item.itemId, item]));
+  const anchorsByFamily = new Map();
+  for (const item of listedItems) {
+    const family = getEnhancedProfileBundleAnchorFamily(item);
+    if (family && !anchorsByFamily.has(family)) {
+      anchorsByFamily.set(family, item);
+    }
+  }
+  if (anchorsByFamily.size === 0) return listedItems;
+  const settled = await resolveEnhancedProfileOptional(
+    Promise.all(Array.from(anchorsByFamily.values()).map(
+      async (anchor) => {
+        try {
+          return await fetchEnhancedProfileAssetBundles(anchor.itemId);
+        } catch {
+          return [];
+        }
+      }
+    )),
+    null,
+    1_200
+  );
+  if (!settled) return listedItems;
+  const candidatesById = new Map();
+  for (const rawBundle of settled.flat()) {
+    const bundle = normalizeEnhancedProfileCompleteBundle(
+      rawBundle,
+      listedById
+    );
+    if (!bundle) continue;
+    const previous = candidatesById.get(bundle.itemId);
+    if (
+      !previous ||
+      bundle.componentIds.length > previous.componentIds.length
+    ) {
+      candidatesById.set(bundle.itemId, bundle);
+    }
+  }
+  const claimedAssetIds = new Set();
+  const selectedBundles = [];
+  const candidates = Array.from(candidatesById.values()).sort((left, right) =>
+    right.componentIds.length - left.componentIds.length ||
+    left.order - right.order ||
+    Number(left.itemId) - Number(right.itemId)
+  );
+  for (const bundle of candidates) {
+    if (bundle.componentIds.some((assetId) => claimedAssetIds.has(assetId))) {
+      continue;
+    }
+    bundle.componentIds.forEach((assetId) => claimedAssetIds.add(assetId));
+    selectedBundles.push(bundle);
+  }
+  if (selectedBundles.length === 0) return listedItems;
+  const bundlesByOrder = new Map(
+    selectedBundles.map((bundle) => [bundle.order, bundle])
+  );
+  const collapsed = [];
+  for (const item of listedItems) {
+    const bundle = bundlesByOrder.get(item.order);
+    if (bundle) collapsed.push(bundle);
+    if (!claimedAssetIds.has(item.itemId)) collapsed.push(item);
+  }
+  return collapsed;
+}
+
+function normalizeEnhancedProfilePriceStatus(rawValue) {
+  const status = normalizeEnhancedProfileText(rawValue, 40);
+  if (!status) return null;
+  if (/^free$/i.test(status)) return "Free";
+  if (/^off[\s-]*sale$/i.test(status)) return "Off Sale";
+  return status;
+}
+
+function getEnhancedProfileWearingSortBucket(item) {
+  if (item.price !== null && item.price > 0) return 0;
+  if (!item.priceStatus) return 1;
+  if (item.priceStatus === "Free") return 2;
+  return 3;
+}
+
+async function fetchEnhancedProfileCurrentlyWearing(userId) {
+  const avatarEndpoint = new URL(
+    `/v1/users/${userId}/avatar`,
+    "https://avatar.roblox.com"
+  );
+  let listedItems = [];
+  try {
+    const avatar = await fetchJson(avatarEndpoint, {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    }, { maxAttempts: 1 });
+    if (!Array.isArray(avatar?.assets) || !Array.isArray(avatar?.emotes)) {
+      throw new RobloxApiError(502);
+    }
+    listedItems = [
+      ...avatar.assets.map((asset) => ({
+        itemType: "Asset",
+        itemId: normalizeId(asset?.id),
+        assetId: normalizeId(asset?.id),
+        name: normalizeEnhancedProfileText(asset?.name, 160),
+        assetTypeId: normalizeEnhancedProfileCount(asset?.assetType?.id),
+        assetTypeName: normalizeEnhancedProfileText(
+          asset?.assetType?.name,
+          80
+        )
+      })),
+      ...avatar.emotes.map((emote) => ({
+        itemType: "Asset",
+        itemId: normalizeId(emote?.assetId),
+        assetId: normalizeId(emote?.assetId),
+        name: normalizeEnhancedProfileText(emote?.assetName, 160),
+        assetTypeId: 61,
+        assetTypeName: "EmoteAnimation"
+      }))
+    ];
+  } catch {
+    const wearing = await fetchJson(
+      new URL(
+        `/v1/users/${userId}/currently-wearing`,
+        "https://avatar.roblox.com"
+      ),
+      {
+        cache: "no-store",
+        credentials: "omit",
+        headers: { Accept: "application/json" }
+      },
+      { maxAttempts: 1 }
+    );
+    if (!Array.isArray(wearing?.assetIds)) throw new RobloxApiError(502);
+    listedItems = wearing.assetIds.map((assetId) => ({
+      itemType: "Asset",
+      itemId: normalizeId(assetId),
+      assetId: normalizeId(assetId),
+      name: null
+    }));
+  }
+  const listedById = new Map();
+  for (const [order, item] of listedItems.entries()) {
+    if (item.itemId && !listedById.has(item.itemId)) {
+      listedById.set(item.itemId, { ...item, order });
+    }
+  }
+  const allItems = await collapseEnhancedProfileCompleteBundles(
+    Array.from(listedById.values())
+  );
+  const listedCatalogItems = allItems.slice(0, ENHANCED_PROFILE_MAX_WEARING);
+  if (listedCatalogItems.length === 0) {
+    return { items: [], hasMore: false };
+  }
+  const detailsByKey = await fetchEnhancedProfileCatalogDetails(
+    listedCatalogItems
+  );
+  const items = listedCatalogItems.map((listedItem) => {
+      const detail = detailsByKey.get(getEnhancedProfileCatalogItemKey(
+        listedItem.itemType,
+        listedItem.itemId
+      ));
+      const rawPrice = normalizeEnhancedProfileCount(detail?.price);
+      let priceStatus = normalizeEnhancedProfilePriceStatus(
+        detail?.priceStatus
+      );
+      if (!priceStatus && rawPrice === 0) priceStatus = "Free";
+      const unavailableForSale =
+        detail?.isOffSale === true ||
+        priceStatus === "Free" ||
+        priceStatus === "Off Sale";
+      return {
+        order: listedItem.order,
+        itemType: listedItem.itemType,
+        itemId: listedItem.itemId,
+        assetId: listedItem.itemType === "Asset"
+          ? listedItem.itemId
+          : null,
+        name:
+          normalizeEnhancedProfileText(detail?.name, 160) ||
+          listedItem.name ||
+          null,
+        price: unavailableForSale
+          ? null
+          : rawPrice,
+        priceStatus,
+        iconUrl: null
+      };
+    })
+    .filter((item) => item.name)
+    .sort((left, right) => {
+      const bucketDifference =
+        getEnhancedProfileWearingSortBucket(left) -
+        getEnhancedProfileWearingSortBucket(right);
+      if (bucketDifference !== 0) return bucketDifference;
+      if (
+        left.price !== null &&
+        right.price !== null &&
+        left.price !== right.price
+      ) {
+        return right.price - left.price;
+      }
+      return left.order - right.order;
+    })
+    .map(({ order: _order, ...item }) => item);
+  return {
+    items,
+    hasMore: allItems.length > listedCatalogItems.length
+  };
+}
+
+async function fetchEnhancedProfileGroupRoles(userId) {
+  const payload = await fetchJson(
+    new URL(`/v2/users/${userId}/groups/roles`, "https://groups.roblox.com"),
+    {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    },
+    { maxAttempts: 1 }
+  );
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  return payload.data
+    .map((entry) => {
+      const communityId = normalizeId(entry?.group?.id);
+      const name = normalizeEnhancedProfileText(entry?.group?.name, 160);
+      if (!communityId || !name) return null;
+      return {
+        communityId,
+        name,
+        memberCount: normalizeEnhancedProfileCount(entry?.group?.memberCount),
+        role: normalizeEnhancedProfileText(entry?.role?.name, 120),
+        roleRank: (() => {
+          const rank = normalizeEnhancedProfileCount(entry?.role?.rank);
+          return rank !== null && rank <= 255 ? rank : null;
+        })(),
+        isVerified: entry?.group?.hasVerifiedBadge === true
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchEnhancedProfileCommunities(userId) {
+  const allItems = await fetchEnhancedProfileGroupRoles(userId);
+  const items = allItems.slice(0, ENHANCED_PROFILE_MAX_COMMUNITIES);
+  return {
+    items: items.map((item) => ({
+      ...item,
+      iconUrl: null
+    })),
+    hasMore: allItems.length > items.length,
+    totalCount: allItems.length,
+    ownedCount: allItems.filter((item) => item.roleRank === 255).length
+  };
+}
+
+function normalizeEnhancedProfileBadgeCursor(rawCursor) {
+  if (
+    rawCursor === null ||
+    rawCursor === undefined ||
+    rawCursor === ""
+  ) {
+    return "";
+  }
+  if (
+    typeof rawCursor !== "string" ||
+    rawCursor.length > 2_048 ||
+    /[\u0000-\u001f\u007f]/.test(rawCursor)
+  ) {
+    throw new RobloxApiError(502);
+  }
+  return rawCursor;
+}
+
+async function fetchEnhancedProfileBadgePage(userId, cursor = "") {
+  const endpoint = new URL(
+    `/v1/users/${userId}/badges`,
+    "https://badges.roblox.com"
+  );
+  endpoint.searchParams.set("limit", "100");
+  endpoint.searchParams.set("sortOrder", "Desc");
+  if (cursor) endpoint.searchParams.set("cursor", cursor);
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "include",
+    headers: { Accept: "application/json" }
+  }, { maxAttempts: 1 });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  return {
+    data: payload.data,
+    nextCursor: normalizeEnhancedProfileBadgeCursor(payload?.nextPageCursor)
+  };
+}
+
+async function fetchEnhancedProfileBadges(userId) {
+  const page = await fetchEnhancedProfileBadgePage(userId);
+  const seenBadgeIds = new Set();
+  const items = [];
+  for (const entry of page.data) {
+    const badgeId = normalizeId(entry?.id);
+    if (!badgeId) throw new RobloxApiError(502);
+    if (seenBadgeIds.has(badgeId)) continue;
+    seenBadgeIds.add(badgeId);
+    const name = normalizeEnhancedProfileText(
+      entry?.displayName ?? entry?.name,
+      160
+    );
+    if (name && items.length < ENHANCED_PROFILE_MAX_BADGES) {
+      items.push({
+        badgeId,
+        name,
+        description: normalizeEnhancedProfileDescription(entry?.description)
+      });
+    }
+  }
+  return {
+    items: items.map((item) => ({
+      ...item,
+      iconUrl: null
+    })),
+    hasMore: Boolean(page.nextCursor) || seenBadgeIds.size > items.length,
+    totalCount: seenBadgeIds.size,
+    countIsExact: false,
+    countStatus: "pending"
+  };
+}
+
+async function fetchEnhancedProfileBadgeCount(
+  userId,
+  viewerUserId = null,
+  onProgress = null
+) {
+  const seenBadgeIds = new Set();
+  const seenCursors = new Set();
+  let cursor = "";
+  let pageCount = 0;
+  while (true) {
+    const page = await fetchEnhancedProfileBadgePage(userId, cursor);
+    pageCount += 1;
+    for (const entry of page.data) {
+      const badgeId = normalizeId(entry?.id);
+      if (!badgeId) throw new RobloxApiError(502);
+      seenBadgeIds.add(badgeId);
+    }
+    if (typeof onProgress === "function") {
+      onProgress({
+        totalCount: seenBadgeIds.size,
+        countIsExact: false,
+        countStatus: "pending"
+      });
+    }
+    if (!page.nextCursor) break;
+    if (
+      pageCount >= ENHANCED_PROFILE_MAX_BADGE_COUNT_PAGES ||
+      seenCursors.has(page.nextCursor)
+    ) {
+      throw new RobloxApiError(502);
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+  if (viewerUserId !== null) {
+    const confirmedViewerUserId = await getAuthenticatedViewerUserId();
+    if (confirmedViewerUserId !== viewerUserId) {
+      throw new RobloxApiError(401);
+    }
+  }
+  return {
+    totalCount: seenBadgeIds.size,
+    countIsExact: true,
+    countStatus: "ready"
+  };
+}
+
+function getEnhancedProfileBadgeCount(
+  userId,
+  viewerUserId,
+  onProgress = null,
+  forceRefresh = false
+) {
+  const cacheKey = `${viewerUserId}:${userId}`;
+  const now = Date.now();
+  const cached = enhancedProfileBadgeCountRequests.get(cacheKey);
+  if (
+    cached &&
+    (cached.inFlight || (!forceRefresh && cached.expiresAt > now))
+  ) {
+    if (cached.inFlight && typeof onProgress === "function") {
+      cached.progressSubscribers.add(onProgress);
+    }
+    return cached.promise;
+  }
+
+  const entry = {
+    inFlight: true,
+    expiresAt: 0,
+    promise: null,
+    progressSubscribers: new Set()
+  };
+  if (typeof onProgress === "function") {
+    entry.progressSubscribers.add(onProgress);
+  }
+  const request = fetchEnhancedProfileBadgeCount(
+    userId,
+    viewerUserId,
+    (progress) => {
+      for (const subscriber of entry.progressSubscribers) {
+        try {
+          subscriber(progress);
+        } catch {
+          // Progress delivery is optional and must not interrupt exact counting.
+        }
+      }
+    }
+  )
+    .then((result) => {
+      if (enhancedProfileBadgeCountRequests.get(cacheKey) === entry) {
+        entry.inFlight = false;
+        entry.expiresAt = Date.now() +
+          ENHANCED_PROFILE_BADGE_COUNT_CACHE_TTL_MS;
+        entry.progressSubscribers.clear();
+      }
+      return result;
+    })
+    .catch((error) => {
+      if (enhancedProfileBadgeCountRequests.get(cacheKey) === entry) {
+        enhancedProfileBadgeCountRequests.delete(cacheKey);
+      }
+      entry.progressSubscribers.clear();
+      throw error;
+    });
+  entry.promise = request;
+  enhancedProfileBadgeCountRequests.set(cacheKey, entry);
+  while (enhancedProfileBadgeCountRequests.size > 20) {
+    enhancedProfileBadgeCountRequests.delete(
+      enhancedProfileBadgeCountRequests.keys().next().value
+    );
+  }
+  return request;
+}
+
+async function fetchEnhancedProfileInventoryVisibility(userId) {
+  const payload = await fetchJson(
+    new URL(
+      `/v1/users/${userId}/can-view-inventory`,
+      "https://inventory.roblox.com"
+    ),
+    {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/json" }
+    },
+    { maxAttempts: 1 }
+  );
+  if (typeof payload?.canView !== "boolean") throw new RobloxApiError(502);
+  return { visibility: payload.canView ? "public" : "limited" };
+}
+
+async function fetchEnhancedProfilePublicUserProfiles(userIds) {
+  const profilesById = new Map();
+  if (userIds.length === 0) return profilesById;
+  const payload = await fetchJson("https://users.roblox.com/v1/users", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "omit",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      userIds: userIds.map(Number),
+      excludeBannedUsers: false
+    })
+  }, { maxAttempts: 1 });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  const requestedIds = new Set(userIds);
+  for (const profile of payload.data) {
+    const profileUserId = normalizeId(profile?.id);
+    if (profileUserId && requestedIds.has(profileUserId)) {
+      profilesById.set(profileUserId, profile);
+    }
+  }
+  return profilesById;
+}
+
+async function fetchEnhancedProfileFriends(userId) {
+  const endpoint = new URL(
+    `/v1/users/${userId}/friends`,
+    "https://friends.roblox.com"
+  );
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
+  const friendCandidates = payload.data
+    .map((item) => {
+      const friendUserId = normalizeId(item?.id);
+      const username = normalizeEnhancedProfileText(item?.name, 100);
+      const displayName = normalizeEnhancedProfileText(item?.displayName, 100);
+      return friendUserId
+        ? {
+            userId: friendUserId,
+            username,
+            displayName,
+            isVerified: item?.hasVerifiedBadge === true
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .slice(0, ENHANCED_PROFILE_MAX_FRIENDS);
+  const friendUserIds = friendCandidates.map((friend) => friend.userId);
+  const publicProfiles = await resolveEnhancedProfileOptional(
+    fetchEnhancedProfilePublicUserProfiles(friendUserIds),
+    new Map()
+  );
+  const friends = friendCandidates.map((friend) => {
+    const publicProfile = publicProfiles.get(friend.userId);
+    const username =
+      normalizeEnhancedProfileText(publicProfile?.name, 100) || friend.username;
+    const displayName =
+      normalizeEnhancedProfileText(publicProfile?.displayName, 100) ||
+      friend.displayName ||
+      username;
+    if (!username || !displayName) return null;
+    return {
+      ...friend,
+      username,
+      displayName,
+      isVerified:
+        publicProfile?.hasVerifiedBadge === true || friend.isVerified === true
+    };
+  }).filter(Boolean);
+  return {
+    items: friends.map((friend) => ({
+      ...friend,
+      headshotUrl: null,
+      profileUrl: `https://www.roblox.com/users/${friend.userId}/profile`
+    })),
+    hasMore: payload.data.length > ENHANCED_PROFILE_MAX_FRIENDS
+  };
+}
+
+async function fetchEnhancedProfileRelationshipsForViewer(
+  userId,
+  viewerUserId
+) {
+  const [
+    viewerFriendIds,
+    targetFriendsResult,
+    targetFriendCount,
+    viewerGroups,
+    targetGroups
+  ] = await Promise.all([
+    fetchAllFriendIds(viewerUserId),
+    resolveEnhancedProfileOptional(
+      fetchFriendIdsFromPaginatedEndpoint(userId, "omit").then(
+        (data) => ({ data, explicitlyLimited: false }),
+        (error) => ({
+          data: null,
+          explicitlyLimited: error?.status === 403
+        })
+      ),
+      { data: null, explicitlyLimited: false }
+    ),
+    resolveEnhancedProfileOptional(fetchEnhancedProfileFriendCount(userId)),
+    fetchEnhancedProfileGroupRoles(viewerUserId),
+    fetchEnhancedProfileGroupRoles(userId)
+  ]);
+  const confirmedViewerUserId = await getAuthenticatedViewerUserId();
+  if (confirmedViewerUserId !== viewerUserId) throw new RobloxApiError(401);
+
+  const viewerFriendSet = new Set(viewerFriendIds);
+  const targetFriends = targetFriendsResult.data;
+  const targetFriendIds = Array.isArray(targetFriends?.userIds)
+    ? targetFriends.userIds
+    : [];
+  const mutualFriendIds = targetFriendIds.filter((friendUserId) =>
+    viewerFriendSet.has(friendUserId)
+  );
+  const viewerGroupIds = new Set(
+    viewerGroups.map((group) => group.communityId)
+  );
+  const mutualGroupsCount = targetGroups.reduce(
+    (count, group) => count + (viewerGroupIds.has(group.communityId) ? 1 : 0),
+    0
+  );
+  const isFriend = viewerFriendSet.has(userId);
+  const canChat = isFriend ? await getViewerCanChat() : false;
+  const mutualFriendsAvailable = Boolean(targetFriends) &&
+    (targetFriendIds.length > 0 || targetFriendCount === 0);
+  const profileLimited = targetFriendsResult.explicitlyLimited || Boolean(
+    targetFriends &&
+    targetFriendIds.length === 0 &&
+    Number.isSafeInteger(targetFriendCount) &&
+    targetFriendCount > 0
+  );
+  return {
+    mutualFriendsCount: mutualFriendIds.length,
+    mutualFriendsAvailable,
+    profileLimited,
+    items: [],
+    hasMore: false,
+    mutualGroupsCount,
+    isFriend,
+    canChat
+  };
+}
+
+async function collectEnhancedProfileRelationshipsSection(userId) {
+  let viewerUserId;
+  try {
+    viewerUserId = await getAuthenticatedViewerUserId();
+  } catch (error) {
+    return {
+      status: "unavailable",
+      code: getEnhancedProfileErrorCode(error)
+    };
+  }
+  if (viewerUserId === userId) {
+    return { status: "not_applicable", code: "OWN_PROFILE" };
+  }
+  const requestKey = `${viewerUserId}:${userId}`;
+  const pending = enhancedProfileRelationshipRequests.get(requestKey);
+  if (pending) return pending;
+  const request = collectEnhancedProfileSection(() =>
+    fetchEnhancedProfileRelationshipsForViewer(userId, viewerUserId)
+  ).finally(() => {
+    if (enhancedProfileRelationshipRequests.get(requestKey) === request) {
+      enhancedProfileRelationshipRequests.delete(requestKey);
+    }
+  });
+  enhancedProfileRelationshipRequests.set(requestKey, request);
+  return request;
+}
+
+async function collectEnhancedProfile(userId, options = {}) {
+  const includePresence = options.includePresence !== false;
+  const includeBadges = options.includeBadges !== false;
+  const loaders = {
+    identity: () => fetchEnhancedProfileIdentity(userId),
+    counts: () => fetchEnhancedProfileCounts(userId),
+    usernames: () => fetchEnhancedProfileUsernameHistory(userId),
+    wearing: () => fetchEnhancedProfileCurrentlyWearing(userId),
+    experiences: () => fetchEnhancedProfileGameList(userId, false),
+    favorites: () => fetchEnhancedProfileGameList(userId, true),
+    friends: () => fetchEnhancedProfileFriends(userId),
+    communities: () => fetchEnhancedProfileCommunities(userId),
+    inventory: () => fetchEnhancedProfileInventoryVisibility(userId)
+  };
+  if (includePresence) {
+    loaders.presence = () => fetchEnhancedProfilePresence(userId);
+  }
+  if (includeBadges) {
+    loaders.badges = () => fetchEnhancedProfileBadges(userId);
+  }
+  const keys = Object.keys(loaders);
+  const sections = await Promise.all(
+    keys.map((key) => collectEnhancedProfileSection(loaders[key]))
+  );
+  return {
+    userId,
+    fetchedAt: Date.now(),
+    sections: Object.fromEntries(
+      keys.map((key, index) => [key, sections[index]])
+    )
+  };
+}
+
+function getEnhancedProfile(userId, forceRefresh = false, options = {}) {
+  const includeRelationships = options.includeRelationships !== false;
+  const now = Date.now();
+  const cached = enhancedProfileRequests.get(userId);
+  let publicProfilePromise = !forceRefresh && cached?.expiresAt > now
+    ? cached.promise
+    : null;
+  if (!publicProfilePromise) {
+    publicProfilePromise = collectEnhancedProfile(userId, {
+      includePresence: false,
+      includeBadges: false
+    })
+    .then((profile) => {
+      if (
+        profile?.sections?.identity?.status !== "ready" &&
+        enhancedProfileRequests.get(userId)?.promise === publicProfilePromise
+      ) {
+        enhancedProfileRequests.delete(userId);
+      }
+      return profile;
+    })
+    .catch((error) => {
+      if (enhancedProfileRequests.get(userId)?.promise === publicProfilePromise) {
+        enhancedProfileRequests.delete(userId);
+      }
+      throw error;
+    });
+    enhancedProfileRequests.set(userId, {
+      expiresAt: now + ENHANCED_PROFILE_CACHE_TTL_MS,
+      promise: publicProfilePromise
+    });
+    while (enhancedProfileRequests.size > 20) {
+      enhancedProfileRequests.delete(enhancedProfileRequests.keys().next().value);
+    }
+  }
+  return Promise.all([
+    publicProfilePromise,
+    collectEnhancedProfileSection(() => fetchEnhancedProfilePresence(userId)),
+    collectEnhancedProfileSection(() => fetchEnhancedProfileBadges(userId)),
+    includeRelationships
+      ? collectEnhancedProfileRelationshipsSection(userId)
+      : Promise.resolve({ status: "pending", code: "LOADING" })
+  ]).then(([profile, presence, badges, relationships]) => {
+    const inventoryIsPrivate =
+      profile.sections.inventory?.status === "ready" &&
+      profile.sections.inventory.data.visibility === "limited";
+    const badgeItems = badges?.status === "ready" &&
+      Array.isArray(badges.data?.items)
+      ? badges.data.items
+      : [];
+    const visibleBadges = inventoryIsPrivate && badgeItems.length === 0
+      ? {
+          status: "ready",
+          data: {
+            items: [],
+            hasMore: false,
+            totalCount: null,
+            countIsExact: false,
+            countStatus: "private"
+          }
+        }
+      : badges;
+    return {
+      ...profile,
+      fetchedAt: Date.now(),
+      sections: {
+        ...profile.sections,
+        presence,
+        badges: visibleBadges,
+        relationships
+      }
+    };
+  });
+}
+
+function handleEnhancedProfileMessage(message, sender, sendResponse) {
+  if (message?.type !== ENHANCED_PROFILE_MESSAGE_TYPE) return false;
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const userId = normalizeId(message?.userId);
+  if (
+    !requestId ||
+    !userId ||
+    !hasExactEnhancedProfileMessageKeys(message) ||
+    !isTrustedEnhancedProfileSender(sender, userId)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  getEnhancedProfile(userId)
+    .then((profile) => sendResponse({
+      ok: true,
+      requestId,
+      ...profile
+    }))
+    .catch((error) => sendResponse({
+      ok: false,
+      requestId,
+      code: getEnhancedProfileErrorCode(error)
+    }));
+  return true;
+}
+
+function handleEnhancedProfileFastMessage(message, sender, sendResponse) {
+  if (message?.type !== ENHANCED_PROFILE_FAST_MESSAGE_TYPE) return false;
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const userId = normalizeId(message?.userId);
+  if (
+    !requestId ||
+    !userId ||
+    !hasExactEnhancedProfileMessageKeys(message) ||
+    !isTrustedEnhancedProfileSender(sender, userId)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  getEnhancedProfile(userId, false, { includeRelationships: false })
+    .then((profile) => sendResponse({
+      ok: true,
+      requestId,
+      ...profile
+    }))
+    .catch((error) => sendResponse({
+      ok: false,
+      requestId,
+      code: getEnhancedProfileErrorCode(error)
+    }));
+  return true;
+}
+
+function handleEnhancedProfileRelationshipsMessage(
+  message,
+  sender,
+  sendResponse
+) {
+  if (message?.type !== ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE) {
+    return false;
+  }
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const userId = normalizeId(message?.userId);
+  if (
+    !requestId ||
+    !userId ||
+    !hasExactEnhancedProfileMessageKeys(message) ||
+    !isTrustedEnhancedProfileSender(sender, userId)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  collectEnhancedProfileRelationshipsSection(userId)
+    .then((section) => sendResponse({
+      ok: true,
+      requestId,
+      userId,
+      section
+    }))
+    .catch((error) => sendResponse({
+      ok: false,
+      requestId,
+      userId,
+      code: getEnhancedProfileErrorCode(error)
+    }));
+  return true;
+}
+
+function hasExactEnhancedProfileBadgeCountMessageKeys(message) {
+  return Boolean(
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    Object.keys(message).sort().join(",") ===
+      "requestId,type,userId"
+  );
+}
+
+function handleEnhancedProfileBadgeCountMessage(
+  message,
+  sender,
+  sendResponse
+) {
+  if (message?.type !== ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE) {
+    return false;
+  }
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const userId = normalizeId(message?.userId);
+  const tabId = getTrustedRobloxTopFrameTabId(sender);
+  if (
+    !requestId ||
+    !userId ||
+    tabId === null ||
+    !hasExactEnhancedProfileBadgeCountMessageKeys(message) ||
+    !isTrustedEnhancedProfileSender(sender, userId)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      userId: userId ?? "",
+      code: "INVALID"
+    });
+    return false;
+  }
+
+  (async () => {
+    const viewerUserId = await getAuthenticatedViewerUserId();
+    const count = await getEnhancedProfileBadgeCount(
+      userId,
+      viewerUserId,
+      (progress) => {
+        void sendMessageToTab(tabId, {
+          type: "rsl:enhanced-profile-badge-count-progress",
+          requestId,
+          userId,
+          totalCount: progress.totalCount,
+          countIsExact: false,
+          countStatus: "pending"
+        });
+      }
+    );
+    return {
+      ok: true,
+      requestId,
+      userId,
+      ...count,
+      fetchedAt: Date.now()
+    };
+  })().then(sendResponse).catch((error) => {
+    sendResponse({
+      ok: false,
+      requestId,
+      userId,
+      code: getEnhancedProfileErrorCode(error)
+    });
+  });
+  return true;
+}
+
+function hasExactEnhancedProfileJoinMessageKeys(message) {
+  return Boolean(
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    Object.keys(message).sort().join(",") ===
+      "gameInstanceId,placeId,requestId,type,userId"
+  );
+}
+
+function handleEnhancedProfileJoinMessage(message, sender, sendResponse) {
+  if (message?.type !== ENHANCED_PROFILE_JOIN_MESSAGE_TYPE) return false;
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const userId = normalizeId(message?.userId);
+  const placeId = normalizeId(message?.placeId);
+  const gameInstanceId = normalizeGameInstanceId(message?.gameInstanceId);
+  const tabId = getTrustedRobloxTopFrameTabId(sender);
+  if (
+    !requestId ||
+    !userId ||
+    !placeId ||
+    !gameInstanceId ||
+    tabId === null ||
+    !hasExactEnhancedProfileJoinMessageKeys(message) ||
+    !isTrustedEnhancedProfileSender(sender, userId)
+  ) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, code: "INVALID" });
+    return false;
+  }
+  (async () => {
+    const presence = await fetchEnhancedProfilePresence(userId);
+    if (
+      presence.type !== "game" ||
+      presence.placeId !== placeId ||
+      presence.gameInstanceId !== gameInstanceId
+    ) {
+      return { ok: false, requestId, code: "NOT_JOINABLE" };
+    }
+    const status = await executeServerHistoryRejoin(
+      tabId,
+      placeId,
+      gameInstanceId
+    );
+    return {
+      ok: status === "started",
+      requestId,
+      code: status === "started" ? "" : status.toUpperCase()
+    };
+  })().then(sendResponse).catch((error) => {
+    sendResponse({
+      ok: false,
+      requestId,
+      code: getEnhancedProfileErrorCode(error)
+    });
+  });
+  return true;
+}
+
+if (globalThis.__rslBackgroundTestHooks) {
+  Object.assign(globalThis.__rslBackgroundTestHooks, {
+    parseEnhancedProfileRouteUrl,
+    hasExactEnhancedProfileMessageKeys,
+    isTrustedEnhancedProfileSender,
+    normalizeEnhancedProfileDescription,
+    normalizeEnhancedProfileGame,
+    fetchEnhancedProfileBadges,
+    fetchEnhancedProfileBadgeCount,
+    getEnhancedProfileBadgeCount,
+    fetchEnhancedProfileInventoryVisibility,
+    fetchEnhancedProfileRelationshipsForViewer,
+    collectEnhancedProfileRelationshipsSection,
+    collectEnhancedProfile,
+    getEnhancedProfile,
+    getThumbnail,
+    handleEnhancedProfileMessage,
+    handleEnhancedProfileFastMessage,
+    handleEnhancedProfileRelationshipsMessage,
+    handleEnhancedProfileBadgeCountMessage,
+    hasExactEnhancedProfileBadgeCountMessageKeys,
+    handleEnhancedProfileJoinMessage,
+    hasExactEnhancedProfileJoinMessageKeys,
+    clearEnhancedProfileCacheForTests() {
+      enhancedProfileRequests.clear();
+      enhancedProfileRelationshipRequests.clear();
+      enhancedProfileBadgeCountRequests.clear();
+    },
+    enhancedProfileConstants: Object.freeze({
+      maxBadges: ENHANCED_PROFILE_MAX_BADGES,
+      maxMutualFriends: ENHANCED_PROFILE_MAX_FRIENDS,
+      fastMessageType: ENHANCED_PROFILE_FAST_MESSAGE_TYPE,
+      relationshipsMessageType: ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE
+    })
+  });
+}
+
 function handleRuntimeMessage(message, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) {
     return false;
+  }
+
+  if (message?.type === TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE) {
+    return handleToolbarPopupSettingsMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === TOOLBAR_POPUP_RECOVERY_MESSAGE_TYPE) {
+    return handleToolbarPopupRecoveryMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === ENHANCED_PROFILE_MESSAGE_TYPE) {
+    return handleEnhancedProfileMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === ENHANCED_PROFILE_FAST_MESSAGE_TYPE) {
+    return handleEnhancedProfileFastMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE) {
+    return handleEnhancedProfileRelationshipsMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
+  if (message?.type === ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE) {
+    return handleEnhancedProfileBadgeCountMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
+  if (message?.type === ENHANCED_PROFILE_JOIN_MESSAGE_TYPE) {
+    return handleEnhancedProfileJoinMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === ACCOUNT_RECOVERY_COLLECT_MESSAGE_TYPE) {
+    return handleCollectAccountRecoveryMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE) {
+    return handleAccountRecoveryReminderClaimMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
+  if (
+    message?.type === ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE ||
+    message?.type === ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE
+  ) {
+    return handleAccountRecoveryArchivePreferencesMessage(
+      message,
+      sender,
+      sendResponse
+    );
+  }
+
+  if (
+    typeof message?.type === "string" &&
+    message.type.startsWith(ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_PREFIX)
+  ) {
+    return handleAccountRecoveryArchiveMessage(message, sender, sendResponse);
   }
 
   if (message?.type === EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE) {
@@ -16001,9 +19788,1453 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   return false;
 }
 
+function normalizeAccountRecoveryArchivePreferences(rawValue) {
+  const raw = rawValue && typeof rawValue === "object" &&
+    !Array.isArray(rawValue) &&
+    (rawValue.version === 1 ||
+      rawValue.version === ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION)
+    ? rawValue
+    : null;
+  const frequency = Object.hasOwn(
+    ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS,
+    raw?.frequency
+  )
+    ? raw.frequency
+    : ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_FREQUENCY;
+  const retention = ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS.has(
+    raw?.retention
+  )
+    ? raw.retention
+    : ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_RETENTION;
+  const sections = normalizeAccountRecoverySectionSelection(raw?.sections);
+  const revision = Number.isSafeInteger(raw?.revision) && raw.revision > 0
+    ? raw.revision
+    : 1;
+  return {
+    version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+    frequency,
+    retention,
+    sections: sections || [...ACCOUNT_RECOVERY_ARCHIVE_DEFAULT_SECTIONS],
+    revision
+  };
+}
+
+function getAccountRecoveryArchiveFeatureValue(rawValue) {
+  return Boolean(
+    getRecoverySnapshotsFeatureValue(rawValue) &&
+    rawValue?.flags &&
+    rawValue.flags[ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY] === true
+  );
+}
+
+function accountRecoveryArchiveStorageGet(defaults) {
+  return new Promise((resolve, reject) => {
+    if (!chrome.storage?.local?.get) {
+      resolve({ ...defaults });
+      return;
+    }
+    chrome.storage.local.get(defaults, (result) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new AccountRecoveryError("STORAGE_UNAVAILABLE", 0));
+        return;
+      }
+      resolve(result || { ...defaults });
+    });
+  });
+}
+
+function accountRecoveryArchiveStorageSet(values) {
+  return new Promise((resolve, reject) => {
+    if (!chrome.storage?.local?.set) {
+      reject(new AccountRecoveryError("STORAGE_UNAVAILABLE", 0));
+      return;
+    }
+    chrome.storage.local.set(values, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new AccountRecoveryError("STORAGE_UNAVAILABLE", 0));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function readAccountRecoveryArchivePreferences() {
+  const result = await accountRecoveryArchiveStorageGet({
+    [ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]: null
+  });
+  return normalizeAccountRecoveryArchivePreferences(
+    result?.[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]
+  );
+}
+
+async function readAccountRecoveryArchiveFeatureEnabled() {
+  const result = await accountRecoveryArchiveStorageGet({
+    [FEATURE_SETTINGS_STORAGE_KEY]: null
+  });
+  return getAccountRecoveryArchiveFeatureValue(
+    result?.[FEATURE_SETTINGS_STORAGE_KEY]
+  );
+}
+
+function getAccountRecoveryArchivePreferencesMessagePayload(preferences) {
+  return {
+    ok: true,
+    frequency: preferences.frequency,
+    retention: preferences.retention,
+    sections: [...preferences.sections],
+    revision: preferences.revision
+  };
+}
+
+function isTrustedAccountRecoveryArchivePreferencesSender(sender) {
+  return Boolean(
+    sender?.id === chrome.runtime.id &&
+    sender?.tab?.incognito !== true &&
+    chrome.extension?.inIncognitoContext !== true &&
+    getTrustedRobloxTopFrameTabId(sender) !== null
+  );
+}
+
+function writeAccountRecoveryArchivePreferencesOnly({
+  frequency,
+  retention,
+  sections
+}) {
+  const normalizedSections = normalizeAccountRecoverySectionSelection(sections);
+  if (
+    !Object.hasOwn(ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS, frequency) ||
+    !ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS.has(retention) ||
+    normalizedSections === null
+  ) {
+    return Promise.reject(new AccountRecoveryError("INVALID", 400));
+  }
+  const write = accountRecoveryArchivePreferencesWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      const stored = await accountRecoveryArchiveStorageGet({
+        [ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]: null
+      });
+      const previousPreferences = normalizeAccountRecoveryArchivePreferences(
+        stored?.[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]
+      );
+      const nextPreferences = {
+        version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+        frequency,
+        retention,
+        sections: normalizedSections,
+        revision: previousPreferences.revision >= Number.MAX_SAFE_INTEGER
+          ? 1
+          : previousPreferences.revision + 1
+      };
+      accountRecoveryArchiveLifecycleGeneration += 1;
+      await accountRecoveryArchiveStorageSet({
+        [ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]: nextPreferences
+      });
+      return nextPreferences;
+    });
+  accountRecoveryArchivePreferencesWriteTail = write.catch(() => undefined);
+  return write;
+}
+
+function handleAccountRecoveryArchivePreferencesMessage(
+  message,
+  sender,
+  sendResponse
+) {
+  const isGet = message?.type ===
+    ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE;
+  const isSet = message?.type ===
+    ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE;
+  const expectedKeys = isGet
+    ? ["type"]
+    : ["frequency", "retention", "sections", "type"];
+  if (
+    (!isGet && !isSet) ||
+    !isTrustedAccountRecoveryArchivePreferencesSender(sender) ||
+    !hasExactAccountRecoveryArchiveMessageKeys(message, expectedKeys)
+  ) {
+    sendResponse({ ok: false, code: "INVALID" });
+    return false;
+  }
+
+  if (isGet) {
+    accountRecoveryArchivePreferencesWriteTail
+      .catch(() => undefined)
+      .then(readAccountRecoveryArchivePreferences)
+      .then((preferences) => sendResponse(
+        getAccountRecoveryArchivePreferencesMessagePayload(preferences)
+      ))
+      .catch((error) => sendResponse({
+        ok: false,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  const normalizedSections = normalizeAccountRecoverySectionSelection(
+    message.sections
+  );
+  if (
+    !Object.hasOwn(ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS, message.frequency) ||
+    !ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS.has(message.retention) ||
+    normalizedSections === null
+  ) {
+    sendResponse({ ok: false, code: "INVALID" });
+    return false;
+  }
+  writeAccountRecoveryArchivePreferencesOnly({
+    frequency: message.frequency,
+    retention: message.retention,
+    sections: normalizedSections
+  }).then((preferences) => sendResponse(
+    getAccountRecoveryArchivePreferencesMessagePayload(preferences)
+  )).catch((error) => sendResponse({
+    ok: false,
+    code: getAccountRecoveryArchiveErrorCode(error)
+  }));
+  return true;
+}
+
+async function writeAccountRecoveryArchivePreferences({
+  enabled,
+  frequency,
+  retention,
+  sections
+}) {
+  const normalizedSections = normalizeAccountRecoverySectionSelection(sections);
+  if (
+    typeof enabled !== "boolean" ||
+    !Object.hasOwn(ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS, frequency) ||
+    !ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS.has(retention) ||
+    normalizedSections === null
+  ) {
+    throw new AccountRecoveryError("INVALID", 400);
+  }
+  const stored = await accountRecoveryArchiveStorageGet({
+    [FEATURE_SETTINGS_STORAGE_KEY]: null,
+    [ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]: null
+  });
+  const previousPreferences = normalizeAccountRecoveryArchivePreferences(
+    stored?.[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]
+  );
+  const rawFeatureSettings =
+    stored?.[FEATURE_SETTINGS_STORAGE_KEY] &&
+    typeof stored[FEATURE_SETTINGS_STORAGE_KEY] === "object" &&
+    !Array.isArray(stored[FEATURE_SETTINGS_STORAGE_KEY]) &&
+    stored[FEATURE_SETTINGS_STORAGE_KEY].version === FEATURE_SETTINGS_VERSION
+      ? stored[FEATURE_SETTINGS_STORAGE_KEY]
+      : { version: FEATURE_SETTINGS_VERSION, flags: {} };
+  const flags = rawFeatureSettings.flags &&
+    typeof rawFeatureSettings.flags === "object" &&
+    !Array.isArray(rawFeatureSettings.flags)
+      ? rawFeatureSettings.flags
+      : {};
+  const nextPreferences = {
+    version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+    frequency,
+    retention,
+    sections: normalizedSections,
+    revision: previousPreferences.revision >= Number.MAX_SAFE_INTEGER
+      ? 1
+      : previousPreferences.revision + 1
+  };
+  const nextFeatureSettings = {
+    ...rawFeatureSettings,
+    version: FEATURE_SETTINGS_VERSION,
+    flags: {
+      ...flags,
+      [ACCOUNT_RECOVERY_ARCHIVE_FEATURE_KEY]: enabled
+    }
+  };
+  accountRecoveryArchiveLifecycleGeneration += 1;
+  await accountRecoveryArchiveStorageSet({
+    [FEATURE_SETTINGS_STORAGE_KEY]: nextFeatureSettings,
+    [ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]: nextPreferences
+  });
+  accountRecoveryArchiveFeatureEnabled =
+    getAccountRecoveryArchiveFeatureValue(nextFeatureSettings);
+  accountRecoveryArchiveFeatureReady = true;
+  if (accountRecoveryArchiveFeatureEnabled) {
+    await ensureAccountRecoveryArchiveAlarm();
+  } else {
+    await clearAccountRecoveryArchiveAlarm();
+  }
+  return nextPreferences;
+}
+
+function clearAccountRecoveryArchiveAlarm() {
+  return new Promise((resolve) => {
+    if (!chrome.alarms?.clear) {
+      resolve(false);
+      return;
+    }
+    chrome.alarms.clear(ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME, (cleared) => {
+      void chrome.runtime.lastError;
+      resolve(Boolean(cleared));
+    });
+  });
+}
+
+function ensureAccountRecoveryArchiveAlarm() {
+  return new Promise((resolve) => {
+    if (!chrome.alarms?.create) {
+      resolve(false);
+      return;
+    }
+    const create = () => {
+      chrome.alarms.create(ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME, {
+        delayInMinutes: 1,
+        periodInMinutes: ACCOUNT_RECOVERY_ARCHIVE_ALARM_PERIOD_MINUTES
+      });
+      resolve(true);
+    };
+    if (!chrome.alarms.get) {
+      create();
+      return;
+    }
+    chrome.alarms.get(ACCOUNT_RECOVERY_ARCHIVE_ALARM_NAME, (alarm) => {
+      void chrome.runtime.lastError;
+      if (
+        !alarm ||
+        alarm.periodInMinutes !==
+          ACCOUNT_RECOVERY_ARCHIVE_ALARM_PERIOD_MINUTES
+      ) {
+        create();
+        return;
+      }
+      resolve(false);
+    });
+  });
+}
+
+function applyAccountRecoveryArchiveFeatureValue(rawValue, reconcile = false) {
+  const nextEnabled = getAccountRecoveryArchiveFeatureValue(rawValue);
+  const changed = accountRecoveryArchiveFeatureReady &&
+    accountRecoveryArchiveFeatureEnabled !== nextEnabled;
+  accountRecoveryArchiveFeatureEnabled = nextEnabled;
+  accountRecoveryArchiveFeatureReady = true;
+  if (changed) accountRecoveryArchiveLifecycleGeneration += 1;
+  if (reconcile || changed) {
+    if (nextEnabled) {
+      void ensureAccountRecoveryArchiveAlarm().catch(() => undefined);
+    } else {
+      void clearAccountRecoveryArchiveAlarm().catch(() => undefined);
+    }
+  }
+}
+
+function syncAccountRecoveryArchiveFeatureFromStorage(reconcile = false) {
+  if (!chrome.storage?.local?.get) {
+    applyAccountRecoveryArchiveFeatureValue(null, reconcile);
+    return Promise.resolve();
+  }
+  const sync = accountRecoveryArchiveStorageGet({
+    [FEATURE_SETTINGS_STORAGE_KEY]: null
+  }).then((result) => {
+    applyAccountRecoveryArchiveFeatureValue(
+      result?.[FEATURE_SETTINGS_STORAGE_KEY],
+      reconcile
+    );
+  }).catch(() => undefined);
+  const tracked = sync.finally(() => {
+    if (accountRecoveryArchiveFeatureSyncPromise === tracked) {
+      accountRecoveryArchiveFeatureSyncPromise = null;
+    }
+  });
+  accountRecoveryArchiveFeatureSyncPromise = tracked;
+  return tracked;
+}
+
+function requestAccountRecoveryArchiveIdb(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(
+      request.error || new Error("IndexedDB request failed")
+    );
+  });
+}
+
+function openAccountRecoveryArchiveDatabase() {
+  if (accountRecoveryArchiveDbPromise) return accountRecoveryArchiveDbPromise;
+  if (!globalThis.indexedDB?.open) {
+    return Promise.reject(new AccountRecoveryError("STORAGE_UNAVAILABLE"));
+  }
+  accountRecoveryArchiveDbPromise = new Promise((resolve, reject) => {
+    const request = globalThis.indexedDB.open(
+      ACCOUNT_RECOVERY_ARCHIVE_DB_NAME,
+      ACCOUNT_RECOVERY_ARCHIVE_DB_VERSION
+    );
+    request.onupgradeneeded = (event) => {
+      const database = request.result;
+      if (event.oldVersion !== 0) {
+        request.transaction?.abort();
+        return;
+      }
+      const snapshots = database.createObjectStore(
+        ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE,
+        { keyPath: "captureId" }
+      );
+      snapshots.createIndex("accountUserId", "accountUserId", {
+        unique: false
+      });
+      snapshots.createIndex("capturedAtMs", "capturedAtMs", {
+        unique: false
+      });
+      database.createObjectStore(ACCOUNT_RECOVERY_ARCHIVE_META_STORE, {
+        keyPath: "key"
+      });
+    };
+    request.onsuccess = () => {
+      const database = request.result;
+      if (
+        !database.objectStoreNames.contains(
+          ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE
+        ) ||
+        !database.objectStoreNames.contains(
+          ACCOUNT_RECOVERY_ARCHIVE_META_STORE
+        )
+      ) {
+        database.close();
+        reject(new AccountRecoveryError("STORAGE_SCHEMA_UNSUPPORTED"));
+        return;
+      }
+      database.onversionchange = () => {
+        database.close();
+        accountRecoveryArchiveDbPromise = null;
+      };
+      resolve(database);
+    };
+    request.onerror = () => {
+      accountRecoveryArchiveDbPromise = null;
+      reject(new AccountRecoveryError("STORAGE_UNAVAILABLE"));
+    };
+    request.onblocked = () => {
+      accountRecoveryArchiveDbPromise = null;
+      reject(new AccountRecoveryError("STORAGE_UNAVAILABLE"));
+    };
+  });
+  return accountRecoveryArchiveDbPromise;
+}
+
+const ACCOUNT_RECOVERY_ARCHIVE_FORBIDDEN_KEY_PATTERN =
+  /(?:password|cookie|\.roblosecurity|csrf|auth(?:entication)?token|bearer|session(?:id|token)?|recoverycode|securitykey|credentialid|maskedemail|emailaddress|phone(?:number)?|birthdate|billingaddress|paymentinstrument)/i;
+
+function sanitizeAccountRecoveryArchiveValue(value, key = "", depth = 0) {
+  if (ACCOUNT_RECOVERY_ARCHIVE_FORBIDDEN_KEY_PATTERN.test(String(key))) {
+    return undefined;
+  }
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    return value.length <= 8_000
+      ? value
+      : value.slice(0, 8_000);
+  }
+  if (depth >= 7 || typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 250).map((entry) =>
+      sanitizeAccountRecoveryArchiveValue(entry, key, depth + 1)
+    ).filter((entry) => entry !== undefined);
+  }
+  const output = {};
+  for (const [entryKey, entryValue] of Object.entries(value).slice(0, 64)) {
+    if (!/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(entryKey)) continue;
+    const sanitized = sanitizeAccountRecoveryArchiveValue(
+      entryValue,
+      entryKey,
+      depth + 1
+    );
+    if (sanitized !== undefined) output[entryKey] = sanitized;
+  }
+  return output;
+}
+
+function sanitizeAccountRecoveryArchiveSnapshot(rawSnapshot) {
+  if (!rawSnapshot || typeof rawSnapshot !== "object" ||
+    Array.isArray(rawSnapshot)) {
+    throw new AccountRecoveryError("INVALID", 400);
+  }
+  const capturedAt = normalizeAccountRecoveryDate(rawSnapshot.capturedAt);
+  const accountUserId = normalizeAccountRecoveryId(
+    rawSnapshot.account?.userId
+  );
+  const username = normalizeAccountRecoveryText(
+    rawSnapshot.account?.username,
+    100
+  );
+  if (!capturedAt || !accountUserId || !username) {
+    throw new AccountRecoveryError("INVALID", 400);
+  }
+  const account = {
+    userId: accountUserId,
+    username,
+    displayName: normalizeAccountRecoveryText(
+      rawSnapshot.account?.displayName,
+      100
+    ) || username,
+    createdAt: normalizeAccountRecoveryDate(rawSnapshot.account?.createdAt),
+    profileUrl: `https://www.roblox.com/users/${accountUserId}/profile`
+  };
+  if (rawSnapshot.account?.accountStatus === "Banned") {
+    account.accountStatus = "Banned";
+  }
+  const sections = {};
+  const allowedSectionKeys = ["profileDetails", ...ACCOUNT_RECOVERY_SECTION_KEYS];
+  for (const sectionKey of allowedSectionKeys) {
+    if (!Object.hasOwn(rawSnapshot.sections || {}, sectionKey)) continue;
+    const sanitized = sanitizeAccountRecoveryArchiveValue(
+      rawSnapshot.sections[sectionKey],
+      sectionKey
+    );
+    if (sanitized && typeof sanitized === "object") {
+      sections[sectionKey] = sanitized;
+    }
+  }
+  const limitations = Array.isArray(rawSnapshot.limitations)
+    ? rawSnapshot.limitations
+        .map((value) => normalizeAccountRecoveryText(value, 500))
+        .filter(Boolean)
+        .slice(0, 20)
+    : [];
+  return {
+    schemaVersion: Number.isSafeInteger(rawSnapshot.schemaVersion) &&
+      rawSnapshot.schemaVersion > 0
+      ? rawSnapshot.schemaVersion
+      : 1,
+    capturedAt,
+    account,
+    sections,
+    limitations
+  };
+}
+
+function normalizeAccountRecoveryArchiveCaptureId(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/.test(text) ? text : null;
+}
+
+function normalizeAccountRecoveryArchiveRecord(rawRecord) {
+  if (
+    !rawRecord ||
+    typeof rawRecord !== "object" ||
+    Array.isArray(rawRecord) ||
+    rawRecord.recordVersion !== ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION
+  ) {
+    return null;
+  }
+  const captureId = normalizeAccountRecoveryArchiveCaptureId(
+    rawRecord.captureId
+  );
+  const accountUserId = normalizeAccountRecoveryId(rawRecord.accountUserId);
+  const capturedAt = normalizeAccountRecoveryDate(rawRecord.capturedAt);
+  const capturedAtMs = Date.parse(capturedAt || "");
+  const requestedSections = normalizeAccountRecoverySectionSelection(
+    rawRecord.requestedSections
+  );
+  const includedSections = normalizeAccountRecoverySectionSelection(
+    rawRecord.includedSections
+  );
+  const fingerprint = typeof rawRecord.fingerprint === "string" &&
+    /^[a-f0-9]{16,128}$/i.test(rawRecord.fingerprint)
+      ? rawRecord.fingerprint.toLowerCase()
+      : null;
+  let snapshot;
+  try {
+    snapshot = sanitizeAccountRecoveryArchiveSnapshot(rawRecord.snapshot);
+  } catch {
+    return null;
+  }
+  const serialized = JSON.stringify(snapshot);
+  const byteLength = new TextEncoder().encode(serialized).byteLength;
+  if (
+    !captureId ||
+    !accountUserId ||
+    !capturedAt ||
+    !Number.isFinite(capturedAtMs) ||
+    snapshot.account.userId !== accountUserId ||
+    snapshot.capturedAt !== capturedAt ||
+    requestedSections === null ||
+    includedSections === null ||
+    !fingerprint ||
+    byteLength <= 0 ||
+    byteLength > ACCOUNT_RECOVERY_ARCHIVE_MAX_RECORD_BYTES
+  ) {
+    return null;
+  }
+  return {
+    recordVersion: ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION,
+    captureId,
+    accountUserId,
+    username: snapshot.account.username,
+    displayName: snapshot.account.displayName,
+    capturedAt,
+    capturedAtMs,
+    trigger: rawRecord.trigger === "manual" ? "manual" : "scheduled",
+    requestedSections,
+    includedSections,
+    byteLength,
+    fingerprint,
+    snapshot
+  };
+}
+
+function normalizeAccountRecoveryArchiveMeta(rawMeta) {
+  if (
+    !rawMeta ||
+    typeof rawMeta !== "object" ||
+    Array.isArray(rawMeta) ||
+    rawMeta.recordVersion !== ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION
+  ) {
+    return null;
+  }
+  const accountUserId = normalizeAccountRecoveryId(rawMeta.accountUserId);
+  if (!accountUserId || rawMeta.key !== `account:${accountUserId}`) return null;
+  const normalizeTimestamp = (value) =>
+    Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  return {
+    recordVersion: ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION,
+    key: `account:${accountUserId}`,
+    accountUserId,
+    username: normalizeAccountRecoveryText(rawMeta.username, 100),
+    displayName: normalizeAccountRecoveryText(rawMeta.displayName, 100),
+    lastAttemptAt: normalizeTimestamp(rawMeta.lastAttemptAt),
+    lastSuccessAt: normalizeTimestamp(rawMeta.lastSuccessAt),
+    nextDueAt: normalizeTimestamp(rawMeta.nextDueAt),
+    lastErrorCode: normalizeAccountRecoveryText(rawMeta.lastErrorCode, 60),
+    lastFingerprint: typeof rawMeta.lastFingerprint === "string" &&
+      /^[a-f0-9]{16,128}$/i.test(rawMeta.lastFingerprint)
+        ? rawMeta.lastFingerprint.toLowerCase()
+        : ""
+  };
+}
+
+function normalizeAccountRecoveryArchiveStorage(rawStorage) {
+  const records = [];
+  const seenCaptureIds = new Set();
+  for (const raw of Array.isArray(rawStorage?.records) ? rawStorage.records : []) {
+    const record = normalizeAccountRecoveryArchiveRecord(raw);
+    if (!record || seenCaptureIds.has(record.captureId)) continue;
+    seenCaptureIds.add(record.captureId);
+    records.push(record);
+  }
+  const meta = [];
+  const seenAccounts = new Set();
+  for (const raw of Array.isArray(rawStorage?.meta) ? rawStorage.meta : []) {
+    const item = normalizeAccountRecoveryArchiveMeta(raw);
+    if (!item || seenAccounts.has(item.accountUserId)) continue;
+    seenAccounts.add(item.accountUserId);
+    meta.push(item);
+  }
+  return { records, meta };
+}
+
+async function readAccountRecoveryArchiveStorage() {
+  if (typeof accountRecoveryArchiveStorageOverride?.read === "function") {
+    return normalizeAccountRecoveryArchiveStorage(
+      await accountRecoveryArchiveStorageOverride.read()
+    );
+  }
+  const database = await openAccountRecoveryArchiveDatabase();
+  const transaction = database.transaction([
+    ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE,
+    ACCOUNT_RECOVERY_ARCHIVE_META_STORE
+  ], "readonly");
+  const [records, meta] = await Promise.all([
+    requestAccountRecoveryArchiveIdb(
+      transaction.objectStore(
+        ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE
+      ).getAll()
+    ),
+    requestAccountRecoveryArchiveIdb(
+      transaction.objectStore(ACCOUNT_RECOVERY_ARCHIVE_META_STORE).getAll()
+    )
+  ]);
+  return normalizeAccountRecoveryArchiveStorage({ records, meta });
+}
+
+async function mutateAccountRecoveryArchiveStorageInTransaction(mutator) {
+  const database = await openAccountRecoveryArchiveDatabase();
+  const transaction = database.transaction([
+    ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE,
+    ACCOUNT_RECOVERY_ARCHIVE_META_STORE
+  ], "readwrite");
+  const recordsStore = transaction.objectStore(
+    ACCOUNT_RECOVERY_ARCHIVE_SNAPSHOTS_STORE
+  );
+  const metaStore = transaction.objectStore(
+    ACCOUNT_RECOVERY_ARCHIVE_META_STORE
+  );
+  const [records, meta] = await Promise.all([
+    requestAccountRecoveryArchiveIdb(recordsStore.getAll()),
+    requestAccountRecoveryArchiveIdb(metaStore.getAll())
+  ]);
+  const storage = normalizeAccountRecoveryArchiveStorage({ records, meta });
+  const result = mutator(storage);
+  const normalized = normalizeAccountRecoveryArchiveStorage(storage);
+  recordsStore.clear();
+  metaStore.clear();
+  for (const record of normalized.records) recordsStore.put(record);
+  for (const item of normalized.meta) metaStore.put(item);
+  await new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("IndexedDB transaction failed")
+    );
+    transaction.onabort = () => reject(
+      transaction.error || new Error("IndexedDB transaction aborted")
+    );
+  });
+  return result;
+}
+
+function mutateAccountRecoveryArchiveStorage(mutator) {
+  const operation = accountRecoveryArchiveWriteTail
+    .catch(() => undefined)
+    .then(() => {
+      if (typeof accountRecoveryArchiveStorageOverride?.mutate === "function") {
+        return accountRecoveryArchiveStorageOverride.mutate((rawStorage) => {
+          const storage = normalizeAccountRecoveryArchiveStorage(rawStorage);
+          const result = mutator(storage);
+          return {
+            storage: normalizeAccountRecoveryArchiveStorage(storage),
+            result
+          };
+        });
+      }
+      return mutateAccountRecoveryArchiveStorageInTransaction(mutator);
+    });
+  accountRecoveryArchiveWriteTail = operation.catch(() => undefined);
+  return operation;
+}
+
+function createAccountRecoveryArchiveMemoryStorageForTests(initial = null) {
+  let storage = normalizeAccountRecoveryArchiveStorage(initial);
+  return {
+    async read() {
+      return structuredClone(storage);
+    },
+    async mutate(callback) {
+      const outcome = callback(structuredClone(storage));
+      storage = normalizeAccountRecoveryArchiveStorage(outcome.storage);
+      return outcome.result;
+    },
+    getStorage() {
+      return structuredClone(storage);
+    }
+  };
+}
+
+function getAccountRecoveryArchiveMeta(storage, accountUserId, create = false) {
+  let meta = storage.meta.find(
+    (item) => item.accountUserId === accountUserId
+  ) || null;
+  if (!meta && create) {
+    meta = {
+      recordVersion: ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION,
+      key: `account:${accountUserId}`,
+      accountUserId,
+      username: "",
+      displayName: "",
+      lastAttemptAt: 0,
+      lastSuccessAt: 0,
+      nextDueAt: 0,
+      lastErrorCode: "",
+      lastFingerprint: ""
+    };
+    storage.meta.push(meta);
+  }
+  return meta;
+}
+
+function getNextAccountRecoveryArchiveDueAt(fromMs, frequency) {
+  if (frequency === "monthly") {
+    const source = new Date(fromMs);
+    const year = source.getUTCFullYear();
+    const month = source.getUTCMonth();
+    const day = source.getUTCDate();
+    const lastDay = new Date(Date.UTC(year, month + 2, 0)).getUTCDate();
+    return Date.UTC(
+      year,
+      month + 1,
+      Math.min(day, lastDay),
+      source.getUTCHours(),
+      source.getUTCMinutes(),
+      source.getUTCSeconds(),
+      source.getUTCMilliseconds()
+    );
+  }
+  return fromMs + (
+    ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS[frequency] ||
+    ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_MS.daily
+  );
+}
+
+function getAccountRecoveryArchiveIncludedSections(snapshot, requestedSections) {
+  return requestedSections.filter((key) =>
+    ["complete", "partial"].includes(snapshot.sections?.[key]?.status)
+  );
+}
+
+function makeAccountRecoveryArchiveSemanticValue(snapshot) {
+  const value = structuredClone(snapshot);
+  delete value.capturedAt;
+  for (const section of Object.values(value.sections || {})) {
+    if (section && typeof section === "object") delete section.capturedAt;
+  }
+  return value;
+}
+
+async function getAccountRecoveryArchiveFingerprint(snapshot) {
+  const body = JSON.stringify(makeAccountRecoveryArchiveSemanticValue(snapshot));
+  const bytes = new TextEncoder().encode(body);
+  if (globalThis.crypto?.subtle?.digest) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (value) =>
+      value.toString(16).padStart(2, "0")
+    ).join("");
+  }
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+function createAccountRecoveryArchiveCaptureId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  const random = Math.random().toString(16).slice(2).padEnd(16, "0");
+  return `capture-${Date.now().toString(36)}-${random}`;
+}
+
+function applyAccountRecoveryArchiveRetention(storage, record, retention) {
+  const existingAccountIds = new Set(
+    storage.records.map((item) => item.accountUserId)
+  );
+  if (
+    !existingAccountIds.has(record.accountUserId) &&
+    existingAccountIds.size >= ACCOUNT_RECOVERY_ARCHIVE_MAX_ACCOUNTS
+  ) {
+    throw new AccountRecoveryError("ACCOUNT_LIMIT", 409);
+  }
+  storage.records.push(record);
+  const accountRecords = storage.records
+    .filter((item) => item.accountUserId === record.accountUserId)
+    .sort((left, right) =>
+      left.capturedAtMs - right.capturedAtMs ||
+      left.captureId.localeCompare(right.captureId)
+    );
+  if (accountRecords.length > retention) {
+    const keep = new Set([
+      accountRecords[0].captureId,
+      ...accountRecords.slice(-(retention - 1)).map((item) => item.captureId)
+    ]);
+    storage.records = storage.records.filter((item) =>
+      item.accountUserId !== record.accountUserId || keep.has(item.captureId)
+    );
+  }
+  const getTotalBytes = () => storage.records.reduce(
+    (total, item) => total + item.byteLength,
+    0
+  );
+  while (getTotalBytes() > ACCOUNT_RECOVERY_ARCHIVE_MAX_TOTAL_BYTES) {
+    const accountBaselines = new Set();
+    for (const item of [...storage.records].sort((left, right) =>
+      left.capturedAtMs - right.capturedAtMs
+    )) {
+      if (!accountBaselines.has(item.accountUserId)) {
+        accountBaselines.add(item.accountUserId);
+        continue;
+      }
+      storage.records = storage.records.filter(
+        (candidate) => candidate.captureId !== item.captureId
+      );
+      break;
+    }
+    if (
+      getTotalBytes() > ACCOUNT_RECOVERY_ARCHIVE_MAX_TOTAL_BYTES &&
+      storage.records.every((item, index, items) =>
+        items.findIndex(
+          (candidate) => candidate.accountUserId === item.accountUserId
+        ) === index
+      )
+    ) {
+      throw new AccountRecoveryError("STORAGE_LIMIT", 507);
+    }
+  }
+}
+
+function isAccountRecoveryArchiveSnapshotUseful(snapshot, requestedSections) {
+  if (requestedSections.length === 0) return true;
+  return getAccountRecoveryArchiveIncludedSections(
+    snapshot,
+    requestedSections
+  ).length > 0;
+}
+
+async function performAccountRecoveryArchiveCapture(trigger, force = false) {
+  const scheduled = trigger !== "manual";
+  const generation = accountRecoveryArchiveLifecycleGeneration;
+  if (scheduled) {
+    const masterEnabled = await readRecoverySnapshotsFeatureEnabled();
+    if (!masterEnabled) return { status: "disabled" };
+    const enabled = accountRecoveryArchiveFeatureReady
+      ? accountRecoveryArchiveFeatureEnabled
+      : await readAccountRecoveryArchiveFeatureEnabled();
+    if (!enabled) return { status: "disabled" };
+  }
+  const preferences = await readAccountRecoveryArchivePreferences();
+  let viewer;
+  try {
+    viewer = await fetchAccountRecoveryAuthenticatedUser();
+  } catch (error) {
+    if (error instanceof AccountRecoveryError &&
+      error.code === "UNAUTHENTICATED") {
+      return { status: "signed-out" };
+    }
+    throw error;
+  }
+  const now = Date.now();
+  const initialStorage = await readAccountRecoveryArchiveStorage();
+  const initialMeta = getAccountRecoveryArchiveMeta(
+    initialStorage,
+    viewer.userId
+  );
+  const nextDueAt = initialMeta?.lastSuccessAt
+    ? getNextAccountRecoveryArchiveDueAt(
+        initialMeta.lastSuccessAt,
+        preferences.frequency
+      )
+    : initialMeta?.nextDueAt || 0;
+  if (
+    !force &&
+    nextDueAt > now
+  ) {
+    return {
+      status: "not-due",
+      nextDueAt,
+      accountUserId: viewer.userId
+    };
+  }
+  try {
+    const rawSnapshot = await collectAccountRecoverySnapshot(
+      preferences.sections
+    );
+    const snapshot = sanitizeAccountRecoveryArchiveSnapshot(rawSnapshot);
+    if (snapshot.account.userId !== viewer.userId) {
+      throw new AccountRecoveryError("ACCOUNT_CHANGED", 409);
+    }
+    if (!isAccountRecoveryArchiveSnapshotUseful(snapshot, preferences.sections)) {
+      throw new AccountRecoveryError("NO_USEFUL_DATA", 502);
+    }
+    await assertAccountRecoveryViewer(viewer.userId);
+    const [latestPreferences, latestMasterEnabled, featureEnabled] =
+      await Promise.all([
+        readAccountRecoveryArchivePreferences(),
+        scheduled
+          ? readRecoverySnapshotsFeatureEnabled()
+          : Promise.resolve(true),
+        scheduled
+          ? readAccountRecoveryArchiveFeatureEnabled()
+          : Promise.resolve(true)
+      ]);
+    if (
+      latestPreferences.revision !== preferences.revision ||
+      generation !== accountRecoveryArchiveLifecycleGeneration ||
+      !latestMasterEnabled ||
+      !featureEnabled
+    ) {
+      throw new AccountRecoveryError("SETTINGS_CHANGED", 409);
+    }
+    const serialized = JSON.stringify(snapshot);
+    const byteLength = new TextEncoder().encode(serialized).byteLength;
+    if (
+      byteLength <= 0 ||
+      byteLength > ACCOUNT_RECOVERY_ARCHIVE_MAX_RECORD_BYTES
+    ) {
+      throw new AccountRecoveryError("SNAPSHOT_TOO_LARGE", 413);
+    }
+    const fingerprint = await getAccountRecoveryArchiveFingerprint(snapshot);
+    const [commitMasterEnabled, commitFeatureEnabled] = await Promise.all([
+      scheduled
+        ? readRecoverySnapshotsFeatureEnabled()
+        : Promise.resolve(true),
+      scheduled
+        ? readAccountRecoveryArchiveFeatureEnabled()
+        : Promise.resolve(true)
+    ]);
+    if (!commitMasterEnabled || !commitFeatureEnabled) {
+      throw new AccountRecoveryError("SETTINGS_CHANGED", 409);
+    }
+    const capturedAtMs = Date.parse(snapshot.capturedAt);
+    const includedSections = getAccountRecoveryArchiveIncludedSections(
+      snapshot,
+      preferences.sections
+    );
+    const captureId = createAccountRecoveryArchiveCaptureId();
+    const result = await mutateAccountRecoveryArchiveStorage((storage) => {
+      const meta = getAccountRecoveryArchiveMeta(
+        storage,
+        viewer.userId,
+        true
+      );
+      const duplicate = meta.lastFingerprint === fingerprint;
+      if (!duplicate) {
+        const record = normalizeAccountRecoveryArchiveRecord({
+          recordVersion: ACCOUNT_RECOVERY_ARCHIVE_RECORD_VERSION,
+          captureId,
+          accountUserId: viewer.userId,
+          username: snapshot.account.username,
+          displayName: snapshot.account.displayName,
+          capturedAt: snapshot.capturedAt,
+          capturedAtMs,
+          trigger,
+          requestedSections: preferences.sections,
+          includedSections,
+          byteLength,
+          fingerprint,
+          snapshot
+        });
+        if (!record) throw new AccountRecoveryError("INVALID", 400);
+        applyAccountRecoveryArchiveRetention(
+          storage,
+          record,
+          preferences.retention
+        );
+      }
+      meta.username = snapshot.account.username;
+      meta.displayName = snapshot.account.displayName;
+      meta.lastAttemptAt = now;
+      meta.lastSuccessAt = capturedAtMs;
+      meta.nextDueAt = getNextAccountRecoveryArchiveDueAt(
+        capturedAtMs,
+        preferences.frequency
+      );
+      meta.lastErrorCode = "";
+      meta.lastFingerprint = fingerprint;
+      return {
+        status: duplicate ? "unchanged" : "saved",
+        captureId: duplicate ? null : captureId,
+        accountUserId: viewer.userId,
+        nextDueAt: meta.nextDueAt
+      };
+    });
+    return result;
+  } catch (error) {
+    const code = error instanceof AccountRecoveryError
+      ? error.code
+      : "ROBLOX_UNAVAILABLE";
+    if (
+      generation === accountRecoveryArchiveLifecycleGeneration &&
+      !["ACCOUNT_CHANGED", "SETTINGS_CHANGED"].includes(code)
+    ) {
+      await mutateAccountRecoveryArchiveStorage((storage) => {
+        const meta = getAccountRecoveryArchiveMeta(
+          storage,
+          viewer.userId,
+          true
+        );
+        meta.username = viewer.username;
+        meta.displayName = viewer.displayName;
+        meta.lastAttemptAt = now;
+        meta.lastErrorCode = code;
+      }).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+function runAccountRecoveryArchiveCoordinator(trigger = "scheduled", force = false) {
+  if (accountRecoveryArchiveRunPromise) {
+    if (!force) return accountRecoveryArchiveRunPromise;
+    return accountRecoveryArchiveRunPromise
+      .catch(() => undefined)
+      .then(() => runAccountRecoveryArchiveCoordinator(trigger, true));
+  }
+  const run = performAccountRecoveryArchiveCapture(trigger, force);
+  accountRecoveryArchiveRunPromise = run.finally(() => {
+    if (accountRecoveryArchiveRunPromise === tracked) {
+      accountRecoveryArchiveRunPromise = null;
+    }
+  });
+  const tracked = accountRecoveryArchiveRunPromise;
+  return tracked;
+}
+
+function getAccountRecoveryArchiveSummary(record) {
+  return {
+    captureId: record.captureId,
+    accountUserId: record.accountUserId,
+    username: record.username,
+    displayName: record.displayName,
+    capturedAt: record.capturedAt,
+    byteLength: record.byteLength,
+    requestedSections: [...record.requestedSections],
+    includedSections: [...record.includedSections],
+    trigger: record.trigger
+  };
+}
+
+function parseAccountRecoveryArchivePageUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl) return null;
+  const expectedUrl = chrome.runtime.getURL(ACCOUNT_RECOVERY_ARCHIVE_PAGE_PATH);
+  try {
+    const url = new URL(rawUrl);
+    const expected = new URL(expectedUrl);
+    if (
+      url.protocol !== "chrome-extension:" ||
+      url.origin !== expected.origin ||
+      url.pathname !== expected.pathname ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.hash !== ""
+    ) {
+      return null;
+    }
+    const entries = [...url.searchParams.entries()];
+    let captureId = null;
+    if (entries.length > 0) {
+      if (
+        entries.length !== 1 ||
+        entries[0][0] !== ACCOUNT_RECOVERY_ARCHIVE_CAPTURE_QUERY_PARAMETER
+      ) {
+        return null;
+      }
+      captureId = normalizeAccountRecoveryArchiveCaptureId(entries[0][1]);
+      if (!captureId) return null;
+    }
+    const canonicalUrl = captureId
+      ? `${expectedUrl}?${ACCOUNT_RECOVERY_ARCHIVE_CAPTURE_QUERY_PARAMETER}=${encodeURIComponent(captureId)}`
+      : expectedUrl;
+    return rawUrl === canonicalUrl && url.href === canonicalUrl
+      ? { captureId, href: canonicalUrl }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isTrustedAccountRecoveryArchivePageSender(sender) {
+  const expectedUrl = chrome.runtime.getURL(ACCOUNT_RECOVERY_ARCHIVE_PAGE_PATH);
+  const senderPage = parseAccountRecoveryArchivePageUrl(sender?.url);
+  const tabPage = parseAccountRecoveryArchivePageUrl(sender?.tab?.url);
+  const pendingPage = typeof sender?.tab?.pendingUrl === "string" &&
+    sender.tab.pendingUrl
+    ? parseAccountRecoveryArchivePageUrl(sender.tab.pendingUrl)
+    : null;
+  if (
+    !(sender?.id === chrome.runtime.id) ||
+    sender?.frameId !== 0 ||
+    !Number.isSafeInteger(sender?.tab?.id) ||
+    sender.tab.id < 0 ||
+    sender.tab.active !== true ||
+    sender.tab.incognito === true ||
+    !senderPage ||
+    !tabPage ||
+    senderPage.href !== tabPage.href ||
+    (typeof sender.tab.pendingUrl === "string" && sender.tab.pendingUrl &&
+      (!pendingPage || pendingPage.href !== senderPage.href)) ||
+    (typeof sender.documentLifecycle === "string" &&
+      sender.documentLifecycle !== "active") ||
+    (typeof sender.frameType === "string" &&
+      sender.frameType !== "outermost_frame")
+  ) {
+    return false;
+  }
+  return typeof sender.origin !== "string" ||
+    sender.origin === new URL(expectedUrl).origin;
+}
+
+function getAccountRecoveryArchiveCapabilityBinding(sender) {
+  return typeof sender?.documentId === "string" && sender.documentId
+    ? `document:${sender.documentId}`
+    : `tab:${sender?.tab?.id}`;
+}
+
+function issueAccountRecoveryArchiveCapability(sender) {
+  const capability = createAccountRecoveryArchiveCaptureId();
+  const now = Date.now();
+  for (const [key, value] of accountRecoveryArchiveCapabilities) {
+    if (value.expiresAt <= now) accountRecoveryArchiveCapabilities.delete(key);
+  }
+  accountRecoveryArchiveCapabilities.set(capability, {
+    binding: getAccountRecoveryArchiveCapabilityBinding(sender),
+    expiresAt: now + ACCOUNT_RECOVERY_ARCHIVE_CAPABILITY_TTL_MS
+  });
+  return capability;
+}
+
+function hasAccountRecoveryArchiveCapability(sender, capability) {
+  const normalized = normalizeAccountRecoveryArchiveCaptureId(capability);
+  const entry = normalized
+    ? accountRecoveryArchiveCapabilities.get(normalized)
+    : null;
+  if (
+    !entry ||
+    entry.expiresAt <= Date.now() ||
+    entry.binding !== getAccountRecoveryArchiveCapabilityBinding(sender)
+  ) {
+    if (normalized) accountRecoveryArchiveCapabilities.delete(normalized);
+    return false;
+  }
+  entry.expiresAt = Date.now() + ACCOUNT_RECOVERY_ARCHIVE_CAPABILITY_TTL_MS;
+  return true;
+}
+
+function hasExactAccountRecoveryArchiveMessageKeys(message, expectedKeys) {
+  return Boolean(
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    Object.keys(message).sort().join(",") === [...expectedKeys].sort().join(",")
+  );
+}
+
+async function getAccountRecoveryArchiveState(sender) {
+  await accountRecoveryArchiveWriteTail.catch(() => undefined);
+  const [preferences, masterEnabled, enabled, storage] = await Promise.all([
+    readAccountRecoveryArchivePreferences(),
+    readRecoverySnapshotsFeatureEnabled(),
+    readAccountRecoveryArchiveFeatureEnabled(),
+    readAccountRecoveryArchiveStorage()
+  ]);
+  return {
+    capability: issueAccountRecoveryArchiveCapability(sender),
+    recoverySnapshotsEnabled: masterEnabled,
+    preferences: {
+      enabled,
+      frequency: preferences.frequency,
+      retention: preferences.retention,
+      sections: [...preferences.sections]
+    },
+    snapshots: storage.records
+      .sort((left, right) =>
+        right.capturedAtMs - left.capturedAtMs ||
+        right.captureId.localeCompare(left.captureId)
+      )
+      .map(getAccountRecoveryArchiveSummary)
+  };
+}
+
+async function openAccountRecoveryArchivePage(captureId = null) {
+  const normalizedCaptureId = captureId === null
+    ? null
+    : normalizeAccountRecoveryArchiveCaptureId(captureId);
+  if (captureId !== null && !normalizedCaptureId) {
+    throw new AccountRecoveryError("INVALID", 400);
+  }
+  if (!chrome.tabs?.create) {
+    throw new AccountRecoveryError("UNAVAILABLE", 503);
+  }
+  const url = chrome.runtime.getURL(ACCOUNT_RECOVERY_ARCHIVE_PAGE_PATH) +
+    (normalizedCaptureId
+      ? `?${ACCOUNT_RECOVERY_ARCHIVE_CAPTURE_QUERY_PARAMETER}=${encodeURIComponent(normalizedCaptureId)}`
+      : "");
+  await chrome.tabs.create({ url, active: true });
+}
+
+function getAccountRecoveryArchiveErrorCode(error) {
+  return error instanceof AccountRecoveryError
+    ? error.code
+    : "UNAVAILABLE";
+}
+
+function handleAccountRecoveryArchiveMessage(message, sender, sendResponse) {
+  if (message?.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.open) {
+    if (
+      !hasExactAccountRecoveryArchiveMessageKeys(message, ["type"]) ||
+      getTrustedRobloxTopFrameTabId(sender) === null ||
+      sender?.tab?.incognito === true
+    ) {
+      sendResponse({ ok: false, code: "INVALID" });
+      return false;
+    }
+    openAccountRecoveryArchivePage()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({
+        ok: false,
+        code: error instanceof AccountRecoveryError
+          ? error.code
+          : "UNAVAILABLE"
+      }));
+    return true;
+  }
+
+  const requestId = normalizeAccountRecoveryRequestId(message?.requestId);
+  if (requestId === null || !isTrustedAccountRecoveryArchivePageSender(sender)) {
+    sendResponse({ ok: false, requestId: requestId ?? 0, code: "INVALID" });
+    return false;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.getState) {
+    if (!hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "requestId", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    getAccountRecoveryArchiveState(sender)
+      .then((state) => sendResponse({ ok: true, requestId, ...state }))
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  if (!hasAccountRecoveryArchiveCapability(sender, message.capability)) {
+    sendResponse({ ok: false, requestId, code: "CAPABILITY_EXPIRED" });
+    return false;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.setPreferences) {
+    if (!hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "capability", "enabled", "frequency", "requestId", "retention",
+      "sections", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    writeAccountRecoveryArchivePreferences(message)
+      .then((preferences) => {
+        sendResponse({
+          ok: true,
+          requestId,
+          preferences: {
+            enabled: message.enabled,
+            frequency: preferences.frequency,
+            retention: preferences.retention,
+            sections: preferences.sections
+          }
+        });
+        if (message.enabled) {
+          void runAccountRecoveryArchiveCoordinator("settings", true)
+            .catch(() => undefined);
+        }
+      })
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.captureNow) {
+    if (!hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "capability", "requestId", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    runAccountRecoveryArchiveCoordinator("manual", true)
+      .then((result) => sendResponse({ ok: true, requestId, result }))
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.getSnapshot) {
+    const captureId = normalizeAccountRecoveryArchiveCaptureId(
+      message.captureId
+    );
+    if (!captureId || !hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "capability", "captureId", "requestId", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    accountRecoveryArchiveWriteTail.catch(() => undefined)
+      .then(readAccountRecoveryArchiveStorage)
+      .then((storage) => {
+        const record = storage.records.find(
+          (item) => item.captureId === captureId
+        );
+        if (!record) throw new AccountRecoveryError("NOT_FOUND", 404);
+        sendResponse({
+          ok: true,
+          requestId,
+          captureId,
+          snapshot: record.snapshot
+        });
+      })
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.deleteSnapshot) {
+    const captureId = normalizeAccountRecoveryArchiveCaptureId(
+      message.captureId
+    );
+    if (!captureId || !hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "capability", "captureId", "requestId", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    accountRecoveryArchiveLifecycleGeneration += 1;
+    mutateAccountRecoveryArchiveStorage((storage) => {
+      const before = storage.records.length;
+      storage.records = storage.records.filter(
+        (item) => item.captureId !== captureId
+      );
+      if (storage.records.length === before) {
+        throw new AccountRecoveryError("NOT_FOUND", 404);
+      }
+    }).then(() => sendResponse({ ok: true, requestId, captureId }))
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  if (message.type === ACCOUNT_RECOVERY_ARCHIVE_MESSAGE_TYPES.clearAll) {
+    if (!hasExactAccountRecoveryArchiveMessageKeys(message, [
+      "capability", "requestId", "type"
+    ])) {
+      sendResponse({ ok: false, requestId, code: "INVALID" });
+      return false;
+    }
+    accountRecoveryArchiveLifecycleGeneration += 1;
+    mutateAccountRecoveryArchiveStorage((storage) => {
+      storage.records = [];
+      storage.meta = [];
+    }).then(() => sendResponse({ ok: true, requestId }))
+      .catch((error) => sendResponse({
+        ok: false,
+        requestId,
+        code: getAccountRecoveryArchiveErrorCode(error)
+      }));
+    return true;
+  }
+
+  sendResponse({ ok: false, requestId, code: "INVALID" });
+  return false;
+}
+
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 syncGameCcuHistoryFeatureFromStorage("stale");
 syncServerHistoryFeatureFromStorage("startup");
 syncGameEventsFeatureFromStorage();
 syncJoinSchedulerFeatureFromStorage("startup");
+syncAccountRecoveryArchiveFeatureFromStorage("startup");

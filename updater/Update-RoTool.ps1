@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
-$script:UpdaterVersion = "1.2.3"
+$script:UpdaterVersion = "1.2.6"
 $script:PackageAssetName = "RoTool-extension.zip"
 $script:ChecksumAssetName = "RoTool-extension.zip.sha256"
 $script:UpdaterPackageAssetName = "RoTool-updater.zip"

@@ -20,7 +20,7 @@ const privateServerDialogVisualFixtureSource = fs.readFileSync(
 );
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.6");
+assert.equal(manifest.version, "0.19.8");
 assert.match(manifest.description, /Quick Play/);
 assert.match(manifest.description, /Private Servers/);
 assert.match(manifest.description, /Random Server/);
@@ -87,7 +87,10 @@ assert.match(contentSource, /syncQuickPlaySurfaceGeometry\(surface, root, thumbn
 assert.match(contentSource, /hasCompetingQuickPlay\(root, thumbnail\)/);
 assert.match(contentSource, /ropro-card-quick-play-options/);
 assert.match(contentSource, /mountQuickPlayControls\(\);/);
-assert.match(contentSource, /attributeFilter: \["href"\]/);
+assert.match(
+  contentSource,
+  /attributeFilter:\s*\[\s*"href",\s*"id",\s*"aria-controls",\s*"aria-owns",\s*"aria-describedby",\s*"aria-expanded",\s*"aria-disabled",\s*"aria-label",\s*"aria-haspopup",\s*"disabled",\s*"hidden",\s*"data-profile-id",\s*"data-profile-type",\s*ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE\s*\]/
+);
 
 const quickPlaySurfaceSource = contentSource.slice(
   contentSource.indexOf("function makeQuickPlaySurface("),

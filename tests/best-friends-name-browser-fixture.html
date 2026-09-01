@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #111216; color: #fff; font: 600 14px Arial, sans-serif; }
+    .rsl-best-friends-carousel { width: 240px; padding: 12px; }
+    .friends-carousel-list-container { display: flex; gap: 16px; }
+    [data-rsl-best-friend-id] { width: 100px; flex: 0 0 100px; text-align: center; }
+    .friend-tile-content { width: 100%; }
+    .friends-carousel-tile-labels { display: block; width: 88px; margin: 0 auto; }
+    .friends-carousel-tile-label,
+    .friends-carousel-tile-name { max-width: 100%; }
+    .friends-carousel-tile-name { display: flex; margin-inline: auto; align-items: center; }
+    .friends-carousel-display-name { display: block; }
+    .friend-tile-verified-badge { display: inline-flex; align-items: center; }
+  </style>
+</head>
+<body>
+  <section class="rsl-best-friends-carousel">
+    <div class="friends-carousel-list-container">
+      <div data-rsl-best-friend-id="1">
+        <div class="friend-tile-content">
+          <div class="friends-carousel-tile-labels">
+            <div class="friends-carousel-tile-label">
+              <div id="short-row" class="friends-carousel-tile-name" data-rsl-friend-name-badges data-rsl-friend-name-badge-count="2">
+                <span id="short-name" class="friends-carousel-display-name" title="Korn">Korn</span>
+                <span class="friend-tile-verified-badge rsl-friend-name-badge-wrapper" data-rsl-friend-name-badge="verified">
+                  <span class="friend-tile-spacer"></span>
+                  <span class="verified-badge rsl-friend-name-badge rsl-friend-name-badge--verified"><img class="rsl-friend-name-badge__verified-image" alt=""></span>
+                </span>
+                <span class="items-center inline-flex shrink-0 rsl-friend-name-badge-wrapper" data-rsl-friend-name-badge="plus">
+                  <span class="icon icon-regular-roblox-plus" aria-label="Roblox Plus subscriber"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-rsl-best-friend-id="2">
+        <div class="friend-tile-content">
+          <div class="friends-carousel-tile-labels">
+            <div class="friends-carousel-tile-label">
+              <div id="long-row" class="friends-carousel-tile-name" data-rsl-friend-name-badges data-rsl-friend-name-badge-count="2">
+                <span id="long-name" class="friends-carousel-display-name">ExtremelyLongDisplayName</span>
+                <span class="friend-tile-verified-badge rsl-friend-name-badge-wrapper" data-rsl-friend-name-badge="verified">
+                  <span class="friend-tile-spacer"></span>
+                  <span class="verified-badge rsl-friend-name-badge rsl-friend-name-badge--verified"><img class="rsl-friend-name-badge__verified-image" alt=""></span>
+                </span>
+                <span class="items-center inline-flex shrink-0 rsl-friend-name-badge-wrapper" data-rsl-friend-name-badge="plus">
+                  <span class="icon icon-regular-roblox-plus" aria-label="Roblox Plus subscriber"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <script>
+    (() => {
+      const shortRow = document.getElementById("short-row");
+      const shortName = document.getElementById("short-name");
+      const longRow = document.getElementById("long-row");
+      const longName = document.getElementById("long-name");
+      const shortRowRect = shortRow.getBoundingClientRect();
+      const shortBadges = Array.from(shortRow.querySelectorAll(":scope > [data-rsl-friend-name-badge]"));
+      const badgesInside = shortBadges.every((badge) => {
+        const rect = badge.getBoundingClientRect();
+        return rect.left >= shortRowRect.left - 0.5 && rect.right <= shortRowRect.right + 0.5;
+      });
+      const pass =
+        shortName.textContent === "Korn" &&
+        shortRow.clientWidth >= 87 &&
+        shortName.scrollWidth <= shortName.clientWidth &&
+        shortBadges.length === 2 &&
+        badgesInside &&
+        longRow.scrollWidth <= longRow.clientWidth &&
+        longName.scrollWidth > longName.clientWidth;
+      document.body.dataset.testResult = pass ? "pass" : "fail";
+      document.body.dataset.shortRowWidth = String(shortRow.clientWidth);
+      document.body.dataset.shortNameWidth = `${shortName.clientWidth}/${shortName.scrollWidth}`;
+      document.body.dataset.longNameWidth = `${longName.clientWidth}/${longName.scrollWidth}`;
+    })();
+  </script>
+</body>
+</html>

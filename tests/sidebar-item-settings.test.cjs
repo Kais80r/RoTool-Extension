@@ -55,6 +55,21 @@ assert.equal(hooks.defaultFeatureSettings.gameEvents, true);
 assert.equal(hooks.defaultFeatureSettings.joinScheduler, true);
 assert.equal(hooks.defaultFeatureSettings.serverHistory, false);
 assert.equal(hooks.defaultFeatureSettings.gameCcuHoverGraph, true);
+assert.equal(
+  hooks.defaultFeatureSettings.recoverySnapshots,
+  true,
+  "Recovery Snapshots must remain enabled by default"
+);
+assert.equal(
+  hooks.defaultFeatureSettings.recoverySnapshotMenu,
+  true,
+  "the Roblox Settings-menu Recovery shortcut must remain visible by default"
+);
+assert.equal(
+  hooks.defaultFeatureSettings.recoverySnapshotArchive,
+  false,
+  "automatic Recovery snapshots must require an explicit opt-in"
+);
 const playerCountsDefinition = hooks.featureDefinitions.find(
   (definition) => definition.key === "gameCcu"
 );

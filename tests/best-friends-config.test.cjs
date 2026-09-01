@@ -12,7 +12,7 @@ const pageBridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"
 const stylesSource = fs.readFileSync(path.join(projectRoot, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.6");
+assert.equal(manifest.version, "0.19.8");
 assert.match(manifest.description, /Best Friends/);
 assert.ok(manifest.permissions.includes("storage"));
 const mainWorldEntry = manifest.content_scripts.find((entry) => entry.world === "MAIN");
@@ -432,7 +432,11 @@ assert.doesNotMatch(
 );
 assert.match(
   stylesSource,
-  /\[data-rsl-friend-name-badge-count="2"\][^{]*\{[^}]*max-width: calc\(100% - 40px\) !important;/s
+  /\.rsl-best-friends-carousel[\s\S]*?\[data-rsl-best-friend-id\][\s\S]*?\.friends-carousel-tile-name\[data-rsl-friend-name-badges\]:not\([\s\S]*?\)\s*\{[^}]*inline-size: 100% !important;[^}]*max-inline-size: 100% !important;[^}]*justify-content: center;/s
+);
+assert.doesNotMatch(
+  stylesSource,
+  /\[data-rsl-friend-name-badge-count="[12]"\][^{]*\{[^}]*(?:max-width|max-inline-size):\s*calc\(100%\s*-\s*\d+px\)/s
 );
 assert.match(
   stylesSource,

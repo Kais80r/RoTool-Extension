@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>RoTool</title>
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main class="rsl-popup" aria-labelledby="popup-title">
+      <header class="rsl-popup__header">
+        <img
+          class="rsl-popup__logo"
+          src="icons/rotool-32.png"
+          width="28"
+          height="28"
+          alt=""
+        >
+        <h1 id="popup-title">RoTool</h1>
+      </header>
+
+      <nav id="popup-menu" class="rsl-popup__menu" aria-label="RoTool menu">
+        <button
+          class="rsl-popup__item"
+          type="button"
+          data-popup-action="settings"
+        >
+          <svg class="rsl-popup__item-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9.7 3.4 10.3 2h3.4l.6 1.4a2 2 0 0 0 2.4 1.1l1.5-.5 1.8 3-1.1 1a2 2 0 0 0 0 2.8l1.1 1-1.8 3-1.5-.5a2 2 0 0 0-2.4 1.1l-.6 1.4h-3.4l-.6-1.4a2 2 0 0 0-2.4-1.1l-1.5.5-1.8-3 1.1-1a2 2 0 0 0 0-2.8L4 7l1.8-3 1.5.5a2 2 0 0 0 2.4-1.1Z"></path>
+            <circle cx="12" cy="9.9" r="2.5"></circle>
+          </svg>
+          <span class="rsl-popup__item-copy">
+            <span class="rsl-popup__item-title">RoTool Settings</span>
+            <span class="rsl-popup__item-description">Open settings on Roblox</span>
+          </span>
+          <svg class="rsl-popup__chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            <path d="m8 5 5 5-5 5"></path>
+          </svg>
+        </button>
+
+        <button
+          class="rsl-popup__item"
+          type="button"
+          data-popup-action="archive"
+        >
+          <svg class="rsl-popup__item-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M6.5 3.5h8l3 3v14h-11z"></path>
+            <path d="M14.5 3.5v3h3M9.5 11h5M9.5 15h5"></path>
+          </svg>
+          <span class="rsl-popup__item-copy">
+            <span class="rsl-popup__item-title">Recovery Snapshots</span>
+            <span class="rsl-popup__item-description">View or create snapshots</span>
+          </span>
+          <svg class="rsl-popup__chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            <path d="m8 5 5 5-5 5"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <p id="popup-status" class="rsl-popup__status" role="status" aria-live="polite" hidden></p>
+    </main>
+  </body>
+</html>

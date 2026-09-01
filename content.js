@@ -8,6 +8,12 @@
   const FEATURE_SETTINGS_STORAGE_KEY = "rslFeatureSettingsV1";
   const QUICK_SETTINGS_COLLAPSED_STORAGE_KEY = "rslQuickSettingsCollapsedV1";
   const EXTENSION_UPDATE_FEEDBACK_ID = "rsl-extension-update-feedback";
+  const ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID =
+    "rsl-account-recovery-reminder-feedback";
+  const ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE =
+    "rsl:account-recovery-reminder:claim";
+  const ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS = 3 * 60 * 60_000;
+  const ACCOUNT_RECOVERY_REMINDER_RETRY_MS = 5 * 60_000;
   const EXTENSION_UPDATE_FEEDBACK_FALLBACK_CLASS =
     "rsl-extension-update-feedback--fallback";
   const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
@@ -16,6 +22,82 @@
     "rsl:get-extension-update-preferences";
   const EXTENSION_UPDATE_PREFERENCES_SET_MESSAGE_TYPE =
     "rsl:set-extension-update-preferences";
+  const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE =
+    "rsl:get-account-recovery-archive-preferences";
+  const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE =
+    "rsl:set-account-recovery-archive-preferences";
+  const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY =
+    "rslAccountRecoveryArchivePreferencesV1";
+  const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION = 2;
+  const ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_OPTIONS = Object.freeze([
+    Object.freeze({ value: "daily", label: "Daily" }),
+    Object.freeze({ value: "weekly", label: "Weekly" }),
+    Object.freeze({ value: "monthly", label: "Monthly" })
+  ]);
+  const ACCOUNT_RECOVERY_ARCHIVE_FREQUENCIES = new Set(
+    ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_OPTIONS.map(({ value }) => value)
+  );
+  const ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS = Object.freeze([
+    Object.freeze({ value: "3", label: "3 snapshots" }),
+    Object.freeze({ value: "5", label: "5 snapshots (default)" }),
+    Object.freeze({ value: "10", label: "10 snapshots" })
+  ]);
+  const ACCOUNT_RECOVERY_ARCHIVE_RETENTIONS = new Set([3, 5, 10]);
+  const ACCOUNT_RECOVERY_ARCHIVE_SECTION_DEFINITIONS = Object.freeze([
+    Object.freeze({
+      key: "usernameHistory",
+      label: "Username history",
+      description: "Previous Roblox usernames."
+    }),
+    Object.freeze({
+      key: "twoStepVerification",
+      label: "Two-step verification",
+      description: "Enabled verification methods and update times."
+    }),
+    Object.freeze({
+      key: "purchases",
+      label: "Item purchases",
+      description: "Recent purchases paid in Robux."
+    }),
+    Object.freeze({
+      key: "currencyPurchases",
+      label: "Robux purchases",
+      description: "Currency-purchase records returned by Roblox."
+    }),
+    Object.freeze({
+      key: "tradeHistory",
+      label: "Trade history",
+      description: "Recent completed trades, IDs, dates, and trade partners."
+    }),
+    Object.freeze({
+      key: "recentlyPlayed",
+      label: "Recently played",
+      description: "Games in the current Roblox Continue row."
+    }),
+    Object.freeze({
+      key: "createdExperiences",
+      label: "Created experiences",
+      description: "Experiences owned by the account."
+    }),
+    Object.freeze({
+      key: "violations",
+      label: "Violations & Appeals",
+      description: "Moderation records Roblox makes available."
+    })
+  ]);
+  const ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS = Object.freeze(
+    ACCOUNT_RECOVERY_ARCHIVE_SECTION_DEFINITIONS.map(({ key }) => key)
+  );
+  const ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEY_SET = new Set(
+    ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS
+  );
+  const DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES = Object.freeze({
+    version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+    frequency: "daily",
+    retention: 5,
+    sections: Object.freeze([...ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS]),
+    revision: 0
+  });
   const EXTENSION_UPDATE_CONTEXT_CHALLENGE_MESSAGE_TYPE =
     "rsl:verify-extension-update-claim-context";
   const EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY =
@@ -39,6 +121,58 @@
   const EXTENSION_UPDATE_STATUS_MIN_TIMER_MS = 60_000;
   const EXTENSION_UPDATE_STATUS_MAX_TIMER_MS = 24 * 60 * 60_000;
   const FEATURE_SETTINGS_VERSION = 1;
+  const ENHANCED_PROFILE_HOST_ID = "rsl-enhanced-profile-host";
+  const ENHANCED_PROFILE_PRESENCE_ATTRIBUTE =
+    "data-rsl-enhanced-profile-presence";
+  const ENHANCED_PROFILE_PRESENCE_SLOT_NAME =
+    "rsl-enhanced-profile-presence";
+  const ENHANCED_PROFILE_STYLE_ID = "rsl-enhanced-profile-suppression-style";
+  const ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-hidden";
+  const ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-cover-root";
+  const ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-cover-path";
+  const ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-cover";
+  const ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-overflow-root";
+  const ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-overflow-path";
+  const ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-overflow-trigger";
+  const ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE =
+    "data-rtp-native-overflow-proxy";
+  const ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE =
+    "data-rsl-enhanced-profile-standard-profile-action";
+  const ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE =
+    "data-rsl-enhanced-profile-rotool-profile-action";
+  const ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE =
+    "data-rsl-native-avatar-cover";
+  const ENHANCED_PROFILE_MESSAGE_TYPE = "rsl:get-enhanced-profile-fast";
+  const ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE =
+    "rsl:get-enhanced-profile-relationships";
+  const ENHANCED_PROFILE_THUMBNAIL_MESSAGE_TYPE = "rsl:get-thumbnail";
+  const ENHANCED_PROFILE_REQUEST_TIMEOUT_MS = 15_000;
+  const ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE =
+    "rsl:get-enhanced-profile-badge-count";
+  const ENHANCED_PROFILE_BADGE_COUNT_PROGRESS_MESSAGE_TYPE =
+    "rsl:enhanced-profile-badge-count-progress";
+  const ENHANCED_PROFILE_BADGE_COUNT_REQUEST_TIMEOUT_MS = 60_000;
+  const ENHANCED_PROFILE_THUMBNAIL_REQUEST_TIMEOUT_MS = 12_000;
+  const ENHANCED_PROFILE_THUMBNAIL_IMAGE_TIMEOUT_MS = 5_000;
+  const ENHANCED_PROFILE_THUMBNAIL_RETRY_MS = 350;
+  const ENHANCED_PROFILE_THUMBNAIL_CONCURRENCY = 6;
+  const ENHANCED_PROFILE_BADGE_COUNT_START_DELAY_MS = 150;
+  const ENHANCED_PROFILE_RELATIONSHIPS_START_DELAY_MS = 350;
+  const ENHANCED_PROFILE_THUMBNAIL_KINDS = new Set([
+    "profile", "avatar", "gameUniverse", "avatarAsset", "bundle", "community", "badge"
+  ]);
+  const ENHANCED_PROFILE_STANDARD_QUERY = "rotoolProfile";
+  const ENHANCED_PROFILE_LOCALE_SEGMENTS = new Set([
+    "de", "en", "en-us", "es", "fr", "id", "it", "ja", "ko", "pl",
+    "pt", "pt-br", "ru", "th", "tr", "vi", "zh-cn", "zh-tw"
+  ]);
   const ADD_ROW_ID = "rsl-add-shortcut-row";
   const DIALOG_ID = "rsl-shortcut-dialog";
   const BEST_FRIENDS_DIALOG_ID = "rsl-best-friends-dialog";
@@ -94,7 +228,27 @@
   const SERVER_HISTORY_GET_MESSAGE_TYPE = "rsl:get-server-history";
   const SERVER_HISTORY_CLEAR_MESSAGE_TYPE = "rsl:clear-server-history";
   const SERVER_HISTORY_REJOIN_MESSAGE_TYPE = "rsl:rejoin-server-history";
+  const ENHANCED_PROFILE_JOIN_MESSAGE_TYPE = "rsl:join-enhanced-profile";
   const FEATURE_SETTINGS_NAV_ID = "rsl-navbar-settings";
+  const FEATURE_SETTINGS_SHOW_MESSAGE_TYPE = "rsl:show-feature-settings";
+  const ACCOUNT_RECOVERY_PAGE_PATH = "recovery-snapshot.html";
+  const ACCOUNT_RECOVERY_PAGE_VIEW = "home-modal";
+  const ACCOUNT_RECOVERY_DEEP_LINK_VALUE = "recovery-snapshot";
+  const ACCOUNT_RECOVERY_MODAL_HOST_ID = "rsl-account-recovery-modal-host";
+  const ACCOUNT_RECOVERY_PREVIEW_STATE_MESSAGE_TYPE =
+    "rsl:account-recovery:preview-state";
+  const ACCOUNT_RECOVERY_MENU_ITEM_ATTRIBUTE =
+    "data-rsl-account-recovery-menu-item";
+  const ACCOUNT_RECOVERY_MENU_ITEM_TEXT = "Recovery Snapshot";
+  const ACCOUNT_RECOVERY_FEATURE_KEY = "recoverySnapshots";
+  const ACCOUNT_RECOVERY_SETTINGS_MENU_FEATURE_KEY = "recoverySnapshotMenu";
+  const ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY =
+    "rslRecoverySnapshotReminderStateV1";
+  const ACCOUNT_RECOVERY_ARCHIVE_OPEN_MESSAGE_TYPE =
+    "rsl:account-recovery-archive:open";
+  const ACCOUNT_RECOVERY_MENU_MOUNT_DELAYS_MS = Object.freeze([
+    0, 50, 150, 350, 750
+  ]);
   const NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE = "data-rsl-native-sidebar-hidden";
   const BEST_FRIENDS_CAROUSEL_ATTRIBUTE = "data-rsl-best-friends-carousel";
   const BEST_FRIENDS_HEADER_ATTRIBUTE = "data-rsl-best-friends-header";
@@ -737,6 +891,13 @@
       description: "Fix All and add complete friend lists with advanced Filters."
     }),
     Object.freeze({
+      key: "enhancedProfiles",
+      group: "Interface",
+      label: "Enhanced Profiles",
+      description:
+        "Replace Roblox profiles with a Roblox-style page containing more public information."
+    }),
+    Object.freeze({
       key: "updatePopups",
       group: "Interface",
       label: "RoTool Update Popups",
@@ -789,6 +950,97 @@
       group: "Experiences",
       label: "CCU Hover Graph",
       description: "Show the 12-hour graph when hovering or focusing any player count."
+    }),
+    Object.freeze({
+      key: "recoverySnapshots",
+      group: "Tools",
+      label: "Recovery Snapshots",
+      description:
+        "Enable scheduled snapshots, reminders, and the Roblox shortcut.",
+      advancedControls: Object.freeze([
+        Object.freeze({
+          type: "feature",
+          key: "recoverySnapshotMenu"
+        }),
+        Object.freeze({
+          type: "feature",
+          key: "recoverySnapshotArchive"
+        }),
+        Object.freeze({
+          type: "feature",
+          key: "recoverySnapshotReminder"
+        }),
+        Object.freeze({
+          type: "archiveSelect",
+          key: "frequency",
+          label: "Frequency",
+          description: "How often RoTool checks for changed account evidence.",
+          options: ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_OPTIONS,
+          requiresAutomatic: true
+        }),
+        Object.freeze({
+          type: "archiveSelect",
+          key: "retention",
+          label: "Keep per account",
+          description: "Applies to both automatic and manual snapshots.",
+          options: ACCOUNT_RECOVERY_ARCHIVE_RETENTION_OPTIONS
+        }),
+        Object.freeze({
+          type: "heading",
+          key: "recoverySnapshotSections",
+          label: "Information to capture automatically",
+          dynamicSummary: "recoverySnapshotSections"
+        }),
+        ...ACCOUNT_RECOVERY_ARCHIVE_SECTION_DEFINITIONS.map((section) =>
+          Object.freeze({
+            type: "archiveSection",
+            key: section.key,
+            label: section.label,
+            description: section.description
+          })
+        ),
+        Object.freeze({
+          type: "heading",
+          key: "recoverySnapshotAccountTools",
+          label: "Account tools"
+        }),
+        Object.freeze({
+          type: "action",
+          key: "openRecoverySnapshot",
+          label: "Recovery Snapshot",
+          description: "Create or export a current account snapshot.",
+          actionLabel: "Open",
+          availableWhenDisabled: true
+        }),
+        Object.freeze({
+          type: "action",
+          key: "openRecoverySnapshotArchive",
+          label: "View saved snapshots",
+          description: "View, export, or delete snapshots saved on this device.",
+          actionLabel: "Open",
+          availableWhenDisabled: true
+        })
+      ]),
+      children: Object.freeze([
+        Object.freeze({
+          key: "recoverySnapshotMenu",
+          label: "Show in Roblox Settings menu",
+          description:
+            "Show the Recovery Snapshot shortcut in Roblox's gear menu."
+        }),
+        Object.freeze({
+          key: "recoverySnapshotArchive",
+          label: "Automatic snapshots",
+          description: "Save changed support snapshots on your selected schedule.",
+          defaultEnabled: false
+        }),
+        Object.freeze({
+          key: "recoverySnapshotReminder",
+          label: "Automatic snapshot reminders",
+          description:
+            "Show a Home reminder every 3 hours while Automatic snapshots are off."
+        })
+      ])
     }),
     Object.freeze({
       key: "gameEvents",
@@ -873,19 +1125,38 @@
   let featureSettingsConfirmed = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsApplied = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsLoaded = false;
+  let featureSettingsStorageLoadedSuccessfully = false;
   let featureSettingsLoadGeneration = 0;
   let featureSettingsSaving = false;
   let featureSettingsPendingWrites = 0;
   let featureSettingsSaveChain = Promise.resolve();
   let featureSettingsDeferredStorageValue = null;
+  let featureSettingsRecoveryReminderBatchChanged = false;
   let featureSettingsReconcileScheduled = false;
   let featureSettingsReconcileFrame = null;
   let featureSettingsReconcileTimer = null;
   let featureSettingsDialogOpener = null;
+  let accountRecoveryModalComponent = null;
+  let accountRecoveryModalOpener = null;
+  let accountRecoveryDeepLinkOpenQueued = false;
   let featureSettingsNotice = "";
   let featureSettingsNoticeIsError = false;
   let featureSettingsCombinedSavePending = 0;
   let featureSettingsCombinedSaveFailed = false;
+  let accountRecoveryArchivePreferences = {
+    ...DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES,
+    sections: [...DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES.sections]
+  };
+  let accountRecoveryArchivePreferencesConfirmed = {
+    ...accountRecoveryArchivePreferences,
+    sections: [...accountRecoveryArchivePreferences.sections]
+  };
+  let accountRecoveryArchivePreferencesLoaded = false;
+  let accountRecoveryArchivePreferencesLoadGeneration = 0;
+  let accountRecoveryArchivePreferencesSaving = false;
+  let accountRecoveryArchivePreferencesPendingWrites = 0;
+  let accountRecoveryArchivePreferencesSaveChain = Promise.resolve();
+  let accountRecoveryArchivePreferencesDeferredStorageValue = null;
   let gameEventsDialogOpener = null;
   let gameEventsLifecycleEpoch = 0;
   let gameEventsRequestSequence = 0;
@@ -966,6 +1237,53 @@
   let serverHistoryRelativeTimeTimer = null;
   const serverHistoryThumbnailByUniverseId = new Map();
   const serverHistoryThumbnailRequestByUniverseId = new Map();
+  let enhancedProfileHost = null;
+  let enhancedProfileShadowRoot = null;
+  let enhancedProfileRouteUserId = null;
+  let enhancedProfileStandardViewUserId = null;
+  let enhancedProfileLifecycleEpoch = 0;
+  let enhancedProfileRequestSequence = 0;
+  let enhancedProfileLoadState = "idle";
+  let enhancedProfileErrorCode = "";
+  let enhancedProfileData = null;
+  let enhancedProfileActiveTab = "about";
+  let enhancedProfileMessageSenderForTests = null;
+  let enhancedProfileRouteUrlForTests = null;
+  let enhancedProfileStatusTimer = null;
+  let enhancedProfilePendingTopResetUserId = null;
+  let enhancedProfileTopResetFrame = null;
+  let enhancedProfileOverflowController = null;
+  let enhancedProfileBadgeCountRequest = null;
+  let enhancedProfileBadgeCountAnimationFrame = null;
+  let enhancedProfileBadgeCountAnimationTimer = null;
+  let enhancedProfileBadgeCountDisplayedValue = null;
+  let enhancedProfileBadgeCountStartTimer = null;
+  let enhancedProfileRelationshipsStartTimer = null;
+  let enhancedProfileThumbnailObserver = null;
+  let enhancedProfileThumbnailActiveTasks = 0;
+  let enhancedProfileNativeOverflowRoot = null;
+  let enhancedProfileNativeOverflowTrigger = null;
+  let enhancedProfileNativeOverflowResizeObserver = null;
+  let enhancedProfileNativeOverflowController = null;
+  let enhancedProfileNativeOverflowPositionFrame = null;
+  let enhancedProfileNativeOverflowProxySummary = null;
+  let enhancedProfileNativeOverflowMenuObserver = null;
+  let enhancedProfileNativeOverflowMenuFrame = null;
+  let enhancedProfileNativeOverflowMenuAction = null;
+  let enhancedProfileNativeOverflowMenuSurface = null;
+  let enhancedProfileNativeOverflowMenuInjected = false;
+  let enhancedProfileNativeReturnAction = null;
+  let enhancedProfileNativeReturnSurface = null;
+  let enhancedProfileNativeReturnObserver = null;
+  let enhancedProfileNativeReturnController = null;
+  let enhancedProfileNativeReturnFrame = null;
+  let enhancedProfileNativeReturnUserId = null;
+  const enhancedProfileNativeOverflowStyleBackups = new Map();
+  const enhancedProfileSuppressedRoots = new Set();
+  const enhancedProfileCarouselObservers = new Set();
+  const enhancedProfileThumbnailUrls = new Map();
+  const enhancedProfileThumbnailRequests = new Map();
+  const enhancedProfileThumbnailTaskQueue = [];
   let mountQueued = false;
   let lastFocusedElement = null;
   let draggedShortcutId = null;
@@ -1166,6 +1484,40 @@
     });
   }
 
+  function normalizeShortcut(rawShortcut) {
+    if (
+      !rawShortcut ||
+      typeof rawShortcut !== "object" ||
+      Array.isArray(rawShortcut) ||
+      typeof rawShortcut.id !== "string" ||
+      typeof rawShortcut.label !== "string" ||
+      typeof rawShortcut.url !== "string"
+    ) {
+      return null;
+    }
+
+    return {
+      id: rawShortcut.id,
+      label: rawShortcut.label,
+      url: rawShortcut.url,
+      openInNewTab: rawShortcut.openInNewTab === true
+    };
+  }
+
+  function normalizeShortcuts(rawShortcuts) {
+    const normalized = [];
+    for (const rawShortcut of Array.isArray(rawShortcuts) ? rawShortcuts : []) {
+      const shortcut = normalizeShortcut(rawShortcut);
+      if (shortcut) {
+        normalized.push(shortcut);
+      }
+      if (normalized.length >= MAX_SHORTCUTS) {
+        break;
+      }
+    }
+    return normalized;
+  }
+
   function normalizeFeatureSettings(rawValue) {
     const rawFlags =
       rawValue &&
@@ -1195,6 +1547,166 @@
         FEATURE_SETTING_DEFINITIONS.map(({ key }) => [key, flags[key] !== false])
       )
     };
+  }
+
+  function normalizeAccountRecoveryArchiveSectionSelection(value) {
+    if (
+      !Array.isArray(value) ||
+      value.length > ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS.length
+    ) {
+      return null;
+    }
+    const selected = [];
+    const seen = new Set();
+    for (const key of value) {
+      if (
+        typeof key !== "string" ||
+        !ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEY_SET.has(key) ||
+        seen.has(key)
+      ) {
+        return null;
+      }
+      seen.add(key);
+    }
+    for (const key of ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS) {
+      if (seen.has(key)) selected.push(key);
+    }
+    return selected;
+  }
+
+  function cloneAccountRecoveryArchivePreferences(preferences) {
+    return {
+      version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+      frequency: preferences.frequency,
+      retention: preferences.retention,
+      sections: [...preferences.sections],
+      revision: preferences.revision
+    };
+  }
+
+  function normalizeAccountRecoveryArchivePreferences(rawValue) {
+    const raw = rawValue && typeof rawValue === "object" &&
+      !Array.isArray(rawValue) &&
+      (rawValue.version === 1 ||
+        rawValue.version === ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION)
+        ? rawValue
+        : null;
+    const frequency = ACCOUNT_RECOVERY_ARCHIVE_FREQUENCIES.has(raw?.frequency)
+      ? raw.frequency
+      : DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES.frequency;
+    const retention = ACCOUNT_RECOVERY_ARCHIVE_RETENTIONS.has(raw?.retention)
+      ? raw.retention
+      : DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES.retention;
+    const sections = normalizeAccountRecoveryArchiveSectionSelection(
+      raw?.sections
+    );
+    return {
+      version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+      frequency,
+      retention,
+      sections: sections || [
+        ...DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES.sections
+      ],
+      revision: Number.isSafeInteger(raw?.revision) && raw.revision > 0
+        ? raw.revision
+        : 0
+    };
+  }
+
+  function accountRecoveryArchivePreferenceValuesEqual(left, right) {
+    return Boolean(
+      left &&
+      right &&
+      left.frequency === right.frequency &&
+      left.retention === right.retention &&
+      left.sections.length === right.sections.length &&
+      left.sections.every((key, index) => right.sections[index] === key)
+    );
+  }
+
+  function accountRecoveryArchivePreferencesEqual(left, right) {
+    return accountRecoveryArchivePreferenceValuesEqual(left, right) &&
+      left.revision === right.revision;
+  }
+
+  function normalizeAccountRecoveryArchivePreferencesResponse(response) {
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+      return null;
+    }
+    const keys = Object.keys(response).sort();
+    if (
+      keys.length !== 5 ||
+      keys.join(",") !== "frequency,ok,retention,revision,sections" ||
+      response.ok !== true ||
+      !ACCOUNT_RECOVERY_ARCHIVE_FREQUENCIES.has(response.frequency) ||
+      !ACCOUNT_RECOVERY_ARCHIVE_RETENTIONS.has(response.retention) ||
+      !Number.isSafeInteger(response.revision) ||
+      response.revision <= 0
+    ) {
+      return null;
+    }
+    const sections = normalizeAccountRecoveryArchiveSectionSelection(
+      response.sections
+    );
+    if (sections === null) return null;
+    return {
+      version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+      frequency: response.frequency,
+      retention: response.retention,
+      sections,
+      revision: response.revision
+    };
+  }
+
+  function sendAccountRecoveryArchivePreferencesMessage(message) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Recovery Snapshot settings timed out."));
+      }, 10_000);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) {
+            finish(reject, new Error(runtimeError.message));
+            return;
+          }
+          const preferences = normalizeAccountRecoveryArchivePreferencesResponse(
+            response
+          );
+          if (!preferences) {
+            finish(reject, new Error("Recovery Snapshot settings were unavailable."));
+            return;
+          }
+          finish(resolve, preferences);
+        });
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  function loadAccountRecoveryArchivePreferences() {
+    return sendAccountRecoveryArchivePreferencesMessage({
+      type: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE
+    });
+  }
+
+  function writeAccountRecoveryArchivePreferences(preferences) {
+    return sendAccountRecoveryArchivePreferencesMessage({
+      type: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE,
+      frequency: preferences.frequency,
+      retention: preferences.retention,
+      sections: [...preferences.sections]
+    });
   }
 
   function featureSettingsStorageGet() {
@@ -1327,6 +1839,21 @@
 
   function isFeatureEnabled(key) {
     return featureSettings[key] !== false;
+  }
+
+  function isAccountRecoveryEnabled() {
+    if (!featureSettingsLoaded) return true;
+    return Boolean(
+      isFeatureEnabled(ACCOUNT_RECOVERY_FEATURE_KEY)
+    );
+  }
+
+  function isAccountRecoverySettingsMenuEnabled() {
+    if (!featureSettingsLoaded) return true;
+    return Boolean(
+      isAccountRecoveryEnabled() &&
+      isFeatureEnabled(ACCOUNT_RECOVERY_SETTINGS_MENU_FEATURE_KEY)
+    );
   }
 
   const QUICK_SETTING_FEATURE_KEYS = Object.freeze({
@@ -1657,7 +2184,8 @@
         return (
           entry?.id === other?.id &&
           entry?.label === other?.label &&
-          entry?.url === other?.url
+          entry?.url === other?.url &&
+          (entry?.openInNewTab === true) === (other?.openInNewTab === true)
         );
       })
     );
@@ -3019,17 +3547,44 @@
       });
     }
     if (eventContainers.length > 1) return null;
-    const descriptions = Array.from(about.children).filter(
-      (child) =>
-        child.classList?.contains("game-description-container") &&
-        child.querySelector?.(".game-stat-container") &&
-        child.querySelector?.(".game-description-footer")
+    const descriptions = Array.from(about.children).filter((child) =>
+      child.classList?.contains("game-description-container")
     );
-    if (descriptions.length !== 1) return null;
+    if (descriptions.length === 1) {
+      return Object.freeze({
+        parent: about,
+        anchor: descriptions[0],
+        placement: "after"
+      });
+    }
+    if (descriptions.length > 1) return null;
+
+    // BTRoblox relocates Roblox's description into its own game-main wrapper.
+    // Keep Places in the native About flow so both extensions can coexist.
+    const detailPage = document.querySelector("#game-detail-page");
+    const btrDescriptionWrappers = detailPage
+      ? Array.from(document.querySelectorAll("#btr-description-wrapper")).filter(
+          (wrapper) => {
+            const gameMain = wrapper.closest?.(".btr-game-main-container");
+            return Boolean(gameMain && gameMain.closest?.("#game-detail-page") === detailPage);
+          }
+        )
+      : [];
+    if (btrDescriptionWrappers.length !== 1) return null;
+    const relocatedDescriptions = Array.from(
+      btrDescriptionWrappers[0].children
+    ).filter((child) =>
+      child.classList?.contains("game-description-container")
+    );
+    if (relocatedDescriptions.length !== 1) return null;
+    const fallbackAnchor = Array.from(about.children).find(
+      (child) => !child.hasAttribute?.(EXPERIENCE_PLACES_ATTRIBUTE)
+    );
+    if (!fallbackAnchor) return null;
     return Object.freeze({
       parent: about,
-      anchor: descriptions[0],
-      placement: "after"
+      anchor: fallbackAnchor,
+      placement: "before"
     });
   }
 
@@ -4522,17 +5077,39 @@
     return row;
   }
 
+  function syncShortcutNavigation(anchor, shortcut) {
+    if (!anchor || !shortcut) {
+      return;
+    }
+
+    if (anchor.href !== shortcut.url) {
+      anchor.href = shortcut.url;
+    }
+    const accessibleLabel = shortcut.openInNewTab === true
+      ? `${shortcut.label} (opens in a new tab)`
+      : shortcut.label;
+    anchor.title = accessibleLabel;
+    anchor.setAttribute("aria-label", accessibleLabel);
+
+    if (shortcut.openInNewTab === true) {
+      anchor.setAttribute("target", "_blank");
+      anchor.setAttribute("rel", "noopener noreferrer");
+    } else {
+      anchor.removeAttribute("target");
+      anchor.removeAttribute("rel");
+    }
+  }
+
   function makeShortcutRow(templateRow, shortcut) {
     const { row, anchor, label, icon } = createNativeLookingRow(
       templateRow,
       "shortcut",
       shortcut.url
     );
+    icon.classList.add("rsl-sidebar-icon--custom");
     row.setAttribute(ROW_ATTRIBUTE, shortcut.id);
 
-    anchor.href = shortcut.url;
-    anchor.title = shortcut.label;
-    anchor.setAttribute("aria-label", shortcut.label);
+    syncShortcutNavigation(anchor, shortcut);
 
     if (label) {
       label.textContent = shortcut.label;
@@ -4554,17 +5131,10 @@
     if (!icon) {
       icon = icon || findOrCreateIcon(anchor, label);
     }
+    icon.classList.add("rsl-sidebar-icon--custom");
     syncShortcutIcon(icon, shortcut.url);
 
-    if (anchor.href !== shortcut.url) {
-      anchor.href = shortcut.url;
-    }
-    if (anchor.title !== shortcut.label) {
-      anchor.title = shortcut.label;
-    }
-    if (anchor.getAttribute("aria-label") !== shortcut.label) {
-      anchor.setAttribute("aria-label", shortcut.label);
-    }
+    syncShortcutNavigation(anchor, shortcut);
 
     if (label && label.textContent !== shortcut.label) {
       label.textContent = shortcut.label;
@@ -16918,7 +17488,11 @@
 
   function mountQuickPlayCard(thumbnail, mountedRoots) {
     const root = thumbnail.closest(QUICK_PLAY_CARD_ROOT_SELECTOR);
-    if (!root || root.closest(".rsl-dialog")) {
+    if (
+      !root ||
+      root.closest(".rsl-dialog") ||
+      root.closest(`[${ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE}]`)
+    ) {
       return;
     }
     if (hasCompetingQuickPlay(root, thumbnail)) {
@@ -17047,6 +17621,441 @@
     return nativeItem?.parentElement ? nativeItem : null;
   }
 
+  function isNativeAccountSettingsLink(anchor) {
+    const rawHref = anchor?.getAttribute?.("href");
+    if (!rawHref) {
+      return false;
+    }
+    try {
+      const url = new URL(rawHref, location.href);
+      return (
+        url.origin === location.origin &&
+        url.pathname.replace(/\/+$/, "").toLowerCase() === "/my/account"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function getAccountRecoveryPageTheme() {
+    const roots = [document.documentElement, document.body];
+    if (roots.some((root) => root?.classList?.contains("dark-theme"))) {
+      return "dark";
+    }
+    if (roots.some((root) => root?.classList?.contains("light-theme"))) {
+      return "light";
+    }
+    try {
+      return globalThis.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+        ? "dark"
+        : "light";
+    } catch {
+      return "dark";
+    }
+  }
+
+  function getAccountRecoveryFrameUrl(theme = getAccountRecoveryPageTheme()) {
+    const normalizedTheme = theme === "light" ? "light" : "dark";
+    const url = new URL(chrome.runtime.getURL(ACCOUNT_RECOVERY_PAGE_PATH));
+    url.searchParams.set("theme", normalizedTheme);
+    url.searchParams.set("view", ACCOUNT_RECOVERY_PAGE_VIEW);
+    return url.href;
+  }
+
+  function getAccountRecoveryHomeUrl() {
+    const url = new URL(location.href);
+    const firstSegment = url.pathname.split("/").filter(Boolean)[0]?.toLowerCase();
+    url.pathname = firstSegment &&
+      NATIVE_EVENT_SCHEDULE_LOCALE_SEGMENTS.has(firstSegment)
+      ? `/${firstSegment}/home`
+      : "/home";
+    url.search = "";
+    url.hash = "";
+    url.searchParams.set("rotool", ACCOUNT_RECOVERY_DEEP_LINK_VALUE);
+    return url.href;
+  }
+
+  function isAccountRecoveryDeepLink() {
+    return Boolean(
+      isHomePage() &&
+      new URLSearchParams(location.search).get("rotool") ===
+        ACCOUNT_RECOVERY_DEEP_LINK_VALUE
+    );
+  }
+
+  function consumeAccountRecoveryDeepLink() {
+    if (!isAccountRecoveryDeepLink()) return false;
+    const url = new URL(location.href);
+    url.searchParams.delete("rotool");
+    history.replaceState(
+      history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
+    return true;
+  }
+
+  function createAccountRecoveryModalComponent(theme) {
+    const dialog = document.createElement("dialog");
+    dialog.id = ACCOUNT_RECOVERY_MODAL_HOST_ID;
+    dialog.className =
+      "rsl-dialog rsl-account-recovery-dialog foundation-web-dialog-overlay " +
+      "padding-medium foundation-web-portal-zindex bg-common-backdrop";
+    dialog.setAttribute("data-rsl-owned", "account-recovery");
+    dialog.setAttribute("data-rsl-recovery-view", "setup");
+    dialog.setAttribute("data-state", "open");
+    dialog.setAttribute("aria-labelledby", "rsl-account-recovery-title");
+    dialog.setAttribute(
+      "aria-describedby",
+      "rsl-account-recovery-description"
+    );
+    dialog.innerHTML = `
+      <div class="rsl-dialog__surface rsl-account-recovery-dialog__surface relative radius-large bg-surface-100 stroke-muted stroke-standard foundation-web-dialog-content shadow-transient-high" data-size="Large" data-state="open">
+        <div class="rsl-dialog__close-container absolute foundation-web-dialog-close-container">
+          <button type="button" class="rsl-icon-button foundation-web-close-affordance" data-rsl-account-recovery-close aria-label="Close Recovery Snapshot">
+            <span aria-hidden="true" class="rsl-dialog__close-icon"></span>
+          </button>
+        </div>
+        <div class="rsl-dialog__body rsl-account-recovery__body">
+          <div class="rsl-dialog__header rsl-account-recovery__header">
+            <h2 id="rsl-account-recovery-title" class="content-emphasis text-title-large" tabindex="-1">Recovery Snapshot</h2>
+            <p id="rsl-account-recovery-description" class="content-default text-body-medium">Review and export account evidence for Roblox Support.</p>
+          </div>
+          <div class="rsl-account-recovery__frame">
+            <div class="rsl-account-recovery__loading content-default text-body-medium" role="status" aria-live="polite">
+              <span class="rsl-account-recovery__spinner" aria-hidden="true"></span>
+              <span>Opening Recovery Snapshot...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    const frameContainer = dialog.querySelector(
+      ".rsl-account-recovery__frame"
+    );
+    const loading = dialog.querySelector(".rsl-account-recovery__loading");
+    const frame = document.createElement("iframe");
+    frame.className = "rsl-account-recovery__iframe";
+    frame.hidden = true;
+    frame.title = "Recovery Snapshot";
+    frame.referrerPolicy = "no-referrer";
+    frame.src = getAccountRecoveryFrameUrl(theme);
+    const handlePreviewStateMessage = (event) => {
+      if (event.source !== frame.contentWindow) return;
+      if (event.data?.type !== ACCOUNT_RECOVERY_PREVIEW_STATE_MESSAGE_TYPE) return;
+      if (typeof event.data.hasSnapshot !== "boolean") return;
+      dialog.setAttribute(
+        "data-rsl-recovery-view",
+        event.data.hasSnapshot ? "document" : "setup"
+      );
+    };
+    window.addEventListener?.("message", handlePreviewStateMessage);
+    frameContainer.append(frame);
+    const close = dialog.querySelector("[data-rsl-account-recovery-close]");
+    const title = dialog.querySelector("#rsl-account-recovery-title");
+    const component = Object.freeze({
+      close,
+      dialog,
+      frame,
+      host: dialog,
+      loading,
+      messageHandler: handlePreviewStateMessage,
+      title
+    });
+    close.addEventListener("click", (event) => {
+      if (event.isTrusted === true) closeAccountRecoveryModal(true);
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeAccountRecoveryModal(true);
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog && event.isTrusted === true) {
+        closeAccountRecoveryModal(true);
+      }
+    });
+    dialog.addEventListener("close", () => {
+      if (accountRecoveryModalComponent === component) {
+        closeAccountRecoveryModal(true);
+      }
+    });
+    frame.addEventListener("load", () => {
+      if (accountRecoveryModalComponent !== component) return;
+      loading.hidden = true;
+      frame.hidden = false;
+    });
+    return component;
+  }
+
+  function closeAccountRecoveryModal(restoreFocus = true) {
+    const component = accountRecoveryModalComponent;
+    const opener = accountRecoveryModalOpener;
+    accountRecoveryModalComponent = null;
+    accountRecoveryModalOpener = null;
+    if (component) {
+      if (component.dialog.open) component.dialog.close();
+      window.removeEventListener?.("message", component.messageHandler);
+      component.frame.remove();
+      component.host.remove();
+    }
+    if (!restoreFocus) return;
+    const fallback =
+      document.querySelector(`#${FEATURE_SETTINGS_NAV_ID} button`) ||
+      document.querySelector("#navbar-settings button");
+    const focusTarget = opener?.isConnected ? opener : fallback;
+    focusTarget?.focus?.({ preventScroll: true });
+  }
+
+  function openAccountRecoveryModal(opener = null) {
+    if (!isHomePage()) return false;
+    if (accountRecoveryModalComponent?.dialog?.open) {
+      accountRecoveryModalComponent.title?.focus?.({ preventScroll: true });
+      return true;
+    }
+    closeAccountRecoveryModal(false);
+    const theme = getAccountRecoveryPageTheme();
+    const component = createAccountRecoveryModalComponent(theme);
+    accountRecoveryModalComponent = component;
+    accountRecoveryModalOpener = opener || document.activeElement;
+    (document.body || document.documentElement).append(component.host);
+    try {
+      component.dialog.showModal();
+      component.title?.focus?.({ preventScroll: true });
+      return true;
+    } catch {
+      closeAccountRecoveryModal(false);
+      return false;
+    }
+  }
+
+  function openAccountRecoveryFromLauncher(opener = null) {
+    if (isHomePage()) return openAccountRecoveryModal(opener);
+    try {
+      location.assign(getAccountRecoveryHomeUrl());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function syncAccountRecoveryModalRouteState() {
+    if (!isHomePage()) {
+      accountRecoveryDeepLinkOpenQueued = false;
+      closeAccountRecoveryModal(false);
+      return false;
+    }
+    if (
+      consumeAccountRecoveryDeepLink() &&
+      !accountRecoveryDeepLinkOpenQueued
+    ) {
+      accountRecoveryDeepLinkOpenQueued = true;
+      queueMicrotask(() => {
+        accountRecoveryDeepLinkOpenQueued = false;
+        if (isHomePage()) openAccountRecoveryModal(null);
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function sendAccountRecoveryOpenRequest(opener = null) {
+    return openAccountRecoveryFromLauncher(opener);
+  }
+
+  function sendAccountRecoveryArchiveOpenRequest() {
+    chrome.runtime.sendMessage(
+      { type: ACCOUNT_RECOVERY_ARCHIVE_OPEN_MESSAGE_TYPE },
+      () => {
+        void chrome.runtime.lastError;
+      }
+    );
+    return true;
+  }
+
+  function makeAccountRecoverySettingsMenuItem() {
+    const item = document.createElement("li");
+    item.setAttribute(ACCOUNT_RECOVERY_MENU_ITEM_ATTRIBUTE, "");
+
+    const anchor = document.createElement("a");
+    anchor.className = "rbx-menu-item";
+    anchor.href = "#";
+    anchor.textContent = ACCOUNT_RECOVERY_MENU_ITEM_TEXT;
+    anchor.setAttribute("aria-haspopup", "dialog");
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (event.isTrusted !== true) {
+        return;
+      }
+      sendAccountRecoveryOpenRequest(anchor);
+    });
+    item.append(anchor);
+    return item;
+  }
+
+  function getAccountRecoverySettingsTriggers() {
+    return Array.from(
+      document.querySelectorAll(
+        "#navbar-settings button, #navbar-settings [aria-haspopup], " +
+        "#right-navigation-header button[aria-label='Settings'], " +
+        ".rbx-navbar-right button[aria-label='Settings']"
+      )
+    );
+  }
+
+  function getAccountRecoverySettingsPopupIds() {
+    const ids = new Set(["settings-popover", "settings-popover-menu"]);
+    for (const trigger of getAccountRecoverySettingsTriggers()) {
+      for (const attribute of [
+        "aria-controls",
+        "aria-owns",
+        "aria-describedby"
+      ]) {
+        const value = trigger.getAttribute?.(attribute) || "";
+        for (const id of value.split(/\s+/)) {
+          if (id) ids.add(id);
+        }
+      }
+    }
+    return ids;
+  }
+
+  function getAccountRecoveryMenuSurface(node, popupIds) {
+    let element = node?.nodeType === 1 ? node : node?.parentElement;
+    while (element) {
+      const id = element.getAttribute?.("id") || "";
+      const role = element.getAttribute?.("role") || "";
+      if (
+        popupIds.has(id) ||
+        role === "menu" ||
+        element.hasAttribute?.("popover") ||
+        element.classList?.contains("popover-content")
+      ) {
+        return element;
+      }
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function getAccountRecoverySettingsMenuSurfaces() {
+    const popupIds = getAccountRecoverySettingsPopupIds();
+    const surfaces = new Set(
+      document.querySelectorAll(
+        "#settings-popover-menu, #settings-popover, " +
+        "#settings-popover ul.dropdown-menu"
+      )
+    );
+    for (const id of popupIds) {
+      const linkedSurface = document.getElementById?.(id);
+      if (linkedSurface) surfaces.add(linkedSurface);
+    }
+    for (const anchor of Array.from(document.querySelectorAll("a[href]"))) {
+      if (!isNativeAccountSettingsLink(anchor)) continue;
+      const surface = getAccountRecoveryMenuSurface(anchor, popupIds);
+      if (surface) surfaces.add(surface);
+    }
+    for (const control of Array.from(
+      document.querySelectorAll(
+        ".account-switch-menu-item, .logout-menu-item"
+      )
+    )) {
+      const surface = getAccountRecoveryMenuSurface(control, popupIds);
+      if (surface) surfaces.add(surface);
+    }
+    return { popupIds, surfaces };
+  }
+
+  function getAccountRecoveryInsertionLists(surface) {
+    const lists = new Set();
+    const settingsAnchors = Array.from(
+      surface?.querySelectorAll?.("a[href]") || []
+    ).filter(isNativeAccountSettingsLink);
+    for (const anchor of settingsAnchors) {
+      const item = anchor.closest?.("li, [role='listitem']");
+      if (item?.parentElement) lists.add(item.parentElement);
+    }
+    if (lists.size === 0) {
+      const controls = Array.from(
+        surface?.querySelectorAll?.(
+          ".account-switch-menu-item, .logout-menu-item"
+        ) || []
+      );
+      for (const control of controls) {
+        const item = control.closest?.("li, [role='listitem']");
+        if (item?.parentElement) lists.add(item.parentElement);
+      }
+    }
+    return lists;
+  }
+
+  function mountAccountRecoverySettingsMenuItem() {
+    if (!isAccountRecoverySettingsMenuEnabled()) {
+      document
+        .querySelectorAll(`[${ACCOUNT_RECOVERY_MENU_ITEM_ATTRIBUTE}]`)
+        .forEach((item) => item.remove());
+      return 0;
+    }
+    const { surfaces } = getAccountRecoverySettingsMenuSurfaces();
+    const insertionLists = new Set();
+    for (const surface of surfaces) {
+      for (const list of getAccountRecoveryInsertionLists(surface)) {
+        insertionLists.add(list);
+      }
+    }
+    let mountedCount = 0;
+    for (const menu of insertionLists) {
+      const ownedItems = Array.from(
+        menu.querySelectorAll(`[${ACCOUNT_RECOVERY_MENU_ITEM_ATTRIBUTE}]`)
+      );
+      const existing = ownedItems.shift() || null;
+      ownedItems.forEach((duplicate) => duplicate.remove());
+      if (existing) {
+        mountedCount += 1;
+        continue;
+      }
+
+      const settingsAnchor = Array.from(menu.querySelectorAll("a[href]")).find(
+        isNativeAccountSettingsLink
+      );
+      const settingsItem = settingsAnchor?.closest?.("li") || null;
+      const fallbackControl = menu.querySelector(
+        ".account-switch-menu-item, .logout-menu-item"
+      );
+      const fallbackItem = fallbackControl?.closest?.("li") || null;
+
+      if (settingsItem?.parentElement === menu) {
+        settingsItem.insertAdjacentElement(
+          "afterend",
+          makeAccountRecoverySettingsMenuItem()
+        );
+        mountedCount += 1;
+      } else if (fallbackItem?.parentElement === menu) {
+        menu.insertBefore(makeAccountRecoverySettingsMenuItem(), fallbackItem);
+        mountedCount += 1;
+      }
+    }
+    return mountedCount;
+  }
+
+  function scheduleAccountRecoverySettingsMenuMounts() {
+    for (const delay of ACCOUNT_RECOVERY_MENU_MOUNT_DELAYS_MS) {
+      window.setTimeout(mountAccountRecoverySettingsMenuItem, delay);
+    }
+  }
+
+  function handleAccountRecoverySettingsTriggerClick(event) {
+    if (event?.isTrusted !== true) return;
+    const target = event.target?.nodeType === 1
+      ? event.target
+      : event.target?.parentElement;
+    const trigger = target?.closest?.(
+      "#navbar-settings button, #navbar-settings [aria-haspopup], " +
+      "#right-navigation-header button[aria-label='Settings'], " +
+      ".rbx-navbar-right button[aria-label='Settings']"
+    );
+    if (trigger) scheduleAccountRecoverySettingsMenuMounts();
+  }
+
   function syncFeatureSettingsButtonGeometry(item, nativeItem) {
     const button = item?.querySelector(".rsl-navbar-settings-button");
     const nativeButton = nativeItem?.querySelector("button");
@@ -17136,7 +18145,11 @@
       const parentKey = children.getAttribute("data-rsl-feature-parent-key");
       children.toggleAttribute(
         "data-rsl-feature-parent-disabled",
-        Boolean(parentKey && !isFeatureEnabled(parentKey))
+        Boolean(
+          parentKey &&
+          !isFeatureEnabled(parentKey) &&
+          !children.hasAttribute("data-rsl-feature-children-independent")
+        )
       );
     });
     dialog.querySelectorAll("[data-rsl-feature-disclosure]").forEach((button) => {
@@ -17148,6 +18161,20 @@
         !featureSettingsLoaded ||
           Boolean(parentKey && !isFeatureEnabled(parentKey));
     });
+    dialog
+      .querySelectorAll("[data-rsl-feature-advanced-action]")
+      .forEach((button) => {
+        const parentKey = button.getAttribute(
+          "data-rsl-feature-advanced-parent"
+        );
+        button.disabled =
+          !featureSettingsLoaded ||
+          Boolean(
+            parentKey &&
+            !isFeatureEnabled(parentKey) &&
+            !button.hasAttribute("data-rsl-feature-action-independent")
+          );
+      });
     const reminderFrequency = dialog.querySelector(
       "[data-rsl-update-reminder-frequency]"
     );
@@ -17158,22 +18185,61 @@
         !extensionUpdatePreferencesLoaded ||
         !isFeatureEnabled("updatePopups");
     }
+    dialog
+      .querySelectorAll("[data-rsl-account-recovery-archive-preference]")
+      .forEach((control) => {
+        const key = control.getAttribute(
+          "data-rsl-account-recovery-archive-preference"
+        );
+        if (key === "frequency") {
+          control.value = accountRecoveryArchivePreferences.frequency;
+        } else if (key === "retention") {
+          control.value = String(accountRecoveryArchivePreferences.retention);
+        } else if (key && ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEY_SET.has(key)) {
+          control.checked =
+            accountRecoveryArchivePreferences.sections.includes(key);
+        }
+        control.disabled =
+          !featureSettingsLoaded ||
+          !accountRecoveryArchivePreferencesLoaded ||
+          !isFeatureEnabled(ACCOUNT_RECOVERY_FEATURE_KEY) ||
+          (
+            control.hasAttribute("data-rsl-requires-automatic-snapshots") &&
+            !isFeatureEnabled("recoverySnapshotArchive")
+          );
+      });
+    const recoverySectionsSummary = dialog.querySelector(
+      "[data-rsl-account-recovery-sections-summary]"
+    );
+    if (recoverySectionsSummary) {
+      recoverySectionsSummary.textContent =
+        `${accountRecoveryArchivePreferences.sections.length} of ` +
+        `${ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS.length} selected`;
+    }
     const reset = dialog.querySelector("[data-rsl-feature-reset]");
     if (reset) {
       reset.disabled =
         !featureSettingsLoaded ||
         !extensionUpdatePreferencesLoaded ||
+        !accountRecoveryArchivePreferencesLoaded ||
         (
           featureSettingsEqual(featureSettings, DEFAULT_FEATURE_SETTINGS) &&
           extensionUpdateReminderFrequency ===
-            EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
+            EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY &&
+          accountRecoveryArchivePreferenceValuesEqual(
+            accountRecoveryArchivePreferences,
+            DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+          )
         );
     }
     const status = dialog.querySelector("[data-rsl-feature-settings-status]");
     if (status) {
-      status.textContent = !featureSettingsLoaded
+      status.textContent =
+        !featureSettingsLoaded || !accountRecoveryArchivePreferencesLoaded
         ? "Loading settings..."
-          : featureSettingsSaving || extensionUpdatePreferencesSaving
+          : featureSettingsSaving ||
+              extensionUpdatePreferencesSaving ||
+              accountRecoveryArchivePreferencesSaving
             ? "Saving..."
           : featureSettingsNotice;
       status.classList.toggle(
@@ -17184,7 +18250,9 @@
     renderFeatureSettingsUpdateStatus(dialog);
     dialog.setAttribute(
       "aria-busy",
-      String(!featureSettingsLoaded)
+      String(
+        !featureSettingsLoaded || !accountRecoveryArchivePreferencesLoaded
+      )
     );
   }
 
@@ -17213,13 +18281,110 @@
     }
   }
 
+  async function saveAccountRecoveryArchivePreferences(nextPreferences) {
+    if (!accountRecoveryArchivePreferencesLoaded) return;
+    const normalizedNext = normalizeAccountRecoveryArchivePreferences({
+      ...nextPreferences,
+      version: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION,
+      revision: accountRecoveryArchivePreferences.revision || 1
+    });
+    accountRecoveryArchivePreferences = normalizedNext;
+    beginFeatureSettingsCombinedSave();
+    accountRecoveryArchivePreferencesPendingWrites += 1;
+    accountRecoveryArchivePreferencesSaving = true;
+    featureSettingsNotice = "";
+    featureSettingsNoticeIsError = false;
+    renderFeatureSettingsDialog();
+    const savedSnapshot = cloneAccountRecoveryArchivePreferences(
+      normalizedNext
+    );
+    const write = accountRecoveryArchivePreferencesSaveChain
+      .catch(() => undefined)
+      .then(() => writeAccountRecoveryArchivePreferences(savedSnapshot));
+    accountRecoveryArchivePreferencesSaveChain = write;
+    let saveSucceeded = false;
+    try {
+      const confirmed = await write;
+      saveSucceeded = true;
+      accountRecoveryArchivePreferencesConfirmed =
+        cloneAccountRecoveryArchivePreferences(confirmed);
+      if (
+        accountRecoveryArchivePreferenceValuesEqual(
+          accountRecoveryArchivePreferences,
+          savedSnapshot
+        )
+      ) {
+        accountRecoveryArchivePreferences =
+          cloneAccountRecoveryArchivePreferences(confirmed);
+      } else {
+        accountRecoveryArchivePreferences.revision = confirmed.revision;
+      }
+    } catch (error) {
+      if (
+        accountRecoveryArchivePreferenceValuesEqual(
+          accountRecoveryArchivePreferences,
+          savedSnapshot
+        )
+      ) {
+        accountRecoveryArchivePreferences =
+          cloneAccountRecoveryArchivePreferences(
+            accountRecoveryArchivePreferencesConfirmed
+          );
+      }
+      console.error(
+        "[RoTool] Failed to save Recovery Snapshot preferences",
+        error
+      );
+    } finally {
+      accountRecoveryArchivePreferencesPendingWrites = Math.max(
+        0,
+        accountRecoveryArchivePreferencesPendingWrites - 1
+      );
+      accountRecoveryArchivePreferencesSaving =
+        accountRecoveryArchivePreferencesPendingWrites > 0;
+      if (
+        accountRecoveryArchivePreferencesPendingWrites === 0 &&
+        accountRecoveryArchivePreferencesDeferredStorageValue
+      ) {
+        const deferred = accountRecoveryArchivePreferencesDeferredStorageValue;
+        accountRecoveryArchivePreferencesDeferredStorageValue = null;
+        const authoritative =
+          deferred.revision > accountRecoveryArchivePreferencesConfirmed.revision
+            ? deferred
+            : accountRecoveryArchivePreferencesConfirmed;
+        accountRecoveryArchivePreferencesConfirmed =
+          cloneAccountRecoveryArchivePreferences(authoritative);
+        accountRecoveryArchivePreferences =
+          cloneAccountRecoveryArchivePreferences(authoritative);
+      }
+      finishFeatureSettingsCombinedSave(saveSucceeded);
+      renderFeatureSettingsDialog();
+    }
+  }
+
   async function saveFeatureSettings(nextSettings, fallbackSettings) {
     if (!featureSettingsLoaded) {
       return;
     }
+    const previousRecoverySnapshots =
+      featureSettings.recoverySnapshots;
+    const previousRecoverySnapshotArchive =
+      featureSettings.recoverySnapshotArchive;
+    const previousRecoverySnapshotReminder =
+      featureSettings.recoverySnapshotReminder;
     const normalizedNext = normalizeFeatureSettings(
       serializeFeatureSettings(nextSettings)
     );
+    if (
+      previousRecoverySnapshots !==
+        normalizedNext.recoverySnapshots ||
+      previousRecoverySnapshotArchive !==
+        normalizedNext.recoverySnapshotArchive ||
+      previousRecoverySnapshotReminder !==
+        normalizedNext.recoverySnapshotReminder
+    ) {
+      featureSettingsRecoveryReminderBatchChanged = true;
+    }
     featureSettings = normalizedNext;
     beginFeatureSettingsCombinedSave();
     applyExtensionUpdatePopupPreferenceTransition(featureSettings);
@@ -17240,6 +18405,7 @@
     try {
       await write;
       saveSucceeded = true;
+      featureSettingsStorageLoadedSuccessfully = true;
       featureSettingsConfirmed = { ...savedSnapshot };
       if (featureSettings.updatePopups === savedSnapshot.updatePopups) {
         applyExtensionUpdatePopupPreferenceTransition(savedSnapshot, {
@@ -17283,6 +18449,13 @@
       }
       finishFeatureSettingsCombinedSave(saveSucceeded);
       renderFeatureSettingsDialog();
+      if (
+        featureSettingsPendingWrites === 0 &&
+        featureSettingsRecoveryReminderBatchChanged
+      ) {
+        featureSettingsRecoveryReminderBatchChanged = false;
+        recomputeAccountRecoveryReminder();
+      }
     }
   }
 
@@ -17305,7 +18478,7 @@
             ${getRoToolLogoMarkup("rsl-feature-settings__logo")}
             <div class="rsl-dialog__header">
               <h2 id="rsl-feature-settings-title" class="content-emphasis text-title-large">RoTool Settings</h2>
-              <p id="rsl-feature-settings-description" class="content-default text-body-medium">Choose which RoTool features appear on Roblox. Changes apply immediately.</p>
+              <p id="rsl-feature-settings-description" class="content-default text-body-medium">Manage RoTool features and open account tools. Feature changes apply immediately.</p>
             </div>
           </div>
           <div class="rsl-feature-settings__update" data-rsl-feature-settings-update hidden>
@@ -17344,9 +18517,12 @@
     const groups = dialog.querySelector(".rsl-feature-settings__groups");
     const groupsByName = new Map();
     const createSettingRow = (definition) => {
-      const parentKey = definition.parentKey || "";
+      const declaredParentKey = definition.parentKey || "";
+      const parentKey = definition.independentOfParent === true
+        ? ""
+        : declaredParentKey;
       const row = document.createElement("label");
-      row.className = parentKey
+      row.className = declaredParentKey
         ? "rsl-feature-settings__row rsl-feature-settings__row--child"
         : "rsl-feature-settings__row";
       const copy = document.createElement("span");
@@ -17368,9 +18544,7 @@
       input.setAttribute("role", "switch");
       input.disabled =
         !featureSettingsLoaded ||
-        Boolean(
-          definition.parentKey && !isFeatureEnabled(definition.parentKey)
-        );
+        Boolean(parentKey && !isFeatureEnabled(parentKey));
       input.addEventListener("change", (event) => {
         if (
           event.isTrusted !== true ||
@@ -17411,7 +18585,12 @@
       const item = document.createElement("div");
       item.className = "rsl-feature-settings__item";
       item.append(createSettingRow(definition));
-      if (definition.children?.length || definition.advancedControl) {
+      const advancedControls = Array.isArray(definition.advancedControls)
+        ? definition.advancedControls
+        : definition.advancedControl
+          ? [definition.advancedControl]
+          : [];
+      if (definition.children?.length || advancedControls.length) {
         const childrenId = `rsl-feature-settings-${definition.key}-advanced`;
         const disclosure = document.createElement("button");
         disclosure.type = "button";
@@ -17432,6 +18611,16 @@
         children.setAttribute("data-rsl-feature-parent-key", definition.key);
         children.setAttribute("role", "group");
         children.setAttribute("aria-label", `${definition.label} advanced settings`);
+        if (
+          advancedControls.some(
+            (control) => control.availableWhenDisabled === true
+          ) ||
+          definition.children?.some(
+            (child) => child.independentOfParent === true
+          )
+        ) {
+          children.setAttribute("data-rsl-feature-children-independent", "");
+        }
         children.hidden = true;
         if (definition.key === "sidebarShortcuts") {
           const toolbar = document.createElement("div");
@@ -17472,56 +18661,289 @@
           toolbar.append(toolbarLabel, actions);
           children.append(toolbar);
         }
-        if (definition.advancedControl?.type === "select") {
-          const control = definition.advancedControl;
-          const controlRow = document.createElement("label");
-          controlRow.className =
-            "rsl-feature-settings__row rsl-feature-settings__row--child " +
-            "rsl-feature-settings__row--select";
-          const controlCopy = document.createElement("span");
-          controlCopy.className = "rsl-feature-settings__copy";
-          const controlLabel = document.createElement("strong");
-          controlLabel.className = "content-emphasis text-label-large";
-          controlLabel.textContent = control.label;
-          const controlDescription = document.createElement("span");
-          controlDescription.className = "content-default text-body-medium";
-          controlDescription.textContent = control.description;
-          controlCopy.append(controlLabel, controlDescription);
-
-          const select = document.createElement("select");
-          select.className = "rsl-feature-settings__select";
-          select.setAttribute("data-rsl-update-reminder-frequency", "");
-          select.setAttribute("aria-label", control.label);
-          for (const optionDefinition of
-            EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS) {
-            const option = document.createElement("option");
-            option.value = optionDefinition.value;
-            option.textContent = optionDefinition.label;
-            select.append(option);
-          }
-          select.value = extensionUpdateReminderFrequency;
-          select.addEventListener("change", (event) => {
-            const frequency = normalizeExtensionUpdateReminderFrequency(
-              select.value
+        const renderedFeatureControlKeys = new Set();
+        let recoverySectionIndex = 0;
+        for (const control of advancedControls) {
+          if (control.type === "feature") {
+            const childDefinition = FEATURE_SETTING_DEFINITIONS.find(
+              (candidate) => candidate.key === control.key
             );
-            if (
-              event.isTrusted !== true ||
-              !featureSettingsLoaded ||
-              !extensionUpdatePreferencesLoaded ||
-              !isFeatureEnabled(definition.key) ||
-              !frequency
-            ) {
-              renderFeatureSettingsDialog();
-              return;
+            if (childDefinition) {
+              const childRow = createSettingRow(childDefinition);
+              childRow.setAttribute("data-rsl-recovery-settings-full", "");
+              renderedFeatureControlKeys.add(control.key);
+              children.append(childRow);
             }
-            void saveExtensionUpdateReminderFrequency(frequency);
-          });
-          controlRow.append(controlCopy, select);
-          children.append(controlRow);
+          } else if (control.type === "heading") {
+            const heading = document.createElement("h4");
+            heading.className =
+              "rsl-feature-settings__children-heading " +
+              "rsl-feature-settings__children-heading--recovery";
+            heading.setAttribute("data-rsl-recovery-settings-full", "");
+            const headingLabel = document.createElement("span");
+            headingLabel.textContent = control.label;
+            heading.append(headingLabel);
+            if (control.dynamicSummary === "recoverySnapshotSections") {
+              const summary = document.createElement("small");
+              summary.setAttribute(
+                "data-rsl-account-recovery-sections-summary",
+                ""
+              );
+              heading.append(summary);
+            }
+            children.append(heading);
+          } else if (control.type === "archiveSelect") {
+            const controlRow = document.createElement("label");
+            controlRow.className =
+              "rsl-feature-settings__row rsl-feature-settings__row--child " +
+              "rsl-feature-settings__row--select";
+            controlRow.setAttribute("data-rsl-recovery-settings-full", "");
+            const controlCopy = document.createElement("span");
+            controlCopy.className = "rsl-feature-settings__copy";
+            const controlLabel = document.createElement("strong");
+            controlLabel.className = "content-emphasis text-label-large";
+            controlLabel.textContent = control.label;
+            const controlDescription = document.createElement("span");
+            controlDescription.className = "content-default text-body-medium";
+            controlDescription.textContent = control.description;
+            controlCopy.append(controlLabel, controlDescription);
+
+            const select = document.createElement("select");
+            select.className = "rsl-feature-settings__select";
+            select.setAttribute(
+              "data-rsl-account-recovery-archive-preference",
+              control.key
+            );
+            select.setAttribute("aria-label", control.label);
+            if (control.requiresAutomatic === true) {
+              select.setAttribute(
+                "data-rsl-requires-automatic-snapshots",
+                ""
+              );
+            }
+            for (const optionDefinition of control.options || []) {
+              const option = document.createElement("option");
+              option.value = optionDefinition.value;
+              option.textContent = optionDefinition.label;
+              select.append(option);
+            }
+            select.addEventListener("change", (event) => {
+              const next = cloneAccountRecoveryArchivePreferences(
+                accountRecoveryArchivePreferences
+              );
+              if (control.key === "frequency") {
+                if (!ACCOUNT_RECOVERY_ARCHIVE_FREQUENCIES.has(select.value)) {
+                  renderFeatureSettingsDialog();
+                  return;
+                }
+                next.frequency = select.value;
+              } else if (control.key === "retention") {
+                const retention = Number(select.value);
+                if (!ACCOUNT_RECOVERY_ARCHIVE_RETENTIONS.has(retention)) {
+                  renderFeatureSettingsDialog();
+                  return;
+                }
+                next.retention = retention;
+              }
+              if (
+                event.isTrusted !== true ||
+                !featureSettingsLoaded ||
+                !accountRecoveryArchivePreferencesLoaded ||
+                !isFeatureEnabled(ACCOUNT_RECOVERY_FEATURE_KEY) ||
+                (
+                  control.requiresAutomatic === true &&
+                  !isFeatureEnabled("recoverySnapshotArchive")
+                )
+              ) {
+                renderFeatureSettingsDialog();
+                return;
+              }
+              void saveAccountRecoveryArchivePreferences(next);
+            });
+            controlRow.append(controlCopy, select);
+            children.append(controlRow);
+          } else if (control.type === "archiveSection") {
+            const controlRow = document.createElement("label");
+            controlRow.className =
+              "rsl-feature-settings__row rsl-feature-settings__row--child " +
+              "rsl-feature-settings__row--recovery-section";
+            controlRow.setAttribute(
+              "data-rsl-recovery-section-index",
+              String(recoverySectionIndex)
+            );
+            controlRow.setAttribute(
+              "data-rsl-recovery-section-column",
+              recoverySectionIndex % 2 === 0 ? "left" : "right"
+            );
+            recoverySectionIndex += 1;
+            const controlCopy = document.createElement("span");
+            controlCopy.className = "rsl-feature-settings__copy";
+            const controlLabel = document.createElement("strong");
+            controlLabel.className = "content-emphasis text-label-large";
+            controlLabel.textContent = control.label;
+            const controlDescription = document.createElement("span");
+            controlDescription.className = "content-default text-body-medium";
+            controlDescription.textContent = control.description;
+            controlCopy.append(controlLabel, controlDescription);
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "rsl-feature-settings__input rsl-sr-only";
+            input.setAttribute(
+              "data-rsl-account-recovery-archive-preference",
+              control.key
+            );
+            input.setAttribute("role", "switch");
+            input.setAttribute("aria-label", control.label);
+            input.addEventListener("change", (event) => {
+              if (
+                event.isTrusted !== true ||
+                !featureSettingsLoaded ||
+                !accountRecoveryArchivePreferencesLoaded ||
+                !isFeatureEnabled(ACCOUNT_RECOVERY_FEATURE_KEY)
+              ) {
+                renderFeatureSettingsDialog();
+                return;
+              }
+              const selected = new Set(
+                accountRecoveryArchivePreferences.sections
+              );
+              if (input.checked) selected.add(control.key);
+              else selected.delete(control.key);
+              const next = cloneAccountRecoveryArchivePreferences(
+                accountRecoveryArchivePreferences
+              );
+              next.sections = ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS.filter(
+                (key) => selected.has(key)
+              );
+              void saveAccountRecoveryArchivePreferences(next);
+            });
+            const visual = document.createElement("span");
+            visual.className = "rsl-feature-settings__switch";
+            visual.setAttribute("aria-hidden", "true");
+            const thumb = document.createElement("span");
+            thumb.className = "rsl-feature-settings__switch-thumb";
+            visual.append(thumb);
+            controlRow.append(controlCopy, input, visual);
+            children.append(controlRow);
+          } else if (control.type === "select") {
+            const controlRow = document.createElement("label");
+            controlRow.className =
+              "rsl-feature-settings__row rsl-feature-settings__row--child " +
+              "rsl-feature-settings__row--select";
+            const controlCopy = document.createElement("span");
+            controlCopy.className = "rsl-feature-settings__copy";
+            const controlLabel = document.createElement("strong");
+            controlLabel.className = "content-emphasis text-label-large";
+            controlLabel.textContent = control.label;
+            const controlDescription = document.createElement("span");
+            controlDescription.className = "content-default text-body-medium";
+            controlDescription.textContent = control.description;
+            controlCopy.append(controlLabel, controlDescription);
+
+            const select = document.createElement("select");
+            select.className = "rsl-feature-settings__select";
+            select.setAttribute("data-rsl-update-reminder-frequency", "");
+            select.setAttribute("aria-label", control.label);
+            for (const optionDefinition of
+              EXTENSION_UPDATE_REMINDER_FREQUENCY_OPTIONS) {
+              const option = document.createElement("option");
+              option.value = optionDefinition.value;
+              option.textContent = optionDefinition.label;
+              select.append(option);
+            }
+            select.value = extensionUpdateReminderFrequency;
+            select.addEventListener("change", (event) => {
+              const frequency = normalizeExtensionUpdateReminderFrequency(
+                select.value
+              );
+              if (
+                event.isTrusted !== true ||
+                !featureSettingsLoaded ||
+                !extensionUpdatePreferencesLoaded ||
+                !isFeatureEnabled(definition.key) ||
+                !frequency
+              ) {
+                renderFeatureSettingsDialog();
+                return;
+              }
+              void saveExtensionUpdateReminderFrequency(frequency);
+            });
+            controlRow.append(controlCopy, select);
+            children.append(controlRow);
+          } else if (control.type === "action") {
+            const controlRow = document.createElement("div");
+            controlRow.className =
+              "rsl-feature-settings__row rsl-feature-settings__row--child " +
+              "rsl-feature-settings__row--action";
+            const controlCopy = document.createElement("span");
+            controlCopy.className = "rsl-feature-settings__copy";
+            const controlLabel = document.createElement("strong");
+            controlLabel.className = "content-emphasis text-label-large";
+            controlLabel.textContent = control.label;
+            const controlDescription = document.createElement("span");
+            controlDescription.className = "content-default text-body-medium";
+            controlDescription.textContent = control.description;
+            controlCopy.append(controlLabel, controlDescription);
+
+            const action = document.createElement("button");
+            action.type = "button";
+            action.className =
+              "rsl-button rsl-button--secondary rsl-feature-settings__action";
+            action.textContent = control.actionLabel;
+            action.setAttribute("aria-label", control.label);
+            action.setAttribute("data-rsl-feature-advanced-action", control.key);
+            action.setAttribute(
+              "data-rsl-feature-advanced-parent",
+              definition.key
+            );
+            if (control.availableWhenDisabled === true) {
+              action.setAttribute("data-rsl-feature-action-independent", "");
+            }
+            if (control.key === "openRecoverySnapshot") {
+              action.setAttribute(
+                "data-rsl-account-recovery-settings-action",
+                ""
+              );
+            }
+            if (control.key === "openRecoverySnapshotArchive") {
+              action.setAttribute(
+                "data-rsl-account-recovery-archive-settings-action",
+                ""
+              );
+            }
+            action.addEventListener("click", (event) => {
+              if (
+                event.isTrusted !== true ||
+                !featureSettingsLoaded ||
+                (
+                  control.availableWhenDisabled !== true &&
+                  !isFeatureEnabled(definition.key)
+                )
+              ) {
+                renderFeatureSettingsDialog();
+                return;
+              }
+              if (control.key === "openRecoverySnapshot") {
+                const recoveryOpener =
+                  document.querySelector(`#${FEATURE_SETTINGS_NAV_ID} button`) ||
+                  action;
+                dialog.close();
+                queueMicrotask(() =>
+                  sendAccountRecoveryOpenRequest(recoveryOpener)
+                );
+              } else if (control.key === "openRecoverySnapshotArchive") {
+                dialog.close();
+                queueMicrotask(sendAccountRecoveryArchiveOpenRequest);
+              }
+            });
+            controlRow.append(controlCopy, action);
+            children.append(controlRow);
+          }
         }
         let currentSection = "";
         let currentSectionIndex = 0;
         for (const child of definition.children || []) {
+          if (renderedFeatureControlKeys.has(child.key)) continue;
           if (child.section && child.section !== currentSection) {
             currentSection = child.section;
             const sectionHeading = document.createElement("h4");
@@ -17549,8 +18971,11 @@
         }
         disclosure.addEventListener("click", () => {
           const expanded = disclosure.getAttribute("aria-expanded") === "true";
-          disclosure.setAttribute("aria-expanded", String(!expanded));
-          children.hidden = expanded;
+          setFeatureSettingsDisclosureExpanded(
+            disclosure,
+            children,
+            !expanded
+          );
         });
         item.append(disclosure, children);
       }
@@ -17577,6 +19002,19 @@
           EXTENSION_UPDATE_DEFAULT_REMINDER_FREQUENCY
         );
       }
+      if (
+        !accountRecoveryArchivePreferenceValuesEqual(
+          accountRecoveryArchivePreferences,
+          DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+        )
+      ) {
+        void saveAccountRecoveryArchivePreferences({
+          ...DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES,
+          sections: [
+            ...DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES.sections
+          ]
+        });
+      }
     });
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) {
@@ -17599,19 +19037,127 @@
     return dialog;
   }
 
+  function setFeatureSettingsDisclosureExpanded(
+    disclosure,
+    children,
+    expanded
+  ) {
+    if (!disclosure || !children) return;
+    disclosure.setAttribute("aria-expanded", String(expanded));
+    children.hidden = !expanded;
+  }
+
+  function reviewAutomaticSnapshotSettings(dialog) {
+    const disclosure = dialog?.querySelector(
+      '[data-rsl-feature-disclosure="recoverySnapshots"]'
+    );
+    const childrenId = disclosure?.getAttribute("aria-controls") || "";
+    const children = childrenId ? document.getElementById(childrenId) : null;
+    const automaticSwitch = children?.querySelector(
+      '[data-rsl-feature-key="recoverySnapshotArchive"]'
+    );
+    const viewport = dialog?.querySelector(
+      ".rsl-feature-settings-dialog__body"
+    );
+    const row = automaticSwitch?.closest(".rsl-feature-settings__row");
+    if (
+      !featureSettingsLoaded ||
+      !disclosure ||
+      disclosure.disabled ||
+      !children ||
+      !automaticSwitch ||
+      !viewport ||
+      !row
+    ) {
+      return;
+    }
+
+    setFeatureSettingsDisclosureExpanded(disclosure, children, true);
+    let reviewed = false;
+    const revealAutomaticSwitch = () => {
+      if (reviewed) return;
+      reviewed = true;
+      if (!dialog.isConnected || !automaticSwitch.isConnected) return;
+      const viewportRect = viewport.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const targetScrollTop =
+        viewport.scrollTop +
+        rowRect.top -
+        viewportRect.top -
+        (viewport.clientHeight - rowRect.height) / 2;
+      const maximumScrollTop = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight
+      );
+      viewport.scrollTo({
+        top: Math.max(0, Math.min(maximumScrollTop, targetScrollTop)),
+        behavior: "auto"
+      });
+      automaticSwitch.focus({ preventScroll: true });
+    };
+    window.requestAnimationFrame(revealAutomaticSwitch);
+    window.setTimeout(revealAutomaticSwitch, 50);
+  }
+
+  function openAutomaticSnapshotSettings(opener) {
+    openFeatureSettingsDialog(opener);
+    const dialog = document.getElementById(FEATURE_SETTINGS_DIALOG_ID);
+    if (dialog) reviewAutomaticSnapshotSettings(dialog);
+  }
+
   function openFeatureSettingsDialog(opener) {
     let dialog = document.getElementById(FEATURE_SETTINGS_DIALOG_ID);
     if (!dialog) {
       dialog = createFeatureSettingsDialog();
     }
+    const wasOpen = dialog.open;
     featureSettingsDialogOpener = opener || document.activeElement;
     renderFeatureSettingsDialog();
-    if (!dialog.open) {
+    if (!wasOpen) {
       dialog.showModal();
+      dialog
+        .querySelector("[data-rsl-feature-key]")
+        ?.focus({ preventScroll: true });
     }
     opener?.setAttribute?.("aria-expanded", "true");
-    dialog.querySelector("[data-rsl-feature-key]")?.focus();
     void refreshFeatureSettingsUpdateStatus();
+  }
+
+  function handleShowFeatureSettingsMessage(message, sender, sendResponse) {
+    const messageKeys = message && typeof message === "object" &&
+      !Array.isArray(message)
+      ? Object.keys(message)
+      : [];
+    if (
+      message?.type !== FEATURE_SETTINGS_SHOW_MESSAGE_TYPE ||
+      messageKeys.length !== 1 ||
+      messageKeys[0] !== "type"
+    ) {
+      return false;
+    }
+
+    const extensionRoot = chrome.runtime.getURL("");
+    const senderUrl = typeof sender?.url === "string" ? sender.url : "";
+    const trustedSender = Boolean(
+      sender?.id === chrome.runtime.id &&
+      !sender?.tab &&
+      (!senderUrl || senderUrl.startsWith(extensionRoot)) &&
+      window.top === window &&
+      document.visibilityState === "visible"
+    );
+    if (!trustedSender) {
+      sendResponse?.({ ok: false });
+      return false;
+    }
+
+    const opener =
+      document.querySelector(`#${FEATURE_SETTINGS_NAV_ID} button`) || null;
+    openFeatureSettingsDialog(opener);
+    sendResponse?.({
+      ok: true,
+      type: FEATURE_SETTINGS_SHOW_MESSAGE_TYPE
+    });
+    return false;
   }
 
   function normalizeGameEventId(rawValue) {
@@ -20462,12 +22008,5114 @@
     if (dialog && !dialog.open) dialog.remove();
   }
 
+  const ENHANCED_PROFILE_CSS = `
+    :host {
+      --rtp-page-text: var(--color-content-emphasis, #202227);
+      --rtp-default: var(--color-content-default, #494d5a);
+      --rtp-muted: var(--color-content-muted, #6a6f81);
+      --rtp-surface: var(--color-surface-0, #ffffff);
+      --rtp-surface-raised: var(--color-surface-100, #f7f7f8);
+      --rtp-surface-strong: var(--color-surface-300, #e4e5e8);
+      --rtp-surface-hover: var(--color-state-hover, rgba(27, 37, 75, .16));
+      --rtp-border: var(--color-stroke-default, rgba(27, 37, 75, .12));
+      --rtp-blue: #335fff;
+      --rtp-blue-hover: #264fe5;
+      --rtp-green: #00a66b;
+      --rtp-danger: #d93025;
+      display: block;
+      width: 100%;
+      min-width: 0;
+      color: var(--rtp-page-text);
+      background: var(--rtp-surface);
+      font-family: "Builder Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.4;
+    }
+    :host([data-rsl-theme="dark"]) {
+      --rtp-page-text: var(--color-content-emphasis, #f7f7f8);
+      --rtp-default: var(--color-content-default, #d5d7dd);
+      --rtp-muted: var(--color-content-muted, #bcbec8);
+      --rtp-surface: var(--color-surface-0, #121215);
+      --rtp-surface-raised: var(--color-surface-100, #191a1f);
+      --rtp-surface-strong: var(--color-surface-300, #24262d);
+      --rtp-surface-hover: var(--color-state-hover, rgba(208, 217, 251, .16));
+      --rtp-border: var(--color-stroke-default, rgba(208, 217, 251, .12));
+      --rtp-blue: #335fff;
+      --rtp-blue-hover: #4770ff;
+      --rtp-green: #39c582;
+      --rtp-danger: #ff5a52;
+    }
+    * { box-sizing: border-box; }
+    a { color: inherit; text-decoration: none; }
+    button, a { font: inherit; }
+    button { color: inherit; }
+    .rtp-shell {
+      width: 100%;
+      margin: 0 auto;
+      padding: 16px 0 28px;
+    }
+    :host([data-rsl-native-avatar-cover]) .rtp-shell {
+      padding-top: 0;
+    }
+    .rtp-surface {
+      background: var(--rtp-surface);
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+    }
+    .rtp-hero {
+      position: relative;
+      margin: 0;
+      padding: 0;
+      overflow: visible;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .rtp-cover {
+      position: relative;
+      display: grid;
+      width: 100%;
+      height: 300px;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+    }
+    :host([data-rsl-native-avatar-cover]) .rtp-cover {
+      display: none;
+    }
+    .rtp-avatar-body {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
+    .rtp-profile-header-overlay {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      width: 100%;
+      margin-top: -21px;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .rtp-hero-main {
+      position: relative;
+      display: grid;
+      width: 100%;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      min-height: 128px;
+      margin: 0;
+      padding: 0 350px 0 0;
+    }
+    .rtp-headshot-wrap { position: relative; width: 128px; height: 128px; }
+    .rtp-headshot-presence-slot { display: contents; }
+    .rtp-headshot-presence-slot::slotted([data-rsl-enhanced-profile-presence]) {
+      position: absolute !important;
+      inset: 0 !important;
+      z-index: 2 !important;
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      overflow: visible !important;
+    }
+    .rtp-headshot,
+    .rtp-avatar-fallback {
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--rtp-surface-strong);
+      object-fit: cover;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    .rtp-avatar-fallback {
+      display: grid;
+      place-items: center;
+      color: var(--rtp-muted);
+    }
+    .rtp-avatar-fallback svg { width: 58%; height: 58%; fill: currentColor; }
+    .rtp-identity { min-width: 0; }
+    .rtp-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .rtp-name-row h1 {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      color: var(--rtp-page-text);
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.18;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-username {
+      margin: 2px 0 0;
+      color: var(--rtp-default);
+      font-feature-settings: "ss03";
+      font-variant-numeric: slashed-zero;
+      font-size: 16px;
+    }
+    .rtp-badges { display: inline-flex; align-items: center; gap: 4px; }
+    .rtp-verified {
+      display: inline-grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      color: #335fff;
+    }
+    .rtp-verified svg,
+    .rtp-roblox-plus svg { display: block; width: 100%; height: 100%; }
+    .rtp-roblox-plus {
+      display: inline-grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      color: var(--rtp-page-text);
+    }
+    .rtp-status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border: 1px solid var(--rtp-border);
+      border-radius: 999px;
+      color: var(--rtp-muted);
+      background: var(--rtp-surface-raised);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .rtp-actions {
+      position: absolute;
+      top: 44px;
+      right: 0;
+      display: flex;
+      width: min(330px, 35vw);
+      max-width: 330px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .rtp-current-game {
+      display: flex;
+      min-height: 52px;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+      background: var(--rtp-surface-raised);
+    }
+    .rtp-current-game:hover { background: var(--rtp-surface-hover); }
+    .rtp-current-game-image,
+    .rtp-current-game .rtp-base-fallback {
+      width: 40px;
+      height: 40px;
+      flex: 0 0 auto;
+      border-radius: 6px;
+      object-fit: cover;
+    }
+    .rtp-current-game-name {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--rtp-page-text);
+      font-size: 14px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-action-row {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .rtp-actions--foreign .rtp-action-row > .rtp-button {
+      flex: 1 1 auto;
+    }
+    .rtp-overflow { position: relative; }
+    .rtp-overflow summary {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      cursor: pointer;
+      list-style: none;
+    }
+    .rtp-overflow summary::-webkit-details-marker { display: none; }
+    .rtp-overflow summary:hover { background: var(--rtp-surface-hover); }
+    .rtp-overflow summary[${ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE}] {
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .rtp-overflow summary svg { width: 20px; height: 20px; fill: currentColor; }
+    .rtp-overflow-menu {
+      position: absolute;
+      top: 48px;
+      right: 0;
+      z-index: 5;
+      width: 220px;
+      padding: 4px;
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+      background: var(--rtp-surface-raised);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+    }
+    .rtp-overflow-menu a {
+      display: flex;
+      min-height: 36px;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 6px;
+      color: var(--rtp-page-text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .rtp-overflow-menu a:hover { background: var(--rtp-surface-hover); }
+    .rtp-button {
+      display: inline-flex;
+      min-height: 40px;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      color: var(--rtp-page-text);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .rtp-button:hover { background: var(--rtp-surface-hover); }
+    .rtp-button:disabled { opacity: .55; cursor: default; }
+    .rtp-button:focus-visible,
+    .rtp-tab:focus-visible,
+    .rtp-card-link:focus-visible,
+    .rtp-friend:focus-visible,
+    .rtp-social a:focus-visible,
+    .rtp-social button:focus-visible {
+      outline: 2px solid var(--rtp-blue);
+      outline-offset: 2px;
+    }
+    .rtp-button--primary {
+      border-color: var(--rtp-blue);
+      background: var(--rtp-blue);
+      color: #fff;
+    }
+    .rtp-button--primary:hover { background: var(--rtp-blue-hover); }
+    .rtp-social {
+      display: flex;
+      width: 100%;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      flex-flow: row wrap;
+      overflow: visible;
+      scrollbar-width: none;
+    }
+    .rtp-social::-webkit-scrollbar { display: none; }
+    .rtp-social a,
+    .rtp-social button {
+      display: inline-flex;
+      min-height: 32px;
+      align-items: center;
+      gap: 3px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--rtp-surface-strong);
+      color: var(--rtp-page-text);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      flex: 0 0 auto;
+    }
+    .rtp-social a:hover,
+    .rtp-social button:hover { background: var(--rtp-surface-hover); }
+    .rtp-social strong { font: inherit; }
+    .rtp-social span { color: inherit; font: inherit; }
+    .rtp-hero-support {
+      display: flex;
+      margin: 0;
+      padding: 0;
+      flex-direction: column;
+      gap: 16px;
+      border: 0;
+    }
+    .rtp-header-description { margin: 0; }
+    .rtp-profile-description {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      color: var(--rtp-default);
+      font: 14px/19.6px "Builder Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .rtp-profile-description[data-expanded] { display: block; }
+    .rtp-more-button {
+      display: block;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--rtp-page-text);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 19.6px;
+      text-decoration: underline;
+    }
+    .rtp-profile-details {
+      margin: 0;
+      padding: 8px 0 0;
+      border-top: 1px solid var(--rtp-border);
+    }
+    .rtp-profile-details-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 8px 24px;
+      margin: 0;
+      padding: 0;
+    }
+    .rtp-profile-detail {
+      display: inline-flex;
+      min-width: 0;
+      align-items: baseline;
+      gap: 6px;
+      padding: 0;
+    }
+    .rtp-profile-detail dt {
+      color: var(--rtp-muted);
+      font-size: 12px;
+      line-height: 18px;
+      white-space: nowrap;
+    }
+    .rtp-profile-detail dd {
+      margin: 0;
+      overflow: hidden;
+      color: var(--rtp-page-text);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 18px;
+      overflow-wrap: anywhere;
+      text-overflow: ellipsis;
+    }
+    [data-rtp-profile-badge-count] { font-variant-numeric: tabular-nums; }
+    .rtp-profile-detail--wide { flex-basis: 100%; }
+    .rtp-profile-detail--wide dd { color: var(--rtp-default); font-weight: 400; }
+    .rtp-tabs {
+      display: flex;
+      margin: 0;
+      border-bottom: 1px solid var(--rtp-border);
+    }
+    .rtp-tab {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      min-height: 46px;
+      border: 0;
+      background: transparent;
+      color: var(--rtp-muted);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .rtp-tab:hover { color: var(--rtp-page-text); }
+    .rtp-tab[aria-selected="true"] { color: var(--rtp-page-text); }
+    .rtp-tab[aria-selected="true"]::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 2px;
+      background: var(--rtp-page-text);
+    }
+    .rtp-panel { padding: 24px 0 0; }
+    .rtp-panel[hidden],
+    .rtp-experience-switcher[hidden],
+    .rtp-creations-grid[hidden] { display: none !important; }
+    .rtp-layout { display: block; }
+    .rtp-column { display: contents; }
+    .rtp-section { min-width: 0; padding: 0 0 24px; }
+    .rtp-section:focus { outline: none; }
+    .rtp-section:focus-visible {
+      outline: 2px solid var(--rtp-blue);
+      outline-offset: 6px;
+      border-radius: 4px;
+    }
+    .rtp-section + .rtp-section { padding-top: 0; }
+    .rtp-section-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .rtp-section h2 { margin: 0; color: var(--rtp-page-text); font-size: 20px; font-weight: 700; line-height: 1.25; }
+    .rtp-section-title-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      border-radius: 4px;
+    }
+    .rtp-section-title-link svg,
+    .rtp-section-link svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      fill: currentColor;
+    }
+    .rtp-section-link,
+    .rtp-section-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--rtp-page-text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .rtp-section-tools { display: inline-flex; align-items: center; gap: 8px; }
+    .rtp-view-button {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid var(--rtp-border);
+      border-radius: 6px;
+      background: var(--rtp-surface-raised);
+      color: var(--rtp-muted);
+      cursor: pointer;
+    }
+    .rtp-view-button[aria-pressed="true"] {
+      background: var(--rtp-surface-strong);
+      color: var(--rtp-page-text);
+    }
+    .rtp-view-button svg { width: 18px; height: 18px; fill: currentColor; }
+    .rtp-muted { color: var(--rtp-muted); }
+    .rtp-detail-list {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin: 0;
+      border-top: 1px solid var(--rtp-border);
+      border-bottom: 1px solid var(--rtp-border);
+    }
+    .rtp-detail-row {
+      display: flex;
+      min-height: 64px;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      padding: 10px 14px;
+      border-left: 1px solid var(--rtp-border);
+    }
+    .rtp-detail-row:first-child { border-left: 0; }
+    .rtp-detail-row dt { color: var(--rtp-muted); font-size: 13px; }
+    .rtp-detail-row dd { margin: 0; color: var(--rtp-page-text); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+    .rtp-usernames {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 0;
+      color: var(--rtp-default);
+      font-size: 14px;
+    }
+    .rtp-username-chip {
+      color: inherit;
+      overflow-wrap: anywhere;
+    }
+    .rtp-username-chip:not(:last-child)::after {
+      content: "·";
+      margin: 0 8px;
+      color: var(--rtp-muted);
+    }
+    .rtp-game-grid {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      scroll-snap-type: x proximity;
+    }
+    .rtp-game-grid::-webkit-scrollbar,
+    .rtp-base-grid::-webkit-scrollbar { display: none; }
+    .rtp-game-card {
+      min-width: 0;
+      flex: 0 0 calc((100% - 84px) / 7);
+      scroll-snap-align: start;
+    }
+    .rtp-carousel { position: relative; min-width: 0; }
+    .rtp-carousel-arrow {
+      position: absolute;
+      top: 50%;
+      z-index: 2;
+      display: grid;
+      width: 32px;
+      height: 32px;
+      margin-top: -16px;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(25, 26, 31, .9);
+      color: #f7f7f8;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+      cursor: pointer;
+    }
+    .rtp-carousel-arrow[data-direction="previous"] { left: -12px; }
+    .rtp-carousel-arrow[data-direction="next"] { right: -12px; }
+    .rtp-carousel-arrow[hidden] { display: none; }
+    .rtp-carousel-arrow:hover { background: rgba(25, 26, 31, 1); }
+    .rtp-carousel-arrow svg { width: 18px; height: 18px; fill: currentColor; }
+    .rtp-card-link { display: block; border-radius: 8px; }
+    .rtp-game-image,
+    .rtp-game-fallback {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      border: 0;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      object-fit: cover;
+      overflow: hidden;
+    }
+    .rtp-game-fallback { display: grid; place-items: center; color: var(--rtp-muted); }
+    .rtp-game-fallback svg { width: 34%; height: 34%; fill: currentColor; opacity: .7; }
+    .rtp-game-name {
+      display: -webkit-box;
+      max-height: 34px;
+      margin: 5px 0 3px;
+      padding: 0;
+      overflow: hidden;
+      color: var(--rtp-page-text);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .rtp-game-meta {
+      display: flex;
+      min-height: 18px;
+      align-items: center;
+      margin: 0;
+      color: var(--rtp-default);
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 16px;
+    }
+    .rtp-game-metric { display: inline-flex; min-width: 0; align-items: center; }
+    .rtp-game-metric--rating { margin-right: 10px; }
+    .rtp-game-metric svg { width: 14px; height: 14px; margin-right: 2px; flex: 0 0 auto; fill: currentColor; fill-rule: evenodd; }
+    .rtp-game-details { display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 5px; color: var(--rtp-muted); font-size: 11px; }
+    .rtp-game-details span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rtp-game-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .rtp-game-actions .rtp-button { min-height: 32px; padding: 0 8px; font-size: 12px; flex: 1; }
+    .rtp-experience-switcher { position: relative; }
+    .rtp-experience-slide {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 24px;
+      min-height: 360px;
+      padding: 24px;
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+      background: var(--rtp-surface-raised);
+    }
+    .rtp-experience-slide-visual { display: grid; min-width: 0; place-items: center; }
+    .rtp-experience-slide-image,
+    .rtp-experience-slide-visual .rtp-game-fallback {
+      display: block;
+      width: min(100%, 320px);
+      aspect-ratio: 1;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+    .rtp-experience-slide-copy { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
+    .rtp-experience-slide-copy h3 { margin: 0; color: var(--rtp-page-text); font-size: 24px; line-height: 1.25; }
+    .rtp-experience-slide-description {
+      display: -webkit-box;
+      margin: 10px 0 18px;
+      overflow: hidden;
+      color: var(--rtp-default);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 4;
+    }
+    .rtp-experience-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0 0 18px;
+      border-top: 1px solid var(--rtp-border);
+      border-bottom: 1px solid var(--rtp-border);
+    }
+    .rtp-experience-stat { min-width: 0; padding: 12px 8px 12px 0; }
+    .rtp-experience-stat:nth-child(even) { padding-left: 16px; border-left: 1px solid var(--rtp-border); }
+    .rtp-experience-stat:nth-child(n + 3) { border-top: 1px solid var(--rtp-border); }
+    .rtp-experience-stat dt { color: var(--rtp-muted); font-size: 12px; }
+    .rtp-experience-stat dd { margin: 3px 0 0; overflow: hidden; color: var(--rtp-page-text); font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .rtp-experience-slide-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .rtp-experience-position { color: var(--rtp-muted); font-size: 13px; }
+    .rtp-experience-nav {
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      left: -18px;
+      z-index: 2;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    .rtp-experience-nav button {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      color: var(--rtp-page-text);
+      cursor: pointer;
+      pointer-events: auto;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
+    }
+    .rtp-experience-nav button:disabled { opacity: .4; cursor: default; }
+    .rtp-experience-nav svg { width: 20px; height: 20px; fill: currentColor; }
+    .rtp-creations-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 18px; }
+    .rtp-friends {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      scroll-snap-type: x proximity;
+    }
+    .rtp-friends::-webkit-scrollbar { display: none; }
+    .rtp-friend { min-width: 0; flex: 0 0 80px; margin: 0 3px 14px; border-radius: 8px; text-align: center; scroll-snap-align: start; }
+    .rtp-friend-avatar,
+    .rtp-friend .rtp-avatar-fallback { width: 100%; height: auto; aspect-ratio: 1; margin: 0 auto; border: 0; object-fit: cover; }
+    .rtp-friend-avatar { border-radius: 50%; }
+    .rtp-friend-name { display: flex; min-width: 0; max-width: 86px; align-items: center; justify-content: center; gap: 2px; margin-top: 4px; color: var(--rtp-page-text); font-size: .75em; font-weight: 400; }
+    .rtp-friend-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rtp-mini-verified { display: inline-grid; width: 1em; height: 1em; flex: 0 0 auto; place-items: center; color: #335fff; }
+    .rtp-mini-verified svg { display: block; width: 100%; height: 100%; }
+    .rtp-base-grid {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      scroll-snap-type: x proximity;
+    }
+    .rtp-base-tile-visual {
+      position: relative;
+      display: block;
+    }
+    .rtp-base-tile-overlay {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      display: flex;
+      height: 22px;
+      max-width: calc(100% - 10px);
+      align-items: center;
+      padding: 0 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(18, 18, 21, .88);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-base-tile {
+      min-width: 0;
+      flex: 0 0 calc((100% - 84px) / 7);
+      scroll-snap-align: start;
+    }
+    .rtp-base-tile-image,
+    .rtp-base-fallback {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      border: 0;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      object-fit: cover;
+      overflow: hidden;
+    }
+    .rtp-base-fallback { display: grid; place-items: center; color: var(--rtp-muted); }
+    .rtp-base-fallback svg { width: 34%; height: 34%; fill: currentColor; opacity: .7; }
+    .rtp-base-tile-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      margin-top: 8px;
+      color: var(--rtp-page-text);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .rtp-base-tile-name {
+      display: -webkit-box;
+      min-width: 0;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .rtp-base-tile-meta {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--rtp-muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-base-tile-meta svg:not(.rtp-robux-icon) { width: 13px; height: 13px; flex: 0 0 auto; fill: currentColor; }
+    .rtp-robux-icon {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin-right: -2px;
+      margin-bottom: 2px;
+      color: #606162;
+      fill: currentColor;
+    }
+    :host([data-rsl-theme="dark"]) .rtp-robux-icon {
+      color: #bdbebe;
+    }
+    .rtp-base-tile--item .rtp-base-tile-title {
+      margin-bottom: 4px;
+    }
+    .rtp-base-tile--item .rtp-base-tile-meta {
+      gap: 2px;
+      margin-top: 0;
+    }
+    .rtp-base-tile--item .rtp-base-tile-meta svg:not(.rtp-robux-icon) { width: 14px; height: 14px; margin-left: -2px; }
+    .rtp-empty { padding: 18px 0 4px; color: var(--rtp-muted); text-align: center; }
+    .rtp-error-card { max-width: 970px; margin: 0 auto 12px; padding: 20px; text-align: left; }
+    .rtp-error-card h1 { margin: 0 0 7px; font-size: 24px; }
+    .rtp-error-card p { margin: 0 0 20px; color: var(--rtp-muted); }
+    .rtp-error-actions { display: flex; justify-content: flex-start; gap: 8px; }
+    .rtp-skeleton { overflow: hidden; }
+    .rtp-skeleton-block {
+      background: linear-gradient(90deg, var(--rtp-surface-raised), var(--rtp-surface-hover), var(--rtp-surface-raised));
+      background-size: 220% 100%;
+      animation: rtp-shimmer 1.4s linear infinite;
+    }
+    .rtp-skeleton-cover { display: block; height: 300px; border-radius: 8px; }
+    .rtp-skeleton-lines { padding: 20px 24px; }
+    .rtp-skeleton-line { height: 18px; margin-top: 12px; border-radius: 6px; }
+    .rtp-skeleton-line:first-child { width: 36%; margin-top: 0; height: 28px; }
+    .rtp-skeleton-line:last-child { width: 62%; }
+    .rtp-status-message { position: fixed; right: 22px; bottom: 22px; z-index: 2; max-width: 360px; padding: 12px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.28); }
+    @keyframes rtp-shimmer { to { background-position: -220% 0; } }
+    @media (prefers-reduced-motion: reduce) { .rtp-skeleton-block { animation: none; } }
+    @media (max-width: 900px) {
+      .rtp-game-card,
+      .rtp-base-tile { flex-basis: calc((100% - 42px) / 4); }
+      .rtp-creations-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .rtp-shell { padding: 16px 15px 28px; }
+      .rtp-hero { margin: 0; padding: 0; }
+      .rtp-cover { height: 300px; }
+      .rtp-profile-header-overlay { margin-top: -21px; gap: 16px; padding-bottom: 20px; }
+      .rtp-hero-main { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; min-height: 88px; padding: 0; }
+      .rtp-headshot-wrap, .rtp-headshot, .rtp-avatar-fallback { width: 88px; height: 88px; }
+      .rtp-name-row h1 { font-size: 20px; line-height: 1.2; }
+      .rtp-username { font-size: 14px; }
+      .rtp-actions { position: static; width: 100%; max-width: none; align-items: stretch; }
+      .rtp-action-row { justify-content: flex-end; }
+      .rtp-actions .rtp-button { flex: 0 1 auto; }
+      .rtp-social { gap: 6px; }
+      .rtp-social a,
+      .rtp-social button { padding: 0 10px; }
+      .rtp-profile-details-grid { gap: 6px 16px; }
+      .rtp-tabs { margin: 0; }
+      .rtp-panel { padding-right: 0; padding-left: 0; }
+      .rtp-tab { flex: 1; min-width: 0; }
+      .rtp-detail-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .rtp-detail-row:nth-child(odd) { border-left: 0; }
+      .rtp-detail-row:nth-child(n + 3) { border-top: 1px solid var(--rtp-border); }
+      .rtp-game-card,
+      .rtp-base-tile { flex-basis: calc((100% - 14px) / 2); }
+      .rtp-experience-slide { grid-template-columns: 1fr; min-height: 0; padding: 16px; }
+      .rtp-experience-slide-image,
+      .rtp-experience-slide-visual .rtp-game-fallback { width: min(100%, 280px); }
+      .rtp-creations-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 543px) {
+      .rtp-game-metric svg { width: 12px; height: 12px; }
+    }
+  `;
+
+  function normalizeEnhancedProfileId(value) {
+    const id = String(value ?? "");
+    return /^[1-9]\d{0,19}$/.test(id) ? id : null;
+  }
+
+  function parseEnhancedProfileRoute(
+    rawUrl = enhancedProfileRouteUrlForTests || location.href
+  ) {
+    let url;
+    try {
+      url = new URL(rawUrl, "https://www.roblox.com");
+    } catch {
+      return null;
+    }
+    if (url.origin !== "https://www.roblox.com") return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (
+      segments.length > 0 &&
+      ENHANCED_PROFILE_LOCALE_SEGMENTS.has(segments[0].toLowerCase())
+    ) {
+      segments.shift();
+    }
+    if (
+      segments.length < 2 ||
+      segments.length > 3 ||
+      segments[0].toLowerCase() !== "users" ||
+      (segments.length === 3 && segments[2].toLowerCase() !== "profile")
+    ) {
+      return null;
+    }
+    const userId = normalizeEnhancedProfileId(segments[1]);
+    if (!userId) return null;
+    return {
+      userId,
+      standardView:
+        url.searchParams.get(ENHANCED_PROFILE_STANDARD_QUERY) === "standard"
+    };
+  }
+
+  function getEnhancedProfileUrlWithoutStandardQuery(
+    rawUrl = enhancedProfileRouteUrlForTests || location.href
+  ) {
+    let url;
+    try {
+      url = new URL(rawUrl, "https://www.roblox.com");
+    } catch {
+      return null;
+    }
+    url.searchParams.delete(ENHANCED_PROFILE_STANDARD_QUERY);
+    return url.href;
+  }
+
+  function consumeEnhancedProfileStandardQuery() {
+    const cleanUrl = getEnhancedProfileUrlWithoutStandardQuery();
+    if (!cleanUrl) return null;
+    if (enhancedProfileRouteUrlForTests) {
+      enhancedProfileRouteUrlForTests = cleanUrl;
+      return cleanUrl;
+    }
+    try {
+      if (cleanUrl !== location.href) {
+        history.replaceState(history.state, "", cleanUrl);
+      }
+    } catch {
+      // The in-memory mode still makes the switch work if history is blocked.
+    }
+    return cleanUrl;
+  }
+
+  function getEnhancedProfileEffectiveRoute() {
+    const route = parseEnhancedProfileRoute();
+    if (!route) {
+      enhancedProfileStandardViewUserId = null;
+      return null;
+    }
+    if (route.standardView) {
+      enhancedProfileStandardViewUserId = route.userId;
+      consumeEnhancedProfileStandardQuery();
+      return { ...route, standardView: true };
+    }
+    if (
+      enhancedProfileStandardViewUserId &&
+      enhancedProfileStandardViewUserId !== route.userId
+    ) {
+      enhancedProfileStandardViewUserId = null;
+    }
+    return {
+      ...route,
+      standardView: enhancedProfileStandardViewUserId === route.userId
+    };
+  }
+
+  function isSafeEnhancedProfileImageUrl(rawValue) {
+    if (typeof rawValue !== "string" || !rawValue) return false;
+    try {
+      const url = new URL(rawValue);
+      return (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.port &&
+        (url.hostname === "rbxcdn.com" || url.hostname.endsWith(".rbxcdn.com"))
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function normalizeEnhancedProfileText(value, maxLength = 200) {
+    return typeof value === "string"
+      ? value
+          .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+          .trim()
+          .slice(0, maxLength)
+      : "";
+  }
+
+  function normalizeEnhancedProfileDate(value) {
+    if (typeof value !== "string") return null;
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+  }
+
+  function normalizeEnhancedProfileCount(value) {
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      ? value
+      : null;
+  }
+
+  function normalizeEnhancedProfileSection(rawSection, normalizer) {
+    if (
+      !rawSection ||
+      rawSection.status !== "ready" ||
+      !rawSection.data ||
+      typeof rawSection.data !== "object" ||
+      Array.isArray(rawSection.data)
+    ) {
+      return {
+        status: "unavailable",
+        code: normalizeEnhancedProfileText(rawSection?.code, 40) || "UNAVAILABLE"
+      };
+    }
+    try {
+      const data = normalizer(rawSection.data);
+      return data
+        ? { status: "ready", data }
+        : { status: "unavailable", code: "INVALID_RESPONSE" };
+    } catch {
+      return { status: "unavailable", code: "INVALID_RESPONSE" };
+    }
+  }
+
+  function normalizeEnhancedProfileGame(rawValue) {
+    const universeId = normalizeEnhancedProfileId(rawValue?.universeId);
+    const rootPlaceId = normalizeEnhancedProfileId(rawValue?.rootPlaceId);
+    const name = normalizeEnhancedProfileText(rawValue?.name, 200);
+    if (!universeId || !rootPlaceId || !name) return null;
+    const ratingPercent = normalizeEnhancedProfileCount(rawValue?.ratingPercent);
+    return {
+      universeId,
+      rootPlaceId,
+      name,
+      description: normalizeEnhancedProfileText(rawValue?.description, 1_000),
+      playing: normalizeEnhancedProfileCount(rawValue?.playing),
+      visits: normalizeEnhancedProfileCount(rawValue?.visits),
+      favorites: normalizeEnhancedProfileCount(rawValue?.favorites),
+      maxPlayers: normalizeEnhancedProfileCount(rawValue?.maxPlayers),
+      ratingPercent:
+        ratingPercent !== null && ratingPercent <= 100 ? ratingPercent : null,
+      createdAt: normalizeEnhancedProfileDate(rawValue?.createdAt),
+      updatedAt: normalizeEnhancedProfileDate(rawValue?.updatedAt),
+      genre: normalizeEnhancedProfileText(rawValue?.genre, 80),
+      iconUrl: isSafeEnhancedProfileImageUrl(rawValue?.iconUrl)
+        ? rawValue.iconUrl
+        : null
+    };
+  }
+
+  function normalizeEnhancedProfileResponse(response, requestId, userId) {
+    if (
+      !response ||
+      response.ok !== true ||
+      response.requestId !== requestId ||
+      normalizeEnhancedProfileId(response.userId) !== userId ||
+      !response.sections ||
+      typeof response.sections !== "object" ||
+      Array.isArray(response.sections)
+    ) {
+      return null;
+    }
+    const identity = normalizeEnhancedProfileSection(
+      response.sections.identity,
+      (value) => {
+        if (normalizeEnhancedProfileId(value.userId) !== userId) return null;
+        const username = normalizeEnhancedProfileText(value.username, 100);
+        const displayName = normalizeEnhancedProfileText(value.displayName, 100);
+        if (!username && !displayName) return null;
+        return {
+          userId,
+          username: username || displayName,
+          displayName: displayName || username,
+          description: normalizeEnhancedProfileText(value.description, 1_000),
+          createdAt: normalizeEnhancedProfileDate(value.createdAt),
+          isVerified: value.isVerified === true,
+          isRobloxPlus: value.isRobloxPlus === true,
+          isBanned: value.isBanned === true,
+          headshotUrl: isSafeEnhancedProfileImageUrl(value.headshotUrl)
+            ? value.headshotUrl
+            : null,
+          avatarUrl: isSafeEnhancedProfileImageUrl(value.avatarUrl)
+            ? value.avatarUrl
+            : null
+        };
+      }
+    );
+    const presence = normalizeEnhancedProfileSection(
+      response.sections.presence,
+      (value) => {
+        const type = ["offline", "online", "game", "studio"].includes(value.type)
+          ? value.type
+          : null;
+        if (!type) return null;
+        const gameInstanceId = typeof value.gameInstanceId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            value.gameInstanceId
+          )
+          ? value.gameInstanceId
+          : null;
+        return {
+          type,
+          lastLocation: normalizeEnhancedProfileText(value.lastLocation, 160),
+          placeId: normalizeEnhancedProfileId(value.placeId),
+          rootPlaceId: normalizeEnhancedProfileId(value.rootPlaceId),
+          universeId: normalizeEnhancedProfileId(value.universeId),
+          gameInstanceId,
+          lastOnline: normalizeEnhancedProfileDate(value.lastOnline),
+          iconUrl: isSafeEnhancedProfileImageUrl(value.iconUrl)
+            ? value.iconUrl
+            : null
+        };
+      }
+    );
+    const counts = normalizeEnhancedProfileSection(
+      response.sections.counts,
+      (value) => ({
+        friends: normalizeEnhancedProfileCount(value.friends),
+        followers: normalizeEnhancedProfileCount(value.followers),
+        following: normalizeEnhancedProfileCount(value.following),
+        complete: value.complete === true
+      })
+    );
+    const usernames = normalizeEnhancedProfileSection(
+      response.sections.usernames,
+      (value) => ({
+        items: Array.from(
+          new Set(
+            (Array.isArray(value.items) ? value.items : [])
+              .map((item) => normalizeEnhancedProfileText(item, 100))
+              .filter(Boolean)
+          )
+        ).slice(0, 12),
+        hasMore: value.hasMore === true
+      })
+    );
+    const wearing = normalizeEnhancedProfileSection(
+      response.sections.wearing,
+      (value) => ({
+        items: (Array.isArray(value.items) ? value.items : [])
+          .map((item) => {
+            const itemType = item?.itemType === "Bundle" ? "Bundle" : "Asset";
+            const itemId = normalizeEnhancedProfileId(
+              item?.itemId ||
+              (itemType === "Bundle" ? item?.bundleId : item?.assetId)
+            );
+            const name = normalizeEnhancedProfileText(item?.name, 160);
+            return itemId && name
+              ? {
+                  itemType,
+                  itemId,
+                  assetId: itemType === "Asset" ? itemId : null,
+                  bundleId: itemType === "Bundle" ? itemId : null,
+                  name,
+                  price: normalizeEnhancedProfileCount(item?.price),
+                  priceStatus: normalizeEnhancedProfileText(
+                    item?.priceStatus,
+                    40
+                  ),
+                  iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
+                    ? item.iconUrl
+                    : null
+                }
+              : null;
+          })
+          .filter(Boolean)
+          .slice(0, 50),
+        hasMore: value.hasMore === true
+      })
+    );
+    const normalizeGameSection = (value, limit) => {
+      const items = (Array.isArray(value.items) ? value.items : [])
+        .map(normalizeEnhancedProfileGame)
+        .filter(Boolean)
+        .slice(0, limit);
+      const totalCount = normalizeEnhancedProfileCount(value.totalCount);
+      const countIsExact = value.countIsExact === true;
+      if (
+        (countIsExact && totalCount === null) ||
+        (totalCount !== null && totalCount < items.length)
+      ) {
+        return null;
+      }
+      return {
+        items,
+        hasMore: value.hasMore === true,
+        totalCount,
+        countIsExact
+      };
+    };
+    const experiences = normalizeEnhancedProfileSection(
+      response.sections.experiences,
+      (value) => normalizeGameSection(value, 50)
+    );
+    const favorites = normalizeEnhancedProfileSection(
+      response.sections.favorites,
+      (value) => normalizeGameSection(value, 8)
+    );
+    const normalizeFriendItems = (rawItems, limit = 10) =>
+      (Array.isArray(rawItems) ? rawItems : [])
+        .map((item) => {
+          const friendUserId = normalizeEnhancedProfileId(item?.userId);
+          const username = normalizeEnhancedProfileText(item?.username, 100);
+          const displayName = normalizeEnhancedProfileText(
+            item?.displayName,
+            100
+          );
+          return friendUserId && (username || displayName)
+            ? {
+                userId: friendUserId,
+                username: username || displayName,
+                displayName: displayName || username,
+                isVerified: item?.isVerified === true,
+                headshotUrl: isSafeEnhancedProfileImageUrl(item?.headshotUrl)
+                  ? item.headshotUrl
+                  : null
+              }
+            : null;
+        })
+        .filter(Boolean)
+        .slice(0, limit);
+    const friends = normalizeEnhancedProfileSection(
+      response.sections.friends,
+      (value) => ({
+        items: normalizeFriendItems(value.items),
+        hasMore: value.hasMore === true
+      })
+    );
+    const relationships = normalizeEnhancedProfileSection(
+      response.sections.relationships,
+      (value) => {
+        const items = normalizeFriendItems(value.items);
+        const mutualFriendsCount = normalizeEnhancedProfileCount(
+          value.mutualFriendsCount
+        );
+        const mutualGroupsCount = normalizeEnhancedProfileCount(
+          value.mutualGroupsCount
+        );
+        if (
+          mutualFriendsCount === null ||
+          mutualGroupsCount === null ||
+          mutualFriendsCount < items.length ||
+          typeof value.mutualFriendsAvailable !== "boolean" ||
+          typeof value.isFriend !== "boolean" ||
+          typeof value.canChat !== "boolean"
+        ) {
+          return null;
+        }
+        return {
+          mutualFriendsCount,
+          mutualFriendsAvailable: value.mutualFriendsAvailable,
+          profileLimited: value.profileLimited === true,
+          items,
+          hasMore:
+            value.hasMore === true || mutualFriendsCount > items.length,
+          mutualGroupsCount,
+          isFriend: value.isFriend,
+          canChat: value.canChat
+        };
+      }
+    );
+    const communities = normalizeEnhancedProfileSection(
+      response.sections.communities,
+      (value) => {
+        const items = (Array.isArray(value.items) ? value.items : [])
+          .map((item) => {
+            const communityId = normalizeEnhancedProfileId(item?.communityId);
+            const name = normalizeEnhancedProfileText(item?.name, 160);
+            return communityId && name
+              ? {
+                  communityId,
+                  name,
+                  memberCount: normalizeEnhancedProfileCount(item?.memberCount),
+                  role: normalizeEnhancedProfileText(item?.role, 120),
+                  isVerified: item?.isVerified === true,
+                  iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
+                    ? item.iconUrl
+                    : null
+                }
+              : null;
+          })
+          .filter(Boolean)
+          .slice(0, 12);
+        const totalCount = normalizeEnhancedProfileCount(value.totalCount);
+        const ownedCount = normalizeEnhancedProfileCount(value.ownedCount);
+        if (
+          (totalCount !== null && totalCount < items.length) ||
+          (totalCount !== null && ownedCount !== null && ownedCount > totalCount)
+        ) {
+          return null;
+        }
+        return {
+          items,
+          hasMore: value.hasMore === true,
+          totalCount,
+          ownedCount
+        };
+      }
+    );
+    const badges = normalizeEnhancedProfileSection(
+      response.sections.badges,
+      (value) => {
+        const items = (Array.isArray(value.items) ? value.items : [])
+          .map((item) => {
+            const badgeId = normalizeEnhancedProfileId(item?.badgeId);
+            const name = normalizeEnhancedProfileText(item?.name, 160);
+            return badgeId && name
+              ? {
+                  badgeId,
+                  name,
+                  description: normalizeEnhancedProfileText(
+                    item?.description,
+                    1_000
+                  ),
+                  iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
+                    ? item.iconUrl
+                    : null
+                }
+              : null;
+          })
+          .filter(Boolean)
+          .slice(0, 12);
+        const totalCount = normalizeEnhancedProfileCount(value.totalCount);
+        const countIsExact = value.countIsExact === true;
+        const countStatus = value.countStatus === "private"
+          ? "private"
+          : value.countStatus === "pending"
+            ? "pending"
+            : value.countStatus === "ready" || countIsExact
+              ? "ready"
+              : "pending";
+        if (
+          (countIsExact && totalCount === null) ||
+          (totalCount !== null && totalCount < items.length) ||
+          (countStatus === "ready" && !countIsExact) ||
+          (countStatus === "pending" && countIsExact) ||
+          (countStatus === "private" &&
+            (countIsExact || totalCount !== null || items.length > 0))
+        ) {
+          return null;
+        }
+        return {
+          items,
+          hasMore: value.hasMore === true,
+          totalCount,
+          countIsExact,
+          countStatus
+        };
+      }
+    );
+    const inventory = normalizeEnhancedProfileSection(
+      response.sections.inventory,
+      (value) => {
+        const visibility = value.visibility === "public"
+          ? "public"
+          : value.visibility === "limited"
+            ? "limited"
+            : null;
+        return visibility ? { visibility } : null;
+      }
+    );
+    return {
+      userId,
+      fetchedAt:
+        Number.isSafeInteger(response.fetchedAt) && response.fetchedAt > 0
+          ? response.fetchedAt
+          : Date.now(),
+      sections: {
+        identity,
+        presence,
+        counts,
+        usernames,
+        wearing,
+        experiences,
+        favorites,
+        friends,
+        relationships,
+        communities,
+        badges,
+        inventory
+      }
+    };
+  }
+
+  function normalizeEnhancedProfileBadgeCountResponse(
+    response,
+    requestId,
+    userId,
+    minimumCount = 0
+  ) {
+    const totalCount = normalizeEnhancedProfileCount(response?.totalCount);
+    if (
+      !response ||
+      response.ok !== true ||
+      response.requestId !== requestId ||
+      normalizeEnhancedProfileId(response.userId) !== userId ||
+      response.countIsExact !== true ||
+      response.countStatus !== "ready" ||
+      totalCount === null ||
+      totalCount < minimumCount
+    ) {
+      return null;
+    }
+    return {
+      totalCount,
+      countIsExact: true,
+      countStatus: "ready",
+      fetchedAt:
+        Number.isSafeInteger(response.fetchedAt) && response.fetchedAt > 0
+          ? response.fetchedAt
+          : Date.now()
+    };
+  }
+
+  function normalizeEnhancedProfileRelationshipsResponse(
+    response,
+    requestId,
+    userId
+  ) {
+    if (
+      !response ||
+      response.ok !== true ||
+      response.requestId !== requestId ||
+      normalizeEnhancedProfileId(response.userId) !== userId
+    ) {
+      return null;
+    }
+    if (response.section?.status === "not_applicable") {
+      return { status: "not_applicable", code: "OWN_PROFILE" };
+    }
+    return normalizeEnhancedProfileSection(response.section, (value) => {
+      const items = (Array.isArray(value.items) ? value.items : [])
+        .map((item) => {
+          const friendUserId = normalizeEnhancedProfileId(item?.userId);
+          const username = normalizeEnhancedProfileText(item?.username, 100);
+          const displayName = normalizeEnhancedProfileText(
+            item?.displayName,
+            100
+          );
+          return friendUserId && (username || displayName)
+            ? {
+                userId: friendUserId,
+                username: username || displayName,
+                displayName: displayName || username,
+                isVerified: item?.isVerified === true,
+                headshotUrl: isSafeEnhancedProfileImageUrl(item?.headshotUrl)
+                  ? item.headshotUrl
+                  : null
+              }
+            : null;
+        })
+        .filter(Boolean)
+        .slice(0, 10);
+      const mutualFriendsCount = normalizeEnhancedProfileCount(
+        value.mutualFriendsCount
+      );
+      const mutualGroupsCount = normalizeEnhancedProfileCount(
+        value.mutualGroupsCount
+      );
+      if (
+        mutualFriendsCount === null ||
+        mutualGroupsCount === null ||
+        mutualFriendsCount < items.length ||
+        typeof value.mutualFriendsAvailable !== "boolean" ||
+        typeof value.isFriend !== "boolean" ||
+        typeof value.canChat !== "boolean"
+      ) {
+        return null;
+      }
+      return {
+        mutualFriendsCount,
+        mutualFriendsAvailable: value.mutualFriendsAvailable,
+        profileLimited: value.profileLimited === true,
+        items,
+        hasMore: value.hasMore === true || mutualFriendsCount > items.length,
+        mutualGroupsCount,
+        isFriend: value.isFriend,
+        canChat: value.canChat
+      };
+    });
+  }
+
+  function makeEnhancedProfileElement(tagName, className = "", textValue = null) {
+    const isSvg = String(tagName).toLowerCase() === "svg";
+    const element = isSvg && typeof document.createElementNS === "function"
+      ? document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      : document.createElement(tagName);
+    if (className) {
+      if (isSvg) element.setAttribute("class", className);
+      else element.className = className;
+    }
+    if (textValue !== null) element.textContent = String(textValue);
+    return element;
+  }
+
+  function normalizeEnhancedProfileThumbnailTarget(rawTarget) {
+    const kind = typeof rawTarget?.kind === "string" ? rawTarget.kind : "";
+    const id = normalizeEnhancedProfileId(rawTarget?.id);
+    return ENHANCED_PROFILE_THUMBNAIL_KINDS.has(kind) && id
+      ? { kind, id }
+      : null;
+  }
+
+  function drainEnhancedProfileThumbnailQueue() {
+    while (
+      enhancedProfileThumbnailActiveTasks <
+        ENHANCED_PROFILE_THUMBNAIL_CONCURRENCY &&
+      enhancedProfileThumbnailTaskQueue.length > 0
+    ) {
+      const item = enhancedProfileThumbnailTaskQueue.shift();
+      enhancedProfileThumbnailActiveTasks += 1;
+      Promise.resolve()
+        .then(item.task)
+        .then(item.resolve, item.reject)
+        .finally(() => {
+          enhancedProfileThumbnailActiveTasks = Math.max(
+            0,
+            enhancedProfileThumbnailActiveTasks - 1
+          );
+          drainEnhancedProfileThumbnailQueue();
+        });
+    }
+  }
+
+  function enqueueEnhancedProfileThumbnailTask(task) {
+    return new Promise((resolve, reject) => {
+      enhancedProfileThumbnailTaskQueue.push({ task, resolve, reject });
+      drainEnhancedProfileThumbnailQueue();
+    });
+  }
+
+  function requestEnhancedProfileThumbnailUrl(target, forceRefresh = false) {
+    return sendEnhancedProfileMessage({
+      type: ENHANCED_PROFILE_THUMBNAIL_MESSAGE_TYPE,
+      kind: target.kind,
+      id: target.id,
+      forceRefresh
+    }, ENHANCED_PROFILE_THUMBNAIL_REQUEST_TIMEOUT_MS)
+      .then((response) => ({
+        url: isSafeEnhancedProfileImageUrl(response?.url)
+          ? response.url
+          : null,
+        retryable:
+          typeof enhancedProfileMessageSenderForTests !== "function" ||
+          Object.hasOwn(response || {}, "url")
+      }))
+      .catch(() => ({ url: null, retryable: true }));
+  }
+
+  function preloadEnhancedProfileThumbnail(url) {
+    if (!isSafeEnhancedProfileImageUrl(url)) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const preloader = document.createElement("img");
+      let settled = false;
+      const finish = (loaded) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(loaded ? url : null);
+      };
+      const timeoutId = window.setTimeout(
+        () => finish(false),
+        ENHANCED_PROFILE_THUMBNAIL_IMAGE_TIMEOUT_MS
+      );
+      preloader.decoding = "async";
+      preloader.referrerPolicy = "no-referrer";
+      preloader.addEventListener("load", () => finish(true), { once: true });
+      preloader.addEventListener("error", () => finish(false), { once: true });
+      preloader.src = url;
+    });
+  }
+
+  function loadEnhancedProfileThumbnail(rawTarget, forceRefresh = false) {
+    const target = normalizeEnhancedProfileThumbnailTarget(rawTarget);
+    if (!target) return Promise.resolve(null);
+    const key = `${target.kind}:${target.id}`;
+    if (forceRefresh) enhancedProfileThumbnailUrls.delete(key);
+    const cachedUrl = enhancedProfileThumbnailUrls.get(key);
+    if (!forceRefresh && isSafeEnhancedProfileImageUrl(cachedUrl)) {
+      return Promise.resolve(cachedUrl);
+    }
+    if (enhancedProfileThumbnailRequests.has(key)) {
+      return enhancedProfileThumbnailRequests.get(key);
+    }
+    const request = enqueueEnhancedProfileThumbnailTask(async () => {
+      let response = await requestEnhancedProfileThumbnailUrl(
+        target,
+        forceRefresh
+      );
+      let url = await preloadEnhancedProfileThumbnail(response.url);
+      if (!url && response.retryable) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, ENHANCED_PROFILE_THUMBNAIL_RETRY_MS);
+        });
+        response = await requestEnhancedProfileThumbnailUrl(target, true);
+        url = await preloadEnhancedProfileThumbnail(response.url);
+      }
+      if (url) {
+        enhancedProfileThumbnailUrls.set(key, url);
+        while (enhancedProfileThumbnailUrls.size > 300) {
+          enhancedProfileThumbnailUrls.delete(
+            enhancedProfileThumbnailUrls.keys().next().value
+          );
+        }
+      }
+      return url;
+    }).finally(() => enhancedProfileThumbnailRequests.delete(key));
+    enhancedProfileThumbnailRequests.set(key, request);
+    return request;
+  }
+
+  function observeEnhancedProfileThumbnail(element, rawTarget, onUrl) {
+    const target = normalizeEnhancedProfileThumbnailTarget(rawTarget);
+    if (!element || !target || typeof onUrl !== "function") return;
+    const epoch = enhancedProfileLifecycleEpoch;
+    const userId = enhancedProfileRouteUserId;
+    const load = () => {
+      void loadEnhancedProfileThumbnail(target).then((url) => {
+        if (
+          !url ||
+          epoch !== enhancedProfileLifecycleEpoch ||
+          userId !== enhancedProfileRouteUserId ||
+          !element.isConnected
+        ) {
+          return;
+        }
+        onUrl(url);
+      });
+    };
+    element.dataset.rtpThumbnailKind = target.kind;
+    element.dataset.rtpThumbnailId = target.id;
+    if (typeof IntersectionObserver !== "function") {
+      load();
+      return;
+    }
+    if (!enhancedProfileThumbnailObserver) {
+      enhancedProfileThumbnailObserver = new IntersectionObserver(
+        (entries, observer) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            observer.unobserve(entry.target);
+            const callback = entry.target._rtpLoadThumbnail;
+            delete entry.target._rtpLoadThumbnail;
+            callback?.();
+          }
+        },
+        { rootMargin: "240px 0px" }
+      );
+    }
+    element._rtpLoadThumbnail = load;
+    enhancedProfileThumbnailObserver.observe(element);
+  }
+
+  function cleanupEnhancedProfileThumbnailObserver() {
+    enhancedProfileThumbnailObserver?.disconnect();
+    enhancedProfileThumbnailObserver = null;
+  }
+
+  function makeEnhancedProfileHydratedImage({
+    url,
+    alt = "",
+    className,
+    target,
+    fallbackFactory
+  }) {
+    const makeImage = (resolvedUrl) => {
+      const image = makeEnhancedProfileElement("img", className);
+      image.src = resolvedUrl;
+      image.alt = alt;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+      let refreshed = false;
+      image.addEventListener("error", () => {
+        if (refreshed) {
+          image.replaceWith(fallbackFactory());
+          return;
+        }
+        refreshed = true;
+        void loadEnhancedProfileThumbnail(target, true).then((freshUrl) => {
+          if (!image.isConnected) return;
+          if (freshUrl) image.src = freshUrl;
+          else image.replaceWith(fallbackFactory());
+        });
+      });
+      return image;
+    };
+    if (isSafeEnhancedProfileImageUrl(url)) return makeImage(url);
+    const fallback = fallbackFactory();
+    observeEnhancedProfileThumbnail(fallback, target, (resolvedUrl) => {
+      fallback.replaceWith(makeImage(resolvedUrl));
+    });
+    return fallback;
+  }
+
+  function makeEnhancedProfileAvatarFallback(className = "") {
+    const fallback = makeEnhancedProfileElement(
+      "div",
+      `rtp-avatar-fallback ${className}`.trim()
+    );
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.innerHTML =
+      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
+      '<circle cx="12" cy="8" r="4"></circle>' +
+      '<path d="M4 21a8 8 0 0 1 16 0z"></path></svg>';
+    return fallback;
+  }
+
+  function makeEnhancedProfileAvatar(url, alt, className, target = null) {
+    return makeEnhancedProfileHydratedImage({
+      url,
+      alt,
+      className,
+      target,
+      fallbackFactory: () => makeEnhancedProfileAvatarFallback(className)
+    });
+  }
+
+  function makeEnhancedProfileVerifiedIcon(className = "rtp-verified") {
+    const verified = makeEnhancedProfileElement("span", className);
+    verified.setAttribute("aria-label", "Verified");
+    verified.title = "Verified";
+    verified.innerHTML =
+      '<svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">' +
+      '<path d="M7.7 4.5a2 2 0 0 1 2.5-1.4l17.3 4.6a2 2 0 0 1 1.4 2.5l-4.6 17.3a2 2 0 0 1-2.5 1.4L4.5 24.3a2 2 0 0 1-1.4-2.5L7.7 4.5Z" fill="currentColor"></path>' +
+      '<path d="m10 16 4 4 8-8" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+    return verified;
+  }
+
+  function makeEnhancedProfileLandscapeFallback(className) {
+    const fallback = makeEnhancedProfileElement("div", className);
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.innerHTML =
+      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
+      '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14H4V5Zm2 0v9l3.2-3.2a1 1 0 0 1 1.4 0l1.9 1.9 1.4-1.4a1 1 0 0 1 1.4 0L18 14V5H6Zm1.5 3a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0Z"></path></svg>';
+    return fallback;
+  }
+
+  function makeEnhancedProfileGameFallback() {
+    return makeEnhancedProfileLandscapeFallback("rtp-game-fallback");
+  }
+
+  function makeEnhancedProfileGameImage(
+    game,
+    className = "rtp-game-image"
+  ) {
+    return makeEnhancedProfileHydratedImage({
+      url: game.iconUrl,
+      className,
+      target: { kind: "gameUniverse", id: game.universeId },
+      fallbackFactory: makeEnhancedProfileGameFallback
+    });
+  }
+
+  function makeEnhancedProfileBaseFallback() {
+    return makeEnhancedProfileLandscapeFallback("rtp-base-fallback");
+  }
+
+  function makeEnhancedProfileBaseImage(
+    url,
+    alt,
+    target = null,
+    className = "rtp-base-tile-image"
+  ) {
+    return makeEnhancedProfileHydratedImage({
+      url,
+      alt,
+      className,
+      target,
+      fallbackFactory: makeEnhancedProfileBaseFallback
+    });
+  }
+
+  function makeEnhancedProfileMetadataLine(value) {
+    const line = makeEnhancedProfileElement("div", "rtp-base-tile-meta");
+    if (value && typeof value === "object" && value.icon === "robux") {
+      const icon = makeEnhancedProfileElement("svg", "rtp-robux-icon");
+      icon.setAttribute("aria-hidden", "true");
+      icon.setAttribute("viewBox", "0 0 20 20");
+      icon.innerHTML =
+        '<path fill-rule="evenodd" d="M15.6 5.1C16.5 5.6 17 6.6 17 7.6v4.8c0 1-.5 2-1.4 2.5l-4.1 2.4c-.9.5-2 .5-2.9 0l-4.1-2.4C3.5 14.4 3 13.4 3 12.4V7.6c0-1 .6-2 1.4-2.5l4.1-2.4c.9-.5 2-.5 2.9 0l4.2 2.4ZM9 3.6 5 6c-.6.3-1 1-1 1.6v4.7c0 .7.4 1.4 1 1.7l4 2.4c.6.3 1.3.3 1.9 0L15 14c.6-.3 1-1 1-1.7V7.6c0-.6-.4-1.3-1-1.6l-4-2.4c-.6-.3-1.4-.3-2 0Zm2 1.2 3 1.7c.6.4 1 1.1 1 1.8v3.3c0 .8-.4 1.4-1 1.8l-3 1.8c-.6.4-1.4.4-2.1 0L6 13.5c-.6-.4-1-1.1-1-1.8V8.3c0-.7.4-1.4 1-1.8l3-1.7c.6-.3 1.4-.3 2 0ZM8 12h4V8H8v4Z"></path>';
+      line.append(icon);
+      line.append(document.createTextNode(String(value.text || "")));
+    } else {
+      line.textContent = String(value || "");
+    }
+    return line;
+  }
+
+  function makeEnhancedProfileBaseTile({
+    href,
+    name,
+    iconUrl,
+    metadata = [],
+    isVerified = false,
+    overlayLabel = "",
+    variant = "",
+    thumbnailKind = "",
+    thumbnailId = null
+  }) {
+    const tile = makeEnhancedProfileElement(
+      "article",
+      `rtp-base-tile${variant ? ` rtp-base-tile--${variant}` : ""}`
+    );
+    const link = makeEnhancedProfileElement("a");
+    link.href = href;
+    link.title = name;
+    const title = makeEnhancedProfileElement("div", "rtp-base-tile-title");
+    const titleText = makeEnhancedProfileElement("span", "rtp-base-tile-name", name);
+    titleText.title = name;
+    title.append(titleText);
+    if (isVerified) {
+      title.append(makeEnhancedProfileVerifiedIcon("rtp-mini-verified"));
+    }
+    const visual = makeEnhancedProfileElement("span", "rtp-base-tile-visual");
+    visual.append(makeEnhancedProfileBaseImage(
+      iconUrl,
+      "",
+      { kind: thumbnailKind, id: thumbnailId }
+    ));
+    if (overlayLabel) {
+      visual.append(makeEnhancedProfileElement(
+        "span",
+        "rtp-base-tile-overlay",
+        overlayLabel
+      ));
+    }
+    link.append(visual, title);
+    for (const line of metadata.filter(Boolean).slice(0, 2)) {
+      link.append(makeEnhancedProfileMetadataLine(line));
+    }
+    tile.append(link);
+    return tile;
+  }
+
+  function formatEnhancedProfileNumber(value) {
+    if (!Number.isSafeInteger(value) || value < 0) return "—";
+    try {
+      return new Intl.NumberFormat(
+        document.documentElement.lang || navigator.language
+      ).format(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function formatEnhancedProfileCompactNumber(value) {
+    if (!Number.isSafeInteger(value) || value < 0) return "—";
+    try {
+      return new Intl.NumberFormat(
+        document.documentElement.lang || navigator.language,
+        { notation: "compact", maximumFractionDigits: 1 }
+      ).format(value);
+    } catch {
+      return formatEnhancedProfileNumber(value);
+    }
+  }
+
+  function formatEnhancedProfileMemberCount(value) {
+    const formatted = formatEnhancedProfileCompactNumber(value);
+    return Number.isSafeInteger(value) && value >= 1_000
+      ? `${formatted}+`
+      : formatted;
+  }
+
+  function formatEnhancedProfileDate(value, includeTime = false) {
+    const timestamp = Date.parse(value || "");
+    if (!Number.isFinite(timestamp)) return "Unavailable";
+    try {
+      return new Intl.DateTimeFormat(
+        document.documentElement.lang || navigator.language,
+        includeTime
+          ? {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              timeZoneName: "short"
+            }
+          : { dateStyle: "medium" }
+      ).format(new Date(timestamp));
+    } catch {
+      return new Date(timestamp).toLocaleString();
+    }
+  }
+
+  function formatEnhancedProfileAccountAge(value) {
+    const createdAt = Date.parse(value || "");
+    if (!Number.isFinite(createdAt) || createdAt > Date.now()) return "Unavailable";
+    const created = new Date(createdAt);
+    const now = new Date();
+    let totalMonths =
+      (now.getUTCFullYear() - created.getUTCFullYear()) * 12 +
+      now.getUTCMonth() - created.getUTCMonth();
+    const monthAnniversary = new Date(createdAt);
+    monthAnniversary.setUTCMonth(created.getUTCMonth() + totalMonths);
+    if (monthAnniversary > now) totalMonths -= 1;
+    totalMonths = Math.max(0, totalMonths);
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    if (years > 0 && months > 0) return `${years}Y ${months}M`;
+    if (years > 0) return `${years}Y`;
+    if (months > 0) return `${months}M`;
+    const days = Math.max(0, Math.floor((Date.now() - createdAt) / 86_400_000));
+    return `${days}D`;
+  }
+
+  function getEnhancedProfileStandardViewUrl(userId) {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    if (!normalizedUserId) return "https://www.roblox.com/";
+    let url;
+    try {
+      const candidate = new URL(
+        enhancedProfileRouteUrlForTests || location.href
+      );
+      url =
+        candidate.origin === "https://www.roblox.com" &&
+        parseEnhancedProfileRoute(candidate.href)?.userId === normalizedUserId
+        ? candidate
+        : new URL(
+            `/users/${normalizedUserId}/profile`,
+            "https://www.roblox.com"
+          );
+    } catch {
+      url = new URL(
+        `/users/${normalizedUserId}/profile`,
+        "https://www.roblox.com"
+      );
+    }
+    url.searchParams.set(ENHANCED_PROFILE_STANDARD_QUERY, "standard");
+    return url.href;
+  }
+
+  function setEnhancedProfileViewMode(userId, mode) {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    const route = parseEnhancedProfileRoute();
+    if (
+      !normalizedUserId ||
+      !route ||
+      route.userId !== normalizedUserId ||
+      !["standard", "rotool"].includes(mode)
+    ) {
+      return false;
+    }
+    if (mode === "rotool") {
+      cleanupEnhancedProfileNativeReturnAction(true);
+    }
+    enhancedProfileStandardViewUserId =
+      mode === "standard" ? normalizedUserId : null;
+    consumeEnhancedProfileStandardQuery();
+    if (mode === "standard") {
+      cleanupEnhancedProfileFeature({ preserveStandardView: true });
+    }
+    mountEnhancedProfile();
+    return true;
+  }
+
+  function getEnhancedProfileViewerUserId() {
+    const userData = document.querySelector('meta[name="user-data"][data-userid]');
+    return normalizeEnhancedProfileId(userData?.dataset?.userid);
+  }
+
+  function getEnhancedProfileLaunchUrl(placeId, gameInstanceId = null) {
+    const normalizedPlaceId = normalizeEnhancedProfileId(placeId);
+    if (!normalizedPlaceId) return null;
+    const url = new URL("roblox://experiences/start");
+    url.searchParams.set("placeId", normalizedPlaceId);
+    if (
+      typeof gameInstanceId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        gameInstanceId
+      )
+    ) {
+      url.searchParams.set("gameInstanceId", gameInstanceId);
+    }
+    return url.href;
+  }
+
+  function makeEnhancedProfileButton(label, options = {}) {
+    const element = makeEnhancedProfileElement(
+      options.href ? "a" : "button",
+      `rtp-button${options.primary ? " rtp-button--primary" : ""}`,
+      label
+    );
+    if (options.href) {
+      element.href = options.href;
+      if (options.newTab) {
+        element.target = "_blank";
+        element.rel = "noopener noreferrer";
+      }
+    } else {
+      element.type = "button";
+    }
+    if (options.ariaLabel) element.setAttribute("aria-label", options.ariaLabel);
+    if (typeof options.onClick === "function") {
+      element.addEventListener("click", options.onClick);
+    }
+    return element;
+  }
+
+  function isEnhancedProfileInPlaceNavigationClick(event) {
+    return (
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    );
+  }
+
+  function makeEnhancedProfileOverflow(userId) {
+    const details = makeEnhancedProfileElement("details", "rtp-overflow");
+    const summary = makeEnhancedProfileElement("summary");
+    summary.setAttribute("aria-label", "More profile actions");
+    summary.setAttribute("aria-expanded", "false");
+    summary.title = "More";
+    summary.innerHTML =
+      '<svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">' +
+      '<path d="M7.1 14.3c.2-.6.9-.9 1.5-.7l2 .5c.6.2 1 .8.8 1.5l-.5 2c-.2.6-.8 1-1.5.8l-2-.5c-.6-.2-1-.8-.8-1.5l.5-2.1Zm7 0c.2-.6.9-.9 1.5-.7l2 .5c.6.2 1 .8.8 1.5l-.5 2c-.2.6-.8 1-1.5.8l-2-.5c-.6-.2-1-.8-.8-1.5l.5-2.1Zm7 0c.2-.6.9-.9 1.5-.7l2 .5c.6.2 1 .8.8 1.5l-.5 2c-.2.6-.8 1-1.5.8l-2-.5c-.6-.2-1-.8-.8-1.5l.5-2.1Z"></path></svg>';
+    const menu = makeEnhancedProfileElement("div", "rtp-overflow-menu");
+    menu.setAttribute("role", "menu");
+    const standard = makeEnhancedProfileElement(
+      "a",
+      "",
+      "View standard profile"
+    );
+    standard.href = getEnhancedProfileStandardViewUrl(userId);
+    standard.setAttribute("role", "menuitem");
+    standard.addEventListener("click", (event) => {
+      if (!isEnhancedProfileInPlaceNavigationClick(event)) return;
+      event.preventDefault();
+      setEnhancedProfileViewMode(userId, "standard");
+    });
+    menu.append(standard);
+    details.append(summary, menu);
+    summary.addEventListener("click", (event) => {
+      const nativeTrigger = getEnhancedProfileNativeOverflowTrigger();
+      if (
+        !nativeTrigger ||
+        !summary.hasAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      details.open = false;
+      try {
+        positionEnhancedProfileNativeOverflowTrigger();
+        nativeTrigger.click();
+      } catch {
+        details.open = true;
+      }
+    });
+    details.addEventListener("toggle", () => {
+      summary.setAttribute("aria-expanded", String(details.open));
+      enhancedProfileOverflowController?.abort();
+      enhancedProfileOverflowController = null;
+      if (!details.open) return;
+      const controller = new AbortController();
+      enhancedProfileOverflowController = controller;
+      const root = details.getRootNode();
+      root.addEventListener("pointerdown", (event) => {
+        if (!details.isConnected) {
+          controller.abort();
+          return;
+        }
+        if (!event.composedPath().includes(details)) details.open = false;
+      }, { capture: true, signal: controller.signal });
+      window.addEventListener("pointerdown", (event) => {
+        if (!details.isConnected) {
+          controller.abort();
+          return;
+        }
+        const host = root?.host || enhancedProfileHost;
+        if (!host || !event.composedPath().includes(host)) details.open = false;
+      }, { capture: true, signal: controller.signal });
+    });
+    details.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !details.open) return;
+      event.preventDefault();
+      details.open = false;
+      summary.focus({ preventScroll: true });
+    });
+    return details;
+  }
+
+  function setEnhancedProfileStatus(message) {
+    window.clearTimeout(enhancedProfileStatusTimer);
+    enhancedProfileShadowRoot
+      ?.querySelector(".rtp-status-message")
+      ?.remove();
+    if (!message || !enhancedProfileShadowRoot) return;
+    const status = makeEnhancedProfileElement(
+      "div",
+      "rtp-status-message rtp-surface",
+      message
+    );
+    status.setAttribute("role", "status");
+    enhancedProfileShadowRoot.append(status);
+    enhancedProfileStatusTimer = window.setTimeout(() => status.remove(), 3_500);
+  }
+
+  async function copyEnhancedProfileUserId(userId) {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(userId);
+      copied = true;
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = userId;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      try {
+        copied = document.execCommand("copy") === true;
+      } catch {
+        copied = false;
+      }
+      textarea.remove();
+    }
+    setEnhancedProfileStatus(copied ? "User ID copied" : "Could not copy the User ID");
+  }
+
+  function openEnhancedProfileNativeChat() {
+    const candidateSet = new Set();
+    for (const root of enhancedProfileSuppressedRoots) {
+      if (
+        normalizeEnhancedProfileId(root?.dataset?.profileId) !==
+        enhancedProfileRouteUserId
+      ) {
+        continue;
+      }
+      root?.querySelectorAll?.('[id="user-profile-header-Chat"]')
+        .forEach((button) => candidateSet.add(button));
+    }
+    const preferMobile = typeof matchMedia === "function" &&
+      matchMedia("(max-width: 680px)").matches;
+    const candidates = Array.from(candidateSet)
+      .filter((button) =>
+        button?.isConnected &&
+        typeof button.click === "function" &&
+        button.disabled !== true &&
+        button.getAttribute("aria-disabled") !== "true"
+      )
+      .sort((left, right) => {
+        const leftMobile = Boolean(left.closest(".buttons-show-on-mobile"));
+        const rightMobile = Boolean(right.closest(".buttons-show-on-mobile"));
+        return Number(rightMobile === preferMobile) -
+          Number(leftMobile === preferMobile);
+      });
+    const nativeButton = candidates[0] || null;
+    if (!nativeButton) {
+      setEnhancedProfileStatus("Chat is unavailable right now.");
+      return false;
+    }
+    try {
+      nativeButton.click();
+      setEnhancedProfileStatus("Opening chat\u2026");
+      return true;
+    } catch {
+      setEnhancedProfileStatus("Chat is unavailable right now.");
+      return false;
+    }
+  }
+
+  async function joinEnhancedProfileUser(userId, presence, button) {
+    if (
+      !button ||
+      button.disabled ||
+      presence?.type !== "game" ||
+      !presence.placeId ||
+      !presence.gameInstanceId
+    ) {
+      return false;
+    }
+    const requestId = ++enhancedProfileRequestSequence;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    setEnhancedProfileStatus("Checking the current server…");
+    try {
+      const response = await sendEnhancedProfileMessage({
+        type: ENHANCED_PROFILE_JOIN_MESSAGE_TYPE,
+        requestId,
+        userId,
+        placeId: presence.placeId,
+        gameInstanceId: presence.gameInstanceId
+      });
+      if (response?.ok === true && response.requestId === requestId) {
+        setEnhancedProfileStatus("Opening Roblox…");
+        return true;
+      }
+      setEnhancedProfileStatus(
+        response?.code === "NOT_JOINABLE"
+          ? "That user changed or left servers."
+          : "Roblox could not join that exact server."
+      );
+      return false;
+    } catch {
+      setEnhancedProfileStatus("Roblox could not join that exact server.");
+      return false;
+    } finally {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  }
+
+  function makeEnhancedProfileSection(title, link = null) {
+    const section = makeEnhancedProfileElement("section", "rtp-section");
+    const header = makeEnhancedProfileElement("div", "rtp-section-header");
+    const heading = makeEnhancedProfileElement("h2");
+    if (link?.href && link?.placement === "title") {
+      const anchor = makeEnhancedProfileElement(
+        "a",
+        "rtp-section-title-link"
+      );
+      anchor.href = link.href;
+      anchor.append(
+        document.createTextNode(title),
+        makeEnhancedProfileChevronIcon()
+      );
+      heading.append(anchor);
+    } else {
+      heading.textContent = title;
+    }
+    header.append(heading);
+    if (link?.href && link?.label) {
+      const anchor = makeEnhancedProfileElement("a", "rtp-section-link", link.label);
+      anchor.href = link.href;
+      anchor.append(makeEnhancedProfileChevronIcon());
+      header.append(anchor);
+    }
+    section.append(header);
+    return section;
+  }
+
+  function makeEnhancedProfileChevronIcon() {
+    const icon = makeEnhancedProfileElement("svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("focusable", "false");
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = '<path d="m9 4 8 8-8 8-1.5-1.5L14 12 7.5 5.5 9 4Z"></path>';
+    return icon;
+  }
+
+  function appendEnhancedProfileEmpty(section, text) {
+    section.append(makeEnhancedProfileElement("div", "rtp-empty", text));
+  }
+
+  function cleanupEnhancedProfileCarouselObservers() {
+    for (const observer of enhancedProfileCarouselObservers) {
+      observer.disconnect();
+    }
+    enhancedProfileCarouselObservers.clear();
+  }
+
+  function appendEnhancedProfileCarousel(section, track, itemCount) {
+    if (itemCount <= 1) {
+      section.append(track);
+      return;
+    }
+    const wrapper = makeEnhancedProfileElement("div", "rtp-carousel");
+    const makeArrow = (direction) => {
+      const button = makeEnhancedProfileElement("button", "rtp-carousel-arrow");
+      button.type = "button";
+      button.dataset.direction = direction;
+      button.setAttribute(
+        "aria-label",
+        direction === "next" ? "Show more items" : "Show previous items"
+      );
+      button.innerHTML = direction === "next"
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 4 8 8-8 8-1.5-1.5L14 12 7.5 5.5 9 4Z"></path></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 1.5 1.5L10 12l6.5 6.5L15 20l-8-8 8-8Z"></path></svg>';
+      return button;
+    };
+    const previous = makeArrow("previous");
+    const next = makeArrow("next");
+    previous.hidden = true;
+    const sync = () => {
+      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+      previous.hidden = track.scrollLeft <= 2;
+      next.hidden = track.scrollLeft >= maxScroll - 2;
+    };
+    previous.addEventListener("click", () => {
+      track.scrollBy({ left: -track.clientWidth, behavior: "smooth" });
+    });
+    next.addEventListener("click", () => {
+      track.scrollBy({ left: track.clientWidth, behavior: "smooth" });
+    });
+    track.addEventListener("scroll", sync, { passive: true });
+    wrapper.append(track, previous, next);
+    section.append(wrapper);
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(sync);
+      observer.observe(track);
+      observer.observe(wrapper);
+      enhancedProfileCarouselObservers.add(observer);
+    }
+    queueMicrotask(sync);
+    window.requestAnimationFrame(sync);
+  }
+
+  function makeEnhancedProfileDetailRow(label, value, title = "") {
+    const row = makeEnhancedProfileElement("div", "rtp-detail-row");
+    const term = makeEnhancedProfileElement("dt", "", label);
+    const detail = makeEnhancedProfileElement("dd", "", value);
+    if (title) detail.title = title;
+    row.append(term, detail);
+    return row;
+  }
+
+  function makeEnhancedProfileGameMetric(type, textValue) {
+    const metric = makeEnhancedProfileElement(
+      "span",
+      `rtp-game-metric rtp-game-metric--${type}`
+    );
+    metric.innerHTML = type === "rating"
+      ? '<svg viewBox="0 32 16 16" focusable="false" aria-hidden="true"><path fill-opacity=".7" d="m13.203 38.812-1.988.008a1.29 1.29 0 0 0-1.115.975L8.568 46.14a1.305 1.305 0 0 0 1.185 1.609l1.932-.003c.853 0 1.588-.603 1.756-1.44l1.084-5.406a1.79 1.79 0 0 0-1.322-2.088m-5.897 7.094 1.532-6.345c.065-.271.179-.52.327-.743l-1.098-.005.818-4.444A2 2 0 0 0 6.918 32a.775.775 0 0 0-.752.589l-1.225 5.093c-.179.704-.516 1.151-1.152 1.151A1.79 1.79 0 0 0 2 40.623v5.343c0 .989.801 1.79 1.789 1.79l3.87-.006a2.28 2.28 0 0 1-.353-1.844"></path></svg>'
+      : '<svg viewBox="0 48 16 16" focusable="false" aria-hidden="true"><path fill-opacity=".7" d="M14.85 62c0-2-1.71-3.84-3.16-5a5.9 5.9 0 0 0-1.74-1 3.05 3.05 0 0 0 2.18-2.92v-2a3 3 0 0 0-3.05-3H7a3.05 3.05 0 0 0-3 3.03v2a3 3 0 0 0 2.2 2.92 6.4 6.4 0 0 0-1.71.97C3 58.13 1.28 60 1.27 62v.14c0 .48 3.41 1.81 6.79 1.81s6.79-1.33 6.79-1.81zm-7 .42a.64.64 0 0 1-1-.51v-3.63a.64.64 0 0 1 1-.51L11 60.1z"></path></svg>';
+    metric.append(document.createTextNode(String(textValue)));
+    const accessibleLabel = type === "rating"
+      ? `${textValue} rating`
+      : `${textValue} active players`;
+    metric.setAttribute("aria-label", accessibleLabel);
+    metric.title = accessibleLabel;
+    return metric;
+  }
+
+  function makeEnhancedProfileGameCard(game, advanced = false) {
+    const card = makeEnhancedProfileElement("article", "rtp-game-card");
+    const link = makeEnhancedProfileElement("a", "rtp-card-link");
+    link.href = `/games/${game.rootPlaceId}`;
+    link.title = `View ${game.name}`;
+    link.append(makeEnhancedProfileGameImage(game));
+    const gameName = makeEnhancedProfileElement("div", "rtp-game-name", game.name);
+    gameName.title = game.name;
+    link.append(gameName);
+    const meta = makeEnhancedProfileElement("div", "rtp-game-meta");
+    if (game.ratingPercent !== null) {
+      meta.append(makeEnhancedProfileGameMetric("rating", `${game.ratingPercent}%`));
+    }
+    if (game.playing !== null) {
+      meta.append(makeEnhancedProfileGameMetric(
+        "playing",
+        formatEnhancedProfileCompactNumber(game.playing)
+      ));
+    }
+    if (!meta.childElementCount) meta.append(makeEnhancedProfileElement("span", "", "Public experience"));
+    link.append(meta);
+    card.append(link);
+
+    if (advanced) {
+      const details = makeEnhancedProfileElement("div", "rtp-game-details");
+      details.append(
+        makeEnhancedProfileElement(
+          "span",
+          "",
+          `${formatEnhancedProfileCompactNumber(game.visits)} visits`
+        ),
+        makeEnhancedProfileElement(
+          "span",
+          "",
+          `${formatEnhancedProfileCompactNumber(game.favorites)} favorites`
+        )
+      );
+      if (game.updatedAt) {
+        const updated = makeEnhancedProfileElement(
+          "span",
+          "",
+          `Updated ${formatEnhancedProfileDate(game.updatedAt)}`
+        );
+        updated.title = game.updatedAt;
+        details.append(updated);
+      }
+      if (game.maxPlayers !== null) {
+        details.append(makeEnhancedProfileElement(
+          "span",
+          "",
+          `${formatEnhancedProfileNumber(game.maxPlayers)} max players`
+        ));
+      }
+      card.append(details);
+      const launchUrl = getEnhancedProfileLaunchUrl(game.rootPlaceId);
+      if (launchUrl) {
+        const actions = makeEnhancedProfileElement("div", "rtp-game-actions");
+        actions.append(makeEnhancedProfileButton("Play", {
+          href: launchUrl,
+          primary: true,
+          ariaLabel: `Play ${game.name}`
+        }));
+        card.append(actions);
+      }
+    }
+    return card;
+  }
+
+  function appendEnhancedProfileGames(section, gameSection, advanced = false) {
+    if (gameSection.status !== "ready") {
+      appendEnhancedProfileEmpty(section, "Roblox could not load these experiences right now.");
+      return;
+    }
+    if (gameSection.data.items.length === 0) {
+      appendEnhancedProfileEmpty(section, "No public experiences to show.");
+      return;
+    }
+    const grid = makeEnhancedProfileElement("div", "rtp-game-grid");
+    grid.append(...gameSection.data.items.map((game) =>
+      makeEnhancedProfileGameCard(game, advanced)
+    ));
+    appendEnhancedProfileCarousel(
+      section,
+      grid,
+      gameSection.data.items.length
+    );
+  }
+
+  function appendEnhancedProfileFriendTiles(section, items) {
+    const grid = makeEnhancedProfileElement("div", "rtp-friends");
+    for (const friend of items) {
+      const link = makeEnhancedProfileElement("a", "rtp-friend");
+      link.href = `/users/${friend.userId}/profile`;
+      link.title = `${friend.displayName} (@${friend.username})`;
+      link.append(
+        makeEnhancedProfileAvatar(
+          friend.headshotUrl,
+          friend.displayName,
+          "rtp-friend-avatar",
+          { kind: "profile", id: friend.userId }
+        )
+      );
+      const name = makeEnhancedProfileElement(
+        "div",
+        "rtp-friend-name"
+      );
+      name.append(makeEnhancedProfileElement(
+        "span",
+        "rtp-friend-name-text",
+        friend.displayName
+      ));
+      if (friend.isVerified) {
+        name.append(makeEnhancedProfileVerifiedIcon("rtp-mini-verified"));
+      }
+      link.append(name);
+      grid.append(link);
+    }
+    appendEnhancedProfileCarousel(
+      section,
+      grid,
+      items.length
+    );
+  }
+
+  function makeEnhancedProfileFriendsSection(
+    userId,
+    friendSection,
+    friendCount = null
+  ) {
+    const title = friendCount !== null
+      ? `Friends (${formatEnhancedProfileNumber(friendCount)})`
+      : "Friends";
+    const section = makeEnhancedProfileSection(title, {
+      href: `/users/${userId}/friends#!/friends`,
+      label: "See All"
+    });
+    if (friendSection.status !== "ready") {
+      return null;
+    }
+    if (friendSection.data.items.length === 0) {
+      return null;
+    }
+    appendEnhancedProfileFriendTiles(section, friendSection.data.items);
+    return section;
+  }
+
+  function makeEnhancedProfileWearingSection(wearingSection) {
+    const section = makeEnhancedProfileSection("Currently Wearing");
+    if (wearingSection.status !== "ready") {
+      return null;
+    }
+    if (wearingSection.data.items.length === 0) {
+      return null;
+    }
+    const grid = makeEnhancedProfileElement("div", "rtp-base-grid");
+    grid.append(...wearingSection.data.items.map((item) => {
+      const isBundle = item.itemType === "Bundle";
+      const priceMetadata = item.priceStatus
+        ? item.priceStatus
+        : item.price !== null && item.price > 0
+          ? {
+              icon: "robux",
+              text: formatEnhancedProfileNumber(item.price)
+            }
+          : item.price === 0
+            ? "Free"
+            : null;
+      return makeEnhancedProfileBaseTile({
+        href: isBundle
+          ? `/bundles/${item.itemId}`
+          : `/catalog/${item.itemId}`,
+        name: item.name,
+        iconUrl: item.iconUrl,
+        variant: "item",
+        thumbnailKind: isBundle ? "bundle" : "avatarAsset",
+        thumbnailId: item.itemId,
+        metadata: [priceMetadata]
+      });
+    }));
+    appendEnhancedProfileCarousel(
+      section,
+      grid,
+      wearingSection.data.items.length
+    );
+    return section;
+  }
+
+  function makeEnhancedProfileCommunitiesSection(userId, communitySection) {
+    const section = makeEnhancedProfileSection("Communities", {
+      href: `/users/${userId}/groups`,
+      placement: "title"
+    });
+    if (communitySection.status !== "ready") {
+      return null;
+    }
+    if (communitySection.data.items.length === 0) {
+      return null;
+    }
+    const grid = makeEnhancedProfileElement("div", "rtp-base-grid");
+    grid.append(...communitySection.data.items.map((community) =>
+      makeEnhancedProfileBaseTile({
+        href: `/communities/${community.communityId}`,
+        name: community.name,
+        iconUrl: community.iconUrl,
+        variant: "community",
+        thumbnailKind: "community",
+        thumbnailId: community.communityId,
+        isVerified: community.isVerified,
+        overlayLabel: community.role === "Owner" ? "Owner" : "",
+        metadata: [
+          community.memberCount !== null
+            ? `${formatEnhancedProfileMemberCount(community.memberCount)} Members`
+            : "",
+          community.role
+        ]
+      })
+    ));
+    appendEnhancedProfileCarousel(
+      section,
+      grid,
+      communitySection.data.items.length
+    );
+    return section;
+  }
+
+  function makeEnhancedProfileBadgesSection(userId, badgeSection) {
+    const section = makeEnhancedProfileSection("Badges", {
+      href: `/users/${userId}/inventory/#!/badges`,
+      placement: "title"
+    });
+    if (badgeSection.status !== "ready") {
+      return null;
+    }
+    if (badgeSection.data.items.length === 0) {
+      return null;
+    }
+    const grid = makeEnhancedProfileElement("div", "rtp-base-grid");
+    grid.append(...badgeSection.data.items.map((badge) =>
+      makeEnhancedProfileBaseTile({
+        href: `/badges/${badge.badgeId}`,
+        name: badge.name,
+        iconUrl: badge.iconUrl,
+        variant: "badge",
+        thumbnailKind: "badge",
+        thumbnailId: badge.badgeId
+      })
+    ));
+    appendEnhancedProfileCarousel(
+      section,
+      grid,
+      badgeSection.data.items.length
+    );
+    return section;
+  }
+
+  function getEnhancedProfilePresenceLabel(presenceSection) {
+    if (presenceSection.status !== "ready") return "Presence unavailable";
+    const presence = presenceSection.data;
+    if (presence.type === "game") {
+      return presence.lastLocation ? `In ${presence.lastLocation}` : "In an experience";
+    }
+    if (presence.type === "studio") return "In Roblox Studio";
+    if (presence.type === "online") return "Online";
+    return "Offline";
+  }
+
+  function getEnhancedProfileCollectionCountLabel(section) {
+    if (section?.status !== "ready" || !Array.isArray(section.data?.items)) {
+      return null;
+    }
+    if (
+      Number.isSafeInteger(section.data.totalCount) &&
+      section.data.totalCount >= 0
+    ) {
+      return `${formatEnhancedProfileNumber(section.data.totalCount)}${
+        section.data.countIsExact === false ? "+" : ""
+      }`;
+    }
+    return `${formatEnhancedProfileNumber(section.data.items.length)}${
+      section.data.hasMore ? "+" : ""
+    }`;
+  }
+
+  function getEnhancedProfileBadgeCountLabel(section) {
+    if (section?.status !== "ready" || !Array.isArray(section.data?.items)) {
+      return null;
+    }
+    const hasVerifiedCount = Number.isSafeInteger(section.data.totalCount) &&
+      section.data.totalCount >= 0;
+    if (section.data.countStatus === "private") return "Private";
+    if (section.data.countStatus === "unavailable") {
+      return hasVerifiedCount
+        ? `${formatEnhancedProfileNumber(section.data.totalCount)}+`
+        : "Unavailable";
+    }
+    if (
+      section.data.countStatus === "pending" ||
+      section.data.countIsExact !== true
+    ) {
+      return hasVerifiedCount
+        ? `${formatEnhancedProfileNumber(section.data.totalCount)}+`
+        : "Counting\u2026";
+    }
+    return hasVerifiedCount
+      ? formatEnhancedProfileNumber(section.data.totalCount)
+      : "Unavailable";
+  }
+
+  function getEnhancedProfileInventoryLabel(inventorySection) {
+    if (inventorySection?.status !== "ready") return null;
+    if (inventorySection.data.visibility === "public") return "Public";
+    if (inventorySection.data.visibility === "limited") return "Limited";
+    return null;
+  }
+
+  function makeEnhancedProfileHeaderDetail(label, value, options = {}) {
+    if (value === null || value === undefined || value === "") return null;
+    const row = makeEnhancedProfileElement(
+      "div",
+      `rtp-profile-detail${options.wide ? " rtp-profile-detail--wide" : ""}`
+    );
+    const term = makeEnhancedProfileElement("dt", "", label);
+    const detail = makeEnhancedProfileElement("dd", "", value);
+    if (options.title) detail.title = options.title;
+    row.append(term, detail);
+    return row;
+  }
+
+  function isEnhancedProfileLimited(data) {
+    const relationships = data?.sections?.relationships;
+    if (
+      relationships?.status === "ready" &&
+      relationships.data.profileLimited === true
+    ) {
+      return true;
+    }
+    if (
+      data?.sections?.badges?.status === "ready" &&
+      data.sections.badges.data.countStatus === "private"
+    ) {
+      return true;
+    }
+    return ["friends", "communities", "badges"].some(
+      (sectionName) => data?.sections?.[sectionName]?.code === "PRIVATE"
+    );
+  }
+
+  function makeEnhancedProfileHeaderDetails(data) {
+    const identity = data.sections.identity.data;
+    const viewerUserId = getEnhancedProfileViewerUserId();
+    const isForeignProfile = Boolean(
+      viewerUserId && viewerUserId !== identity.userId
+    );
+    const relationships = data.sections.relationships;
+    const communities = data.sections.communities;
+    const details = makeEnhancedProfileElement("div", "rtp-profile-details");
+    details.setAttribute("aria-label", "Profile details");
+    const grid = makeEnhancedProfileElement("dl", "rtp-profile-details-grid");
+    const badgeDetail = makeEnhancedProfileHeaderDetail(
+      "Badges",
+      getEnhancedProfileBadgeCountLabel(data.sections.badges)
+    );
+    if (badgeDetail) {
+      const value = badgeDetail.querySelector("dd");
+      value.dataset.rtpProfileBadgeCount = "";
+      value.setAttribute("aria-live", "polite");
+      enhancedProfileBadgeCountDisplayedValue =
+        Number.isSafeInteger(data.sections.badges.data.totalCount)
+          ? data.sections.badges.data.totalCount
+          : null;
+      if (data.sections.badges.data.countStatus === "pending") {
+        value.setAttribute("aria-busy", "true");
+        value.title = "Counting the exact badge total";
+      }
+    }
+    const rows = [
+      identity.createdAt
+        ? makeEnhancedProfileHeaderDetail(
+            "Account age",
+            formatEnhancedProfileAccountAge(identity.createdAt)
+          )
+        : null,
+      isForeignProfile && relationships.status === "ready"
+        ? makeEnhancedProfileHeaderDetail(
+            "Mutual groups",
+            formatEnhancedProfileNumber(
+              relationships.data.mutualGroupsCount
+            )
+          )
+        : null,
+      makeEnhancedProfileHeaderDetail(
+        "Inventory",
+        getEnhancedProfileInventoryLabel(data.sections.inventory)
+      ),
+      badgeDetail,
+      makeEnhancedProfileHeaderDetail(
+        "Games",
+        getEnhancedProfileCollectionCountLabel(data.sections.experiences)
+      ),
+      communities.status === "ready" &&
+        communities.data.ownedCount !== null
+        ? makeEnhancedProfileHeaderDetail(
+            "Owned groups",
+            formatEnhancedProfileNumber(communities.data.ownedCount)
+          )
+        : null
+    ].filter(Boolean);
+    grid.append(...rows);
+    details.append(grid);
+    return details;
+  }
+
+  function makeEnhancedProfileAboutPanel(data) {
+    const panel = makeEnhancedProfileElement("div", "rtp-panel");
+    panel.id = "rtp-about-panel";
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", "rtp-about-tab");
+    const layout = makeEnhancedProfileElement("div", "rtp-layout");
+    const main = makeEnhancedProfileElement("div", "rtp-column");
+
+    const wearing = makeEnhancedProfileWearingSection(data.sections.wearing);
+    let favorites = null;
+    if (
+      data.sections.favorites.status === "ready" &&
+      data.sections.favorites.data.items.length > 0
+    ) {
+      favorites = makeEnhancedProfileSection("Favorites", {
+        href: `/users/${data.userId}/favorites#!/places`,
+        placement: "title"
+      });
+      appendEnhancedProfileGames(favorites, data.sections.favorites);
+    }
+    const friends = makeEnhancedProfileFriendsSection(
+      data.userId,
+      data.sections.friends,
+      data.sections.counts.status === "ready"
+        ? data.sections.counts.data.friends
+        : null
+    );
+    const communities = makeEnhancedProfileCommunitiesSection(
+      data.userId,
+      data.sections.communities
+    );
+    const badges = makeEnhancedProfileBadgesSection(
+      data.userId,
+      data.sections.badges
+    );
+    main.append(...[
+      wearing,
+      favorites,
+      friends,
+      communities,
+      badges
+    ].filter(Boolean));
+
+    layout.append(main);
+    panel.append(layout);
+    return panel;
+  }
+
+  function makeEnhancedProfileViewIcon(type) {
+    const icon = makeEnhancedProfileElement("svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("focusable", "false");
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = type === "grid"
+      ? '<path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z"></path>'
+      : '<path d="M3 4h18v16H3V4Zm2 2v12h14V6H5Zm2 2h10v8H7V8Z"></path>';
+    return icon;
+  }
+
+  function makeEnhancedProfileExperienceStat(label, value, title = "") {
+    const stat = makeEnhancedProfileElement("div", "rtp-experience-stat");
+    stat.append(
+      makeEnhancedProfileElement("dt", "", label),
+      makeEnhancedProfileElement("dd", "", value)
+    );
+    if (title) stat.querySelector("dd").title = title;
+    return stat;
+  }
+
+  function makeEnhancedProfileExperienceSlide(game, index, total) {
+    const slide = makeEnhancedProfileElement("article", "rtp-experience-slide");
+    const visual = makeEnhancedProfileElement("a", "rtp-experience-slide-visual");
+    visual.href = `/games/${game.rootPlaceId}`;
+    visual.setAttribute("aria-label", `View ${game.name}`);
+    const image = makeEnhancedProfileGameImage(
+      game,
+      "rtp-experience-slide-image"
+    );
+    visual.append(image);
+
+    const copy = makeEnhancedProfileElement("div", "rtp-experience-slide-copy");
+    copy.append(makeEnhancedProfileElement("h3", "", game.name));
+    if (game.description) {
+      copy.append(makeEnhancedProfileElement(
+        "p",
+        "rtp-experience-slide-description",
+        game.description
+      ));
+    }
+    const stats = makeEnhancedProfileElement("dl", "rtp-experience-stats");
+    stats.append(
+      makeEnhancedProfileExperienceStat(
+        "Active",
+        formatEnhancedProfileNumber(game.playing)
+      ),
+      makeEnhancedProfileExperienceStat(
+        "Visits",
+        formatEnhancedProfileCompactNumber(game.visits)
+      ),
+      makeEnhancedProfileExperienceStat(
+        "Favorites",
+        formatEnhancedProfileCompactNumber(game.favorites)
+      ),
+      makeEnhancedProfileExperienceStat(
+        "Rating",
+        game.ratingPercent === null ? "—" : `${game.ratingPercent}%`
+      )
+    );
+    copy.append(stats);
+    const footer = makeEnhancedProfileElement("div", "rtp-experience-slide-footer");
+    const left = makeEnhancedProfileElement("div");
+    left.append(makeEnhancedProfileElement(
+      "div",
+      "rtp-experience-position",
+      `${index + 1} of ${total}`
+    ));
+    if (game.updatedAt) {
+      const updated = makeEnhancedProfileElement(
+        "div",
+        "rtp-experience-position",
+        `Updated ${formatEnhancedProfileDate(game.updatedAt)}`
+      );
+      updated.title = game.updatedAt;
+      left.append(updated);
+    }
+    footer.append(left);
+    const launchUrl = getEnhancedProfileLaunchUrl(game.rootPlaceId);
+    if (launchUrl) {
+      footer.append(makeEnhancedProfileButton("Play", {
+        href: launchUrl,
+        primary: true,
+        ariaLabel: `Play ${game.name}`
+      }));
+    }
+    copy.append(footer);
+    slide.append(visual, copy);
+    return slide;
+  }
+
+  function makeEnhancedProfileCreationsPanel(data) {
+    const panel = makeEnhancedProfileElement("div", "rtp-panel");
+    panel.id = "rtp-creations-panel";
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", "rtp-creations-tab");
+    const experiences = makeEnhancedProfileSection("Experiences");
+    const gameSection = data.sections.experiences;
+    if (gameSection.status !== "ready") {
+      appendEnhancedProfileEmpty(experiences, "Experiences are unavailable right now.");
+      panel.append(experiences);
+      return panel;
+    }
+    const games = gameSection.data.items;
+    if (games.length === 0) {
+      appendEnhancedProfileEmpty(experiences, "No public experiences to show.");
+      panel.append(experiences);
+      return panel;
+    }
+
+    const tools = makeEnhancedProfileElement("div", "rtp-section-tools");
+    const slideshowButton = makeEnhancedProfileElement("button", "rtp-view-button");
+    slideshowButton.type = "button";
+    slideshowButton.title = "Slideshow View";
+    slideshowButton.setAttribute("aria-label", "Slideshow View");
+    slideshowButton.setAttribute("aria-pressed", "true");
+    slideshowButton.append(makeEnhancedProfileViewIcon("slideshow"));
+    const gridButton = makeEnhancedProfileElement("button", "rtp-view-button");
+    gridButton.type = "button";
+    gridButton.title = "Grid View";
+    gridButton.setAttribute("aria-label", "Grid View");
+    gridButton.setAttribute("aria-pressed", "false");
+    gridButton.append(makeEnhancedProfileViewIcon("grid"));
+    tools.append(slideshowButton, gridButton);
+    experiences.querySelector(".rtp-section-header")?.append(tools);
+
+    const switcher = makeEnhancedProfileElement("div", "rtp-experience-switcher");
+    const slideContent = makeEnhancedProfileElement("div");
+    const nav = makeEnhancedProfileElement("div", "rtp-experience-nav");
+    const makeNavButton = (direction) => {
+      const button = makeEnhancedProfileElement("button");
+      button.type = "button";
+      button.setAttribute(
+        "aria-label",
+        direction === "previous" ? "Previous experience" : "Next experience"
+      );
+      button.append(makeEnhancedProfileChevronIcon());
+      if (direction === "previous") button.style.transform = "rotate(180deg)";
+      return button;
+    };
+    const previous = makeNavButton("previous");
+    const next = makeNavButton("next");
+    nav.append(previous, next);
+    let slideIndex = 0;
+    const renderSlide = () => {
+      slideContent.replaceChildren(
+        makeEnhancedProfileExperienceSlide(
+          games[slideIndex],
+          slideIndex,
+          games.length
+        )
+      );
+      previous.disabled = slideIndex === 0;
+      next.disabled = slideIndex === games.length - 1;
+    };
+    previous.addEventListener("click", () => {
+      slideIndex = Math.max(0, slideIndex - 1);
+      renderSlide();
+    });
+    next.addEventListener("click", () => {
+      slideIndex = Math.min(games.length - 1, slideIndex + 1);
+      renderSlide();
+    });
+    renderSlide();
+    switcher.append(slideContent, nav);
+
+    const grid = makeEnhancedProfileElement("div", "rtp-creations-grid");
+    grid.hidden = true;
+    grid.append(...games.map((game) => makeEnhancedProfileGameCard(game)));
+    const setView = (view) => {
+      const gridView = view === "grid";
+      switcher.hidden = gridView;
+      grid.hidden = !gridView;
+      slideshowButton.setAttribute("aria-pressed", String(!gridView));
+      gridButton.setAttribute("aria-pressed", String(gridView));
+    };
+    slideshowButton.addEventListener("click", () => setView("slideshow"));
+    gridButton.addEventListener("click", () => setView("grid"));
+    experiences.append(switcher, grid);
+    panel.append(experiences);
+    return panel;
+  }
+
+  function makeEnhancedProfileCurrentGame(presence) {
+    if (
+      presence.status !== "ready" ||
+      !["game", "studio"].includes(presence.data.type) ||
+      (!presence.data.rootPlaceId && !presence.data.placeId)
+    ) {
+      return null;
+    }
+    const placeId = presence.data.rootPlaceId || presence.data.placeId;
+    const card = makeEnhancedProfileElement("a", "rtp-current-game");
+    card.href = `/games/${placeId}`;
+    const image = makeEnhancedProfileBaseImage(
+      presence.data.iconUrl,
+      "",
+      { kind: "gameUniverse", id: presence.data.universeId },
+      "rtp-current-game-image"
+    );
+    card.append(
+      image,
+      makeEnhancedProfileElement(
+        "span",
+        "rtp-current-game-name",
+        presence.data.lastLocation || "Currently playing"
+      )
+    );
+    return card;
+  }
+
+  function clearEnhancedProfileNativePresence() {
+    enhancedProfileHost
+      ?.querySelectorAll?.(`[${ENHANCED_PROFILE_PRESENCE_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+  }
+
+  function makeEnhancedProfileNativePresenceSlot(presenceSection) {
+    if (
+      !enhancedProfileHost ||
+      presenceSection.status !== "ready" ||
+      presenceSection.data.type === "offline"
+    ) {
+      return null;
+    }
+    const presence = presenceSection.data;
+    const className = {
+      game: "game icon-game",
+      studio: "studio icon-studio",
+      online: "online icon-online"
+    }[presence.type];
+    if (!className) return null;
+
+    const layer = document.createElement("div");
+    layer.slot = ENHANCED_PROFILE_PRESENCE_SLOT_NAME;
+    layer.className =
+      "user-profile-header-details-avatar-container avatar-headshot-lg";
+    layer.setAttribute(ENHANCED_PROFILE_PRESENCE_ATTRIBUTE, "");
+    const avatar = document.createElement("div");
+    avatar.className = "avatar avatar-card-fullbody";
+    avatar.dataset.testid = "avatar-card-container";
+    const placeId = presence.rootPlaceId || presence.placeId;
+    const status = presence.type === "game" && placeId
+      ? document.createElement("a")
+      : document.createElement("div");
+    status.className = "avatar-status";
+    if (status instanceof HTMLAnchorElement) status.href = `/games/${placeId}`;
+    status.setAttribute("aria-label", getEnhancedProfilePresenceLabel(presenceSection));
+    const icon = document.createElement("span");
+    icon.dataset.testid = "presence-icon";
+    icon.className = className;
+    icon.title = presence.type === "online"
+      ? "Online"
+      : presence.lastLocation || (
+          presence.type === "studio" ? "In Roblox Studio" : "In an experience"
+        );
+    status.append(icon);
+    avatar.append(status);
+    layer.append(avatar);
+    enhancedProfileHost.append(layer);
+
+    const slot = makeEnhancedProfileElement(
+      "slot",
+      "rtp-headshot-presence-slot"
+    );
+    slot.name = ENHANCED_PROFILE_PRESENCE_SLOT_NAME;
+    return slot;
+  }
+
+  function normalizeEnhancedProfileDescriptionText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function findEnhancedProfileNativeAboutButton(userId, description = "") {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    const content = document.getElementById("content");
+    if (!normalizedUserId || !content) return null;
+    const roots = new Set(enhancedProfileSuppressedRoots);
+    Array.from(content.children).forEach((child) => {
+      if (child.matches?.(
+        '.profile-platform-container[data-profile-type="User"]'
+      )) {
+        roots.add(child);
+      }
+    });
+    const expectedDescription = normalizeEnhancedProfileDescriptionText(
+      description
+    );
+    const candidates = [];
+    for (const root of roots) {
+      if (
+        !root?.isConnected ||
+        normalizeEnhancedProfileId(root.dataset?.profileId) !== normalizedUserId
+      ) {
+        continue;
+      }
+      root.querySelectorAll(
+        'pre.description-content + button.more-btn, ' +
+        'button.more-btn[aria-label="more"]'
+      ).forEach((button, index) => {
+        if (
+          button.disabled === true ||
+          button.getAttribute("aria-disabled") === "true"
+        ) {
+          return;
+        }
+        const copy = button.previousElementSibling?.matches?.(
+          "pre.description-content"
+        )
+          ? button.previousElementSibling
+          : button.parentElement?.querySelector?.("pre.description-content");
+        const actualDescription = normalizeEnhancedProfileDescriptionText(
+          copy?.textContent
+        );
+        let score = 0;
+        if (copy) score += 20;
+        if (
+          expectedDescription &&
+          actualDescription === expectedDescription
+        ) {
+          score += 100;
+        }
+        if (button.getAttribute("aria-label") === "more") score += 10;
+        score -= index / 100;
+        candidates.push({ button, score });
+      });
+    }
+    candidates.sort((left, right) => right.score - left.score);
+    return candidates[0]?.button || null;
+  }
+
+  function openEnhancedProfileNativeAboutDialog(
+    userId,
+    description,
+    fallback
+  ) {
+    const deadline = Date.now() + 1_000;
+    const attempt = () => {
+      const nativeButton = findEnhancedProfileNativeAboutButton(
+        userId,
+        description
+      );
+      if (nativeButton) {
+        try {
+          nativeButton.click();
+          return;
+        } catch {
+          // Retry briefly in case Roblox replaced the hydrated profile root.
+        }
+      }
+      if (
+        Date.now() < deadline &&
+        enhancedProfileHost?.isConnected &&
+        enhancedProfileRouteUserId === normalizeEnhancedProfileId(userId)
+      ) {
+        window.setTimeout(attempt, 50);
+        return;
+      }
+      fallback?.();
+    };
+    attempt();
+  }
+
+  function makeEnhancedProfileHeader(data) {
+    const identity = data.sections.identity.data;
+    const presence = data.sections.presence;
+    const viewerUserId = getEnhancedProfileViewerUserId();
+    const isOwnProfile = viewerUserId === identity.userId;
+    const counts = data.sections.counts.status === "ready"
+      ? data.sections.counts.data
+      : { friends: null, followers: null, following: null };
+    const hero = makeEnhancedProfileElement("header", "rtp-hero");
+    const cover = makeEnhancedProfileElement("div", "rtp-cover");
+    const appendBodyImage = (url) => {
+      if (!isSafeEnhancedProfileImageUrl(url)) return;
+      const bodyImage = makeEnhancedProfileElement("img", "rtp-avatar-body");
+      bodyImage.src = url;
+      bodyImage.alt = "";
+      bodyImage.decoding = "async";
+      bodyImage.referrerPolicy = "no-referrer";
+      bodyImage.addEventListener("error", () => bodyImage.remove(), { once: true });
+      cover.append(bodyImage);
+    };
+    if (identity.avatarUrl) appendBodyImage(identity.avatarUrl);
+    else observeEnhancedProfileThumbnail(
+      cover,
+      { kind: "avatar", id: identity.userId },
+      appendBodyImage
+    );
+    hero.append(cover);
+    const overlay = makeEnhancedProfileElement(
+      "div",
+      "rtp-profile-header-overlay"
+    );
+    const main = makeEnhancedProfileElement("div", "rtp-hero-main");
+    const headshotWrap = makeEnhancedProfileElement("div", "rtp-headshot-wrap");
+    headshotWrap.append(makeEnhancedProfileAvatar(
+      identity.headshotUrl,
+      identity.displayName,
+      "rtp-headshot",
+      { kind: "profile", id: identity.userId }
+    ));
+    const presenceSlot = makeEnhancedProfileNativePresenceSlot(presence);
+    if (presenceSlot) headshotWrap.append(presenceSlot);
+    main.append(headshotWrap);
+    const identityBlock = makeEnhancedProfileElement("div", "rtp-identity");
+    const nameRow = makeEnhancedProfileElement("div", "rtp-name-row");
+    nameRow.append(makeEnhancedProfileElement("h1", "", identity.displayName));
+    const badges = makeEnhancedProfileElement("span", "rtp-badges");
+    if (identity.isVerified) {
+      badges.append(makeEnhancedProfileVerifiedIcon());
+    }
+    if (identity.isRobloxPlus) {
+      const robloxPlus = makeEnhancedProfileElement("span", "rtp-roblox-plus");
+      robloxPlus.setAttribute("aria-label", "Roblox Plus subscriber");
+      robloxPlus.title = "Roblox Plus subscriber";
+      robloxPlus.innerHTML =
+        '<svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">' +
+        '<path fill-rule="evenodd" d="M6.4 2.5 25.5 7l-4.4 19.1L2 21.6 6.4 2.5Zm5.2 8-1.5 6.2 6.3 1.5 1.5-6.3-6.3-1.4Z"></path>' +
+        '<path d="M23 2v3h3v2h-3v3h-2V7h-3V5h3V2h2Z"></path></svg>';
+      badges.append(robloxPlus);
+    }
+    if (viewerUserId && !isOwnProfile && isEnhancedProfileLimited(data)) {
+      const limited = makeEnhancedProfileElement(
+        "span",
+        "rtp-status-pill rtp-status-pill--limited",
+        "Profile Limited"
+      );
+      limited.title =
+        "Some profile information is limited by privacy or regional settings";
+      badges.append(limited);
+    }
+    if (identity.isBanned) {
+      const banned = makeEnhancedProfileElement("span", "rtp-status-pill", "Banned");
+      badges.append(banned);
+    }
+    if (badges.childElementCount) nameRow.append(badges);
+    identityBlock.append(
+      nameRow,
+      makeEnhancedProfileElement("p", "rtp-username", `@${identity.username}`)
+    );
+    const social = makeEnhancedProfileElement("nav", "rtp-social");
+    social.setAttribute("aria-label", "Profile connections");
+    for (const [key, label, hash] of [
+      ["friends", "Friends", "friends"],
+      ["followers", "Followers", "followers"],
+      ["following", "Following", "following"]
+    ]) {
+      if (counts[key] === null) continue;
+      const link = makeEnhancedProfileElement("a");
+      link.href = `/users/${identity.userId}/friends#!/${hash}`;
+      link.append(
+        makeEnhancedProfileElement(
+          "strong",
+          "",
+          formatEnhancedProfileNumber(counts[key])
+        ),
+        makeEnhancedProfileElement("span", "", label)
+      );
+      social.append(link);
+    }
+    if (
+      viewerUserId &&
+      !isOwnProfile &&
+      data.sections.relationships.status === "ready" &&
+      data.sections.relationships.data.mutualFriendsAvailable
+    ) {
+      const mutuals = makeEnhancedProfileElement("a");
+      mutuals.href = `/users/${identity.userId}/friends#!/friends`;
+      mutuals.dataset.rtpSocial = "mutuals";
+      mutuals.setAttribute("aria-label", "View mutual friends");
+      mutuals.append(
+        makeEnhancedProfileElement(
+          "strong",
+          "",
+          formatEnhancedProfileNumber(
+            data.sections.relationships.data.mutualFriendsCount
+          )
+        ),
+        makeEnhancedProfileElement("span", "", "Mutuals")
+      );
+      social.append(mutuals);
+    }
+    main.append(identityBlock);
+    const actions = makeEnhancedProfileElement(
+      "div",
+      `rtp-actions rtp-actions--${isOwnProfile ? "own" : "foreign"}`
+    );
+    const actionRow = makeEnhancedProfileElement("div", "rtp-action-row");
+    if (isOwnProfile) {
+      actionRow.append(
+        makeEnhancedProfileButton("Edit avatar", { href: "/my/avatar" }),
+        makeEnhancedProfileButton("Edit profile", { href: "/users/profile/edit" })
+      );
+    } else {
+      const relationships = data.sections.relationships;
+      if (
+        viewerUserId &&
+        relationships.status === "ready" &&
+        relationships.data.isFriend &&
+        relationships.data.canChat
+      ) {
+        actionRow.append(makeEnhancedProfileButton("Chat", {
+          onClick: openEnhancedProfileNativeChat
+        }));
+      }
+    }
+    actionRow.append(makeEnhancedProfileOverflow(identity.userId));
+    actions.append(actionRow);
+    const support = makeEnhancedProfileElement("div", "rtp-hero-support");
+    const description = makeEnhancedProfileElement(
+      "div",
+      "rtp-header-description"
+    );
+    const copy = makeEnhancedProfileElement(
+      "pre",
+      "rtp-profile-description",
+      identity.description || "No bio yet"
+    );
+    const more = makeEnhancedProfileElement("button", "rtp-more-button", "more");
+    more.type = "button";
+    more.setAttribute("aria-haspopup", "dialog");
+    more.setAttribute("aria-label", `More about @${identity.username}`);
+    more.addEventListener("click", () => {
+      openEnhancedProfileNativeAboutDialog(
+        identity.userId,
+        identity.description,
+        () => {
+          if (!copy.isConnected || !more.isConnected) return;
+          const expanded = copy.toggleAttribute("data-expanded");
+          more.textContent = expanded ? "less" : "more";
+        }
+      );
+    });
+    description.append(copy, more);
+    support.append(description);
+    support.append(makeEnhancedProfileHeaderDetails(data));
+    overlay.append(main);
+    if (social.childElementCount) overlay.append(social);
+    overlay.append(support, actions);
+    hero.append(overlay);
+    return hero;
+  }
+
+  function renderEnhancedProfileLoading() {
+    const app = enhancedProfileShadowRoot?.querySelector(".rtp-app");
+    if (!app) return;
+    cleanupEnhancedProfileCarouselObservers();
+    cleanupEnhancedProfileThumbnailObserver();
+    app.setAttribute("aria-busy", "true");
+    const shell = makeEnhancedProfileElement("main", "rtp-shell");
+    const skeleton = makeEnhancedProfileElement(
+      "div",
+      "rtp-skeleton rtp-surface"
+    );
+    skeleton.append(makeEnhancedProfileElement(
+      "div",
+      "rtp-skeleton-cover rtp-skeleton-block"
+    ));
+    const lines = makeEnhancedProfileElement("div", "rtp-skeleton-lines");
+    lines.append(
+      makeEnhancedProfileElement("div", "rtp-skeleton-line rtp-skeleton-block"),
+      makeEnhancedProfileElement("div", "rtp-skeleton-line rtp-skeleton-block"),
+      makeEnhancedProfileElement("div", "rtp-skeleton-line rtp-skeleton-block")
+    );
+    skeleton.append(lines);
+    shell.append(skeleton);
+    app.replaceChildren(shell);
+  }
+
+  function renderEnhancedProfileError() {
+    const app = enhancedProfileShadowRoot?.querySelector(".rtp-app");
+    if (!app || !enhancedProfileRouteUserId) return;
+    cleanupEnhancedProfileCarouselObservers();
+    cleanupEnhancedProfileThumbnailObserver();
+    app.setAttribute("aria-busy", "false");
+    const shell = makeEnhancedProfileElement("main", "rtp-shell");
+    const card = makeEnhancedProfileElement("section", "rtp-error-card rtp-surface");
+    card.append(
+      makeEnhancedProfileElement("h1", "", "Profile unavailable"),
+      makeEnhancedProfileElement(
+        "p",
+        "",
+        enhancedProfileErrorCode === "RATE_LIMITED"
+          ? "Roblox is limiting profile requests. The standard profile is shown below."
+          : "RoTool could not load this profile. The standard Roblox profile is shown below."
+      )
+    );
+    const actions = makeEnhancedProfileElement("div", "rtp-error-actions");
+    actions.append(
+      makeEnhancedProfileButton("Retry", {
+        primary: true,
+        onClick: () => void loadEnhancedProfileData()
+      }),
+      makeEnhancedProfileButton("Roblox view", {
+        href: getEnhancedProfileStandardViewUrl(enhancedProfileRouteUserId),
+        newTab: true
+      })
+    );
+    card.append(actions);
+    shell.append(card);
+    app.replaceChildren(shell);
+  }
+
+  function getEnhancedProfileTabFromLocation() {
+    return location.hash.toLowerCase().includes("creations")
+      ? "creations"
+      : "about";
+  }
+
+  function syncEnhancedProfileTabUi(focus = false) {
+    if (!enhancedProfileShadowRoot) return;
+    for (const tab of ["about", "creations"]) {
+      const selected = enhancedProfileActiveTab === tab;
+      const button = enhancedProfileShadowRoot.querySelector(`#rtp-${tab}-tab`);
+      const panel = enhancedProfileShadowRoot.querySelector(`#rtp-${tab}-panel`);
+      button?.setAttribute("aria-selected", String(selected));
+      if (button) button.tabIndex = selected ? 0 : -1;
+      if (panel) panel.hidden = !selected;
+    }
+    if (focus) {
+      enhancedProfileShadowRoot
+        ?.querySelector(`#rtp-${enhancedProfileActiveTab}-tab`)
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  function setEnhancedProfileActiveTab(
+    tab,
+    focus = false,
+    updateHistory = true
+  ) {
+    enhancedProfileActiveTab = tab === "creations" ? "creations" : "about";
+    if (updateHistory && enhancedProfileRouteUserId) {
+      const url = new URL(location.href);
+      url.hash = `!/${enhancedProfileActiveTab}`;
+      if (url.href !== location.href) {
+        history.pushState(history.state, "", url.href);
+      }
+    }
+    syncEnhancedProfileTabUi(focus);
+  }
+
+  function renderEnhancedProfile() {
+    clearEnhancedProfileNativePresence();
+    if (enhancedProfileLoadState === "loading") {
+      renderEnhancedProfileLoading();
+      return;
+    }
+    if (
+      enhancedProfileLoadState !== "ready" ||
+      !enhancedProfileData ||
+      enhancedProfileData.sections.identity.status !== "ready"
+    ) {
+      renderEnhancedProfileError();
+      return;
+    }
+    const app = enhancedProfileShadowRoot?.querySelector(".rtp-app");
+    if (!app) return;
+    enhancedProfileOverflowController?.abort();
+    enhancedProfileOverflowController = null;
+    cleanupEnhancedProfileCarouselObservers();
+    cleanupEnhancedProfileThumbnailObserver();
+    app.setAttribute("aria-busy", "false");
+    const shell = makeEnhancedProfileElement("main", "rtp-shell");
+    shell.append(makeEnhancedProfileHeader(enhancedProfileData));
+    const tabs = makeEnhancedProfileElement("div", "rtp-tabs");
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Profile sections");
+    const tabOptions = [["about", "About"], ["creations", "Creations"]];
+    for (const [tab, label] of tabOptions) {
+      const button = makeEnhancedProfileElement("button", "rtp-tab", label);
+      button.type = "button";
+      button.id = `rtp-${tab}-tab`;
+      button.setAttribute("role", "tab");
+      button.setAttribute(
+        "aria-selected",
+        String(enhancedProfileActiveTab === tab)
+      );
+      button.setAttribute("aria-controls", `rtp-${tab}-panel`);
+      button.tabIndex = enhancedProfileActiveTab === tab ? 0 : -1;
+      button.addEventListener("click", () => setEnhancedProfileActiveTab(tab, true));
+      tabs.append(button);
+    }
+    tabs.addEventListener("keydown", (event) => {
+      const currentIndex = tabOptions.findIndex(
+        ([tab]) => tab === enhancedProfileActiveTab
+      );
+      let nextIndex = currentIndex;
+      if (event.key === "ArrowLeft") nextIndex = Math.max(0, currentIndex - 1);
+      if (event.key === "ArrowRight") {
+        nextIndex = Math.min(tabOptions.length - 1, currentIndex + 1);
+      }
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = tabOptions.length - 1;
+      if (nextIndex === currentIndex) return;
+      event.preventDefault();
+      setEnhancedProfileActiveTab(tabOptions[nextIndex][0], true);
+    });
+    shell.append(tabs);
+    const aboutPanel = makeEnhancedProfileAboutPanel(enhancedProfileData);
+    const creationsPanel = makeEnhancedProfileCreationsPanel(enhancedProfileData);
+    shell.append(aboutPanel, creationsPanel);
+    app.replaceChildren(shell);
+    syncEnhancedProfileTabUi(false);
+  }
+
+  function sendEnhancedProfileMessage(
+    message,
+    timeoutMs = ENHANCED_PROFILE_REQUEST_TIMEOUT_MS
+  ) {
+    if (typeof enhancedProfileMessageSenderForTests === "function") {
+      return Promise.resolve(enhancedProfileMessageSenderForTests(message));
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Profile request timed out."));
+      }, timeoutMs);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        callback(value);
+      };
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) {
+            finish(reject, new Error(runtimeError.message));
+            return;
+          }
+          finish(resolve, response);
+        });
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+  }
+
+  function isCurrentEnhancedProfileBadgeCountRequest(request) {
+    return Boolean(
+      request &&
+      request === enhancedProfileBadgeCountRequest &&
+      request.epoch === enhancedProfileLifecycleEpoch &&
+      request.userId === enhancedProfileRouteUserId &&
+      request.userId === enhancedProfileData?.userId &&
+      enhancedProfileLoadState === "ready" &&
+      enhancedProfileHost?.isConnected &&
+      enhancedProfileShadowRoot
+    );
+  }
+
+  function cancelEnhancedProfileBadgeCountAnimation() {
+    if (enhancedProfileBadgeCountAnimationFrame !== null) {
+      window.cancelAnimationFrame(enhancedProfileBadgeCountAnimationFrame);
+      enhancedProfileBadgeCountAnimationFrame = null;
+    }
+    if (enhancedProfileBadgeCountAnimationTimer !== null) {
+      window.clearTimeout(enhancedProfileBadgeCountAnimationTimer);
+      enhancedProfileBadgeCountAnimationTimer = null;
+    }
+  }
+
+  function queueEnhancedProfileBadgeCountAnimationStep(callback) {
+    let completed = false;
+    const run = (timestamp) => {
+      if (completed) return;
+      completed = true;
+      if (enhancedProfileBadgeCountAnimationFrame !== null) {
+        window.cancelAnimationFrame(enhancedProfileBadgeCountAnimationFrame);
+        enhancedProfileBadgeCountAnimationFrame = null;
+      }
+      if (enhancedProfileBadgeCountAnimationTimer !== null) {
+        window.clearTimeout(enhancedProfileBadgeCountAnimationTimer);
+        enhancedProfileBadgeCountAnimationTimer = null;
+      }
+      callback(timestamp);
+    };
+    enhancedProfileBadgeCountAnimationFrame = window.requestAnimationFrame(run);
+    enhancedProfileBadgeCountAnimationTimer = window.setTimeout(
+      () => run(performance.now()),
+      50
+    );
+  }
+
+  function patchEnhancedProfileBadgeCount(value, status, title = "") {
+    const count = enhancedProfileShadowRoot?.querySelector(
+      "[data-rtp-profile-badge-count]"
+    );
+    if (!count) return false;
+    count.textContent = value;
+    count.setAttribute("aria-live", "polite");
+    count.toggleAttribute("aria-busy", status === "pending");
+    if (title) count.title = title;
+    else count.removeAttribute("title");
+    return true;
+  }
+
+  function animateEnhancedProfileBadgeCount(request, targetValue, exact) {
+    if (
+      !isCurrentEnhancedProfileBadgeCountRequest(request) ||
+      !Number.isSafeInteger(targetValue) ||
+      targetValue < 0
+    ) {
+      return false;
+    }
+    const count = enhancedProfileShadowRoot?.querySelector(
+      "[data-rtp-profile-badge-count]"
+    );
+    if (!count) return false;
+    cancelEnhancedProfileBadgeCountAnimation();
+    const startValue = Number.isSafeInteger(enhancedProfileBadgeCountDisplayedValue)
+      ? Math.min(enhancedProfileBadgeCountDisplayedValue, targetValue)
+      : targetValue;
+    const finalSuffix = exact ? "" : "+";
+    const frameSuffix = "+";
+    const status = exact ? "ready" : "pending";
+    const finalTitle = exact ? "" : "Counting the exact badge total";
+    const finish = () => {
+      enhancedProfileBadgeCountDisplayedValue = targetValue;
+      patchEnhancedProfileBadgeCount(
+        `${formatEnhancedProfileNumber(targetValue)}${finalSuffix}`,
+        status,
+        finalTitle
+      );
+    };
+    const reducedMotion = typeof matchMedia === "function" &&
+      matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion || startValue === targetValue) {
+      finish();
+      return true;
+    }
+
+    const duration = Math.min(
+      420,
+      Math.max(180, (targetValue - startValue) * 2)
+    );
+    let startedAt = null;
+    count.setAttribute("aria-live", "off");
+    count.setAttribute("aria-busy", "true");
+    count.title = "Counting the exact badge total";
+    const step = (timestamp) => {
+      if (!isCurrentEnhancedProfileBadgeCountRequest(request)) {
+        cancelEnhancedProfileBadgeCountAnimation();
+        return;
+      }
+      if (startedAt === null) startedAt = timestamp;
+      const progress = Math.min(1, (timestamp - startedAt) / duration);
+      const eased = 1 - ((1 - progress) ** 3);
+      const displayed = Math.min(
+        targetValue,
+        Math.round(startValue + (targetValue - startValue) * eased)
+      );
+      enhancedProfileBadgeCountDisplayedValue = displayed;
+      count.textContent = `${formatEnhancedProfileNumber(displayed)}${frameSuffix}`;
+      if (progress < 1) {
+        queueEnhancedProfileBadgeCountAnimationStep(step);
+        return;
+      }
+      finish();
+    };
+    queueEnhancedProfileBadgeCountAnimationStep(step);
+    return true;
+  }
+
+  function applyEnhancedProfileBadgeCountProgress(message) {
+    const request = enhancedProfileBadgeCountRequest;
+    const badges = enhancedProfileData?.sections?.badges;
+    const totalCount = normalizeEnhancedProfileCount(message?.totalCount);
+    if (
+      message?.type !== ENHANCED_PROFILE_BADGE_COUNT_PROGRESS_MESSAGE_TYPE ||
+      !isCurrentEnhancedProfileBadgeCountRequest(request) ||
+      message.requestId !== request.requestId ||
+      normalizeEnhancedProfileId(message.userId) !== request.userId ||
+      message.countIsExact !== false ||
+      message.countStatus !== "pending" ||
+      totalCount === null ||
+      badges?.status !== "ready" ||
+      badges.data.countIsExact === true ||
+      totalCount < badges.data.items.length ||
+      (Number.isSafeInteger(badges.data.totalCount) &&
+        totalCount < badges.data.totalCount)
+    ) {
+      return false;
+    }
+    badges.data.totalCount = totalCount;
+    badges.data.countIsExact = false;
+    badges.data.countStatus = "pending";
+    return animateEnhancedProfileBadgeCount(request, totalCount, false);
+  }
+
+  function handleEnhancedProfileBadgeCountProgress(message) {
+    applyEnhancedProfileBadgeCountProgress(message);
+    return false;
+  }
+
+  function loadEnhancedProfileExactBadgeCount(userId, epoch) {
+    const badges = enhancedProfileData?.sections?.badges;
+    if (
+      !userId ||
+      epoch !== enhancedProfileLifecycleEpoch ||
+      userId !== enhancedProfileRouteUserId ||
+      enhancedProfileData?.userId !== userId ||
+      enhancedProfileLoadState !== "ready" ||
+      badges?.status !== "ready" ||
+      badges.data.countIsExact === true ||
+      badges.data.countStatus === "unavailable" ||
+      badges.data.countStatus === "private"
+    ) {
+      return Promise.resolve(false);
+    }
+    if (
+      enhancedProfileBadgeCountRequest?.userId === userId &&
+      enhancedProfileBadgeCountRequest?.epoch === epoch
+    ) {
+      return enhancedProfileBadgeCountRequest.promise;
+    }
+
+    const requestId = ++enhancedProfileRequestSequence;
+    const request = { userId, epoch, requestId, promise: null };
+    enhancedProfileBadgeCountRequest = request;
+    patchEnhancedProfileBadgeCount(
+      getEnhancedProfileBadgeCountLabel(badges),
+      "pending",
+      "Counting the exact badge total"
+    );
+    request.promise = (async () => {
+      try {
+        const response = await sendEnhancedProfileMessage({
+          type: ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE,
+          requestId,
+          userId
+        }, ENHANCED_PROFILE_BADGE_COUNT_REQUEST_TIMEOUT_MS);
+        if (!isCurrentEnhancedProfileBadgeCountRequest(request)) return false;
+        const normalized = normalizeEnhancedProfileBadgeCountResponse(
+          response,
+          requestId,
+          userId,
+          Math.max(
+            badges.data.items.length,
+            Number.isSafeInteger(badges.data.totalCount)
+              ? badges.data.totalCount
+              : 0
+          )
+        );
+        if (!normalized) {
+          badges.data.countStatus = "unavailable";
+          cancelEnhancedProfileBadgeCountAnimation();
+          enhancedProfileBadgeCountDisplayedValue =
+            Number.isSafeInteger(badges.data.totalCount)
+              ? badges.data.totalCount
+              : null;
+          patchEnhancedProfileBadgeCount(
+            getEnhancedProfileBadgeCountLabel(badges),
+            "unavailable",
+            "Exact badge total unavailable"
+          );
+          if (enhancedProfileBadgeCountRequest === request) {
+            enhancedProfileBadgeCountRequest = null;
+          }
+          return false;
+        }
+        badges.data.totalCount = normalized.totalCount;
+        badges.data.countIsExact = true;
+        badges.data.countStatus = "ready";
+        badges.data.countFetchedAt = normalized.fetchedAt;
+        animateEnhancedProfileBadgeCount(request, normalized.totalCount, true);
+        return true;
+      } catch {
+        if (!isCurrentEnhancedProfileBadgeCountRequest(request)) return false;
+        badges.data.countStatus = "unavailable";
+        cancelEnhancedProfileBadgeCountAnimation();
+        enhancedProfileBadgeCountDisplayedValue =
+          Number.isSafeInteger(badges.data.totalCount)
+            ? badges.data.totalCount
+            : null;
+        patchEnhancedProfileBadgeCount(
+          getEnhancedProfileBadgeCountLabel(badges),
+          "unavailable",
+          "Exact badge total unavailable"
+        );
+        if (enhancedProfileBadgeCountRequest === request) {
+          enhancedProfileBadgeCountRequest = null;
+        }
+        return false;
+      }
+    })();
+    return request.promise;
+  }
+
+  async function loadEnhancedProfileRelationships(userId, epoch) {
+    if (
+      !userId ||
+      epoch !== enhancedProfileLifecycleEpoch ||
+      userId !== enhancedProfileRouteUserId ||
+      enhancedProfileData?.userId !== userId ||
+      enhancedProfileLoadState !== "ready"
+    ) {
+      return false;
+    }
+    const identity = enhancedProfileData.sections.identity;
+    if (
+      identity.status === "ready" &&
+      getEnhancedProfileViewerUserId() === identity.data.userId
+    ) {
+      enhancedProfileData.sections.relationships = {
+        status: "not_applicable",
+        code: "OWN_PROFILE"
+      };
+      return true;
+    }
+    const requestId = ++enhancedProfileRequestSequence;
+    try {
+      const response = await sendEnhancedProfileMessage({
+        type: ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE,
+        requestId,
+        userId
+      });
+      if (
+        epoch !== enhancedProfileLifecycleEpoch ||
+        userId !== enhancedProfileRouteUserId ||
+        enhancedProfileData?.userId !== userId ||
+        enhancedProfileLoadState !== "ready"
+      ) {
+        return false;
+      }
+      const section = normalizeEnhancedProfileRelationshipsResponse(
+        response,
+        requestId,
+        userId
+      );
+      if (!section) return false;
+      enhancedProfileData.sections.relationships = section;
+      renderEnhancedProfile();
+      const currentContent = document.getElementById("content");
+      if (currentContent) suppressNativeEnhancedProfileRoots(currentContent);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadEnhancedProfileData() {
+    const userId = enhancedProfileRouteUserId;
+    if (!userId || !enhancedProfileShadowRoot) return;
+    const epoch = ++enhancedProfileLifecycleEpoch;
+    const requestId = ++enhancedProfileRequestSequence;
+    cancelEnhancedProfileBadgeCountAnimation();
+    window.clearTimeout(enhancedProfileBadgeCountStartTimer);
+    window.clearTimeout(enhancedProfileRelationshipsStartTimer);
+    enhancedProfileBadgeCountStartTimer = null;
+    enhancedProfileRelationshipsStartTimer = null;
+    enhancedProfileBadgeCountRequest = null;
+    enhancedProfileBadgeCountDisplayedValue = null;
+    enhancedProfileLoadState = "loading";
+    enhancedProfileErrorCode = "";
+    setEnhancedProfileHostHidden(true);
+    restoreNativeEnhancedProfileRoots();
+    renderEnhancedProfile();
+    try {
+      const response = await sendEnhancedProfileMessage({
+        type: ENHANCED_PROFILE_MESSAGE_TYPE,
+        requestId,
+        userId
+      });
+      if (
+        epoch !== enhancedProfileLifecycleEpoch ||
+        userId !== enhancedProfileRouteUserId ||
+        !enhancedProfileShadowRoot
+      ) {
+        return;
+      }
+      const normalized = normalizeEnhancedProfileResponse(
+        response,
+        requestId,
+        userId
+      );
+      if (!normalized) {
+        clearEnhancedProfilePendingTopReset();
+        enhancedProfileLoadState = "error";
+        enhancedProfileErrorCode = normalizeEnhancedProfileText(
+          response?.code,
+          40
+        ) || "UNAVAILABLE";
+        setEnhancedProfileHostHidden(false);
+        renderEnhancedProfile();
+        restoreNativeEnhancedProfileRoots();
+        return;
+      }
+      if (normalized.sections.identity.status !== "ready") {
+        clearEnhancedProfilePendingTopReset();
+        enhancedProfileData = normalized;
+        enhancedProfileLoadState = "error";
+        enhancedProfileErrorCode = normalized.sections.identity.code;
+        setEnhancedProfileHostHidden(false);
+        renderEnhancedProfile();
+        restoreNativeEnhancedProfileRoots();
+        return;
+      }
+      enhancedProfileData = normalized;
+      enhancedProfileLoadState = "ready";
+      renderEnhancedProfile();
+      setEnhancedProfileHostHidden(false);
+      const currentContent = document.getElementById("content");
+      if (currentContent) suppressNativeEnhancedProfileRoots(currentContent);
+      scheduleEnhancedProfileTopReset(userId, epoch);
+      if (normalized.sections.relationships.status !== "ready") {
+        enhancedProfileRelationshipsStartTimer = window.setTimeout(() => {
+          enhancedProfileRelationshipsStartTimer = null;
+          void loadEnhancedProfileRelationships(userId, epoch);
+        }, ENHANCED_PROFILE_RELATIONSHIPS_START_DELAY_MS);
+      }
+      enhancedProfileBadgeCountStartTimer = window.setTimeout(() => {
+        enhancedProfileBadgeCountStartTimer = null;
+        void loadEnhancedProfileExactBadgeCount(userId, epoch);
+      }, ENHANCED_PROFILE_BADGE_COUNT_START_DELAY_MS);
+    } catch {
+      if (
+        epoch !== enhancedProfileLifecycleEpoch ||
+        userId !== enhancedProfileRouteUserId
+      ) {
+        return;
+      }
+      clearEnhancedProfilePendingTopReset();
+      enhancedProfileLoadState = "error";
+      enhancedProfileErrorCode = "NETWORK";
+      setEnhancedProfileHostHidden(false);
+      renderEnhancedProfile();
+      restoreNativeEnhancedProfileRoots();
+    }
+  }
+
+  const ENHANCED_PROFILE_NATIVE_OVERFLOW_STYLE_PROPERTIES = Object.freeze([
+    "--rsl-enhanced-profile-overflow-top",
+    "--rsl-enhanced-profile-overflow-left",
+    "--rsl-enhanced-profile-overflow-width",
+    "--rsl-enhanced-profile-overflow-height"
+  ]);
+
+  function isEnhancedProfileNativeOverflowRouteCurrent() {
+    const route = parseEnhancedProfileRoute();
+    return Boolean(
+      route &&
+      !route.standardView &&
+      route.userId === enhancedProfileRouteUserId &&
+      enhancedProfileHost?.isConnected &&
+      enhancedProfileHost.dataset.rslEnhancedProfileUserId === route.userId
+    );
+  }
+
+  function isEnhancedProfileNativeMobileControl(element) {
+    return Boolean(element?.closest?.(
+      ".buttons-show-on-mobile, .profile-header-mobile, " +
+      '[data-testid*="mobile" i], [data-rblx-profile-mobile]'
+    ));
+  }
+
+  function findEnhancedProfileNativeOverflowControl(roots = null) {
+    if (!isEnhancedProfileNativeOverflowRouteCurrent()) return null;
+    const content = document.getElementById("content");
+    if (!content) return null;
+    const routeUserId = enhancedProfileRouteUserId;
+    const candidateRoots = Array.from(
+      roots || enhancedProfileSuppressedRoots
+    ).filter((root) =>
+      root?.isConnected &&
+      root.parentElement === content &&
+      root.matches?.(
+        '.profile-platform-container[data-profile-type="User"]'
+      ) &&
+      normalizeEnhancedProfileId(root.dataset.profileId) === routeUserId &&
+      root.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)
+    );
+    const preferMobile = typeof matchMedia === "function" &&
+      matchMedia("(max-width: 680px)").matches;
+    const candidates = [];
+    candidateRoots.forEach((root, rootIndex) => {
+      root.querySelectorAll(
+        'button[id="user-profile-header-contextual-menu-button"]' +
+        '[aria-label="Open contextual menu"][aria-haspopup="dialog"]'
+      ).forEach((trigger, triggerIndex) => {
+        if (
+          !trigger.isConnected ||
+          trigger.disabled === true ||
+          trigger.getAttribute("aria-disabled") === "true" ||
+          !trigger.getAttribute("aria-label")?.trim()
+        ) {
+          return;
+        }
+        const isMobile = isEnhancedProfileNativeMobileControl(trigger);
+        const explicitlyDesktop = Boolean(trigger.closest?.(
+          ".buttons-show-on-desktop, .buttons-hide-on-mobile, " +
+          ".profile-header-desktop, " +
+          '[data-testid*="desktop" i], [data-rblx-profile-desktop]'
+        ));
+        let score = 0;
+        if (root.hasAttribute(ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE)) {
+          score += 100;
+        }
+        if (isMobile === preferMobile) score += 20;
+        if (preferMobile && explicitlyDesktop) score -= 10;
+        if (!preferMobile && isMobile) score -= 10;
+        if (!preferMobile && explicitlyDesktop) score += 5;
+        score -= rootIndex / 100;
+        score -= triggerIndex / 1000;
+        candidates.push({ root, trigger, score });
+      });
+    });
+    candidates.sort((left, right) => right.score - left.score);
+    return candidates[0] || null;
+  }
+
+  function rememberEnhancedProfileNativeOverflowStyles(trigger) {
+    if (!trigger || enhancedProfileNativeOverflowStyleBackups.has(trigger)) {
+      return;
+    }
+    enhancedProfileNativeOverflowStyleBackups.set(
+      trigger,
+      {
+        hadStyleAttribute: trigger.hasAttribute("style"),
+        properties: ENHANCED_PROFILE_NATIVE_OVERFLOW_STYLE_PROPERTIES.map(
+          (property) => ({
+            property,
+            value: trigger.style.getPropertyValue(property),
+            priority: trigger.style.getPropertyPriority(property)
+          })
+        )
+      }
+    );
+  }
+
+  function restoreEnhancedProfileNativeOverflowStyles() {
+    enhancedProfileNativeOverflowStyleBackups.forEach((backup, trigger) => {
+      if (!trigger?.style) return;
+      backup.properties.forEach(({ property, value, priority }) => {
+        if (value) trigger.style.setProperty(property, value, priority);
+        else trigger.style.removeProperty(property);
+      });
+      if (trigger.style.length === 0) {
+        trigger.removeAttribute("style");
+      }
+    });
+    enhancedProfileNativeOverflowStyleBackups.clear();
+  }
+
+  function clearEnhancedProfileNativeOverflowMarkers() {
+    const markerSelector =
+      `[${ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE}], ` +
+      `[${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}], ` +
+      `[${ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE}]`;
+    const marked = new Set(document.querySelectorAll(markerSelector));
+    for (const root of enhancedProfileSuppressedRoots) {
+      if (root?.matches?.(markerSelector)) marked.add(root);
+      root?.querySelectorAll?.(markerSelector)
+        .forEach((element) => marked.add(element));
+    }
+    marked.forEach((element) => {
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE);
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE);
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE);
+    });
+  }
+
+  function markEnhancedProfileNativeOverflowControl(root, trigger) {
+    if (!root || !trigger || !root.contains(trigger)) return false;
+    root.setAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE, "");
+    trigger.setAttribute(
+      ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE,
+      ""
+    );
+    let ancestor = trigger.parentElement;
+    while (ancestor && ancestor !== root) {
+      ancestor.setAttribute(
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE,
+        ""
+      );
+      ancestor = ancestor.parentElement;
+    }
+    return ancestor === root;
+  }
+
+  function getEnhancedProfileNativeOverflowTrigger() {
+    const trigger = enhancedProfileNativeOverflowTrigger;
+    const root = enhancedProfileNativeOverflowRoot;
+    if (
+      !trigger?.isConnected ||
+      !root?.isConnected ||
+      !root.contains(trigger) ||
+      !trigger.hasAttribute(
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE
+      ) ||
+      normalizeEnhancedProfileId(root.dataset.profileId) !==
+        enhancedProfileRouteUserId ||
+      !isEnhancedProfileNativeOverflowRouteCurrent()
+    ) {
+      return null;
+    }
+    return trigger;
+  }
+
+  function positionEnhancedProfileNativeOverflowTrigger() {
+    enhancedProfileNativeOverflowPositionFrame = null;
+    const trigger = getEnhancedProfileNativeOverflowTrigger();
+    const summary = enhancedProfileShadowRoot?.querySelector(
+      ".rtp-overflow > summary"
+    );
+    if (!trigger || !summary?.isConnected) return false;
+    const rect = summary.getBoundingClientRect();
+    if (
+      !Number.isFinite(rect.left) ||
+      !Number.isFinite(rect.top) ||
+      rect.width <= 0 ||
+      rect.height <= 0
+    ) {
+      return false;
+    }
+    if (
+      enhancedProfileNativeOverflowProxySummary &&
+      enhancedProfileNativeOverflowProxySummary !== summary
+    ) {
+      enhancedProfileNativeOverflowProxySummary.removeAttribute("tabindex");
+      enhancedProfileNativeOverflowProxySummary.removeAttribute("aria-hidden");
+      enhancedProfileNativeOverflowProxySummary.removeAttribute(
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE
+      );
+    }
+    enhancedProfileNativeOverflowProxySummary = summary;
+    summary.setAttribute("tabindex", "-1");
+    summary.setAttribute("aria-hidden", "true");
+    summary.setAttribute(ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE, "");
+    rememberEnhancedProfileNativeOverflowStyles(trigger);
+    trigger.style.setProperty(
+      "--rsl-enhanced-profile-overflow-top",
+      `${rect.top}px`
+    );
+    trigger.style.setProperty(
+      "--rsl-enhanced-profile-overflow-left",
+      `${rect.left}px`
+    );
+    trigger.style.setProperty(
+      "--rsl-enhanced-profile-overflow-width",
+      `${rect.width}px`
+    );
+    trigger.style.setProperty(
+      "--rsl-enhanced-profile-overflow-height",
+      `${rect.height}px`
+    );
+    return true;
+  }
+
+  function scheduleEnhancedProfileNativeOverflowPosition() {
+    if (
+      enhancedProfileNativeOverflowPositionFrame !== null ||
+      !getEnhancedProfileNativeOverflowTrigger()
+    ) {
+      return;
+    }
+    enhancedProfileNativeOverflowPositionFrame = requestAnimationFrame(
+      positionEnhancedProfileNativeOverflowTrigger
+    );
+  }
+
+  function removeEnhancedProfileNativeStandardAction() {
+    if (enhancedProfileNativeOverflowMenuFrame !== null) {
+      cancelAnimationFrame(enhancedProfileNativeOverflowMenuFrame);
+      enhancedProfileNativeOverflowMenuFrame = null;
+    }
+    enhancedProfileNativeOverflowMenuAction?.remove();
+    enhancedProfileNativeOverflowMenuAction = null;
+    enhancedProfileNativeOverflowMenuSurface = null;
+    enhancedProfileNativeOverflowMenuInjected = false;
+    document
+      .querySelectorAll(`[${ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+  }
+
+  function findEnhancedProfileNativeOverflowMenuSurface(trigger) {
+    if (
+      !trigger?.isConnected ||
+      (
+        trigger.getAttribute("aria-expanded") !== "true" &&
+        trigger.getAttribute("data-state") !== "open"
+      )
+    ) {
+      return null;
+    }
+    const controlledIds = (trigger.getAttribute("aria-controls") || "")
+      .split(/\s+/)
+      .filter(Boolean);
+    for (const controlledId of controlledIds) {
+      const surface = document.getElementById(controlledId);
+      if (
+        !surface?.isConnected ||
+        surface === trigger ||
+        trigger.contains(surface) ||
+        enhancedProfileHost?.contains?.(surface)
+      ) {
+        continue;
+      }
+      if (
+        surface.matches?.('[role="menu"], [role="dialog"]') ||
+        Array.from(surface.children).some((child) =>
+          child.matches?.('[role="menu"], [role="dialog"]')
+        )
+      ) {
+        return surface;
+      }
+    }
+    return null;
+  }
+
+  function getEnhancedProfileNativeOverflowMenuRoot(surface) {
+    if (!surface) return null;
+    if (surface.matches?.('[role="menu"], [role="dialog"]')) return surface;
+    return Array.from(surface.children).find((child) =>
+      child.matches?.('[role="menu"], [role="dialog"]')
+    ) || null;
+  }
+
+  function getEnhancedProfileNativeOverflowMenuCandidates(menuRoot) {
+    if (!menuRoot) return [];
+    return Array.from(menuRoot.querySelectorAll(
+      '[role="menuitem"], a[href], button'
+    )).filter((candidate) => {
+      if (
+        candidate.closest(`[${ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE}]`) ||
+        candidate.closest(`[${ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE}]`) ||
+        candidate.disabled === true ||
+        candidate.getAttribute("aria-disabled") === "true" ||
+        candidate.getAttribute("aria-hidden") === "true"
+      ) {
+        return false;
+      }
+      const controlDescription = [
+        candidate.getAttribute("aria-label"),
+        candidate.getAttribute("title"),
+        candidate.getAttribute("data-testid")
+      ].filter(Boolean).join(" ");
+      if (/\bclose\b/i.test(controlDescription)) return false;
+      return Boolean(candidate.textContent?.replace(/\s+/g, " ").trim());
+    });
+  }
+
+  function getEnhancedProfileNativeOverflowMenuTemplate(menuRoot) {
+    return getEnhancedProfileNativeOverflowMenuCandidates(menuRoot)[0] || null;
+  }
+
+  function placeEnhancedProfileNativeStandardAction(menuRoot, template, action) {
+    const candidates = getEnhancedProfileNativeOverflowMenuCandidates(menuRoot);
+    const sameParent = candidates.filter(
+      (candidate) => candidate.parentElement === template.parentElement
+    );
+    if (template.parentElement && sameParent.length >= 2) {
+      template.parentElement.append(action);
+      return action;
+    }
+    const wrapper = template.parentElement;
+    const wrapperParent = wrapper?.parentElement;
+    const peerWrappers = wrapperParent
+      ? candidates.filter(
+          (candidate) =>
+            candidate.parentElement !== wrapper &&
+            candidate.parentElement?.parentElement === wrapperParent
+        )
+      : [];
+    if (
+      wrapper &&
+      wrapper !== menuRoot &&
+      wrapperParent &&
+      peerWrappers.length >= 1
+    ) {
+      const wrapperTag = /^(LI|DIV)$/.test(wrapper.tagName)
+        ? wrapper.tagName.toLowerCase()
+        : "div";
+      const clonedWrapper = document.createElement(wrapperTag);
+      if (typeof wrapper.className === "string") {
+        clonedWrapper.className = wrapper.className;
+      }
+      clonedWrapper.append(action);
+      wrapperParent.append(clonedWrapper);
+      return clonedWrapper;
+    }
+    if (menuRoot.matches("ul, ol")) {
+      const listItem = document.createElement("li");
+      listItem.append(action);
+      menuRoot.append(listItem);
+      return listItem;
+    }
+    menuRoot.append(action);
+    return action;
+  }
+
+  function styleEnhancedProfileNativeStandardAction(action, template) {
+    if (!action || !template) return;
+    if (typeof template.className === "string") {
+      action.className = template.className;
+    }
+    let computed = null;
+    try {
+      computed = getComputedStyle(template);
+    } catch {
+      computed = null;
+    }
+    const copyProperty = (property, fallback = "") => {
+      const value = computed?.getPropertyValue(property)?.trim() || fallback;
+      if (value) action.style.setProperty(property, value);
+    };
+    action.style.setProperty("display", "flex");
+    action.style.setProperty("align-items", "center");
+    action.style.setProperty("box-sizing", "border-box");
+    action.style.setProperty("width", "100%");
+    action.style.setProperty("min-width", "0");
+    copyProperty("min-height", "40px");
+    copyProperty("padding-top");
+    copyProperty("padding-right", "16px");
+    copyProperty("padding-bottom");
+    copyProperty("padding-left", "16px");
+    copyProperty("border-radius", "6px");
+    copyProperty("color");
+    copyProperty("font-family");
+    copyProperty("font-size", "14px");
+    copyProperty("font-weight", "600");
+    copyProperty("line-height");
+    action.style.setProperty("border", "0");
+    action.style.setProperty("background", "transparent");
+    action.style.setProperty("text-align", "left");
+    action.style.setProperty("text-decoration", "none");
+    action.style.setProperty("white-space", "normal");
+    action.style.setProperty("cursor", "pointer");
+    const setHighlighted = (highlighted) => {
+      action.style.setProperty(
+        "background",
+        highlighted
+          ? "var(--color-state-hover, rgba(255, 255, 255, 0.08))"
+          : "transparent"
+      );
+    };
+    action.addEventListener("pointerenter", () => setHighlighted(true));
+    action.addEventListener("pointerleave", () => setHighlighted(false));
+    action.addEventListener("focus", () => setHighlighted(true));
+    action.addEventListener("blur", () => setHighlighted(false));
+  }
+
+  function syncEnhancedProfileNativeStandardAction() {
+    enhancedProfileNativeOverflowMenuFrame = null;
+    const trigger = getEnhancedProfileNativeOverflowTrigger();
+    const surface = findEnhancedProfileNativeOverflowMenuSurface(trigger);
+    const routeUserId = enhancedProfileRouteUserId;
+    if (!surface || !routeUserId) {
+      removeEnhancedProfileNativeStandardAction();
+      return false;
+    }
+    if (surface !== enhancedProfileNativeOverflowMenuSurface) {
+      enhancedProfileNativeOverflowMenuAction?.remove();
+      enhancedProfileNativeOverflowMenuAction = null;
+      enhancedProfileNativeOverflowMenuSurface = surface;
+      enhancedProfileNativeOverflowMenuInjected = false;
+    }
+    document
+      .querySelectorAll(`[${ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE}]`)
+      .forEach((element) => {
+        if (!surface.contains(element)) element.remove();
+      });
+    const existing = surface.querySelector(
+      `[${ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE}]`
+    );
+    const standardUrl = getEnhancedProfileStandardViewUrl(routeUserId);
+    if (existing) {
+      const existingLink = existing.matches("a")
+        ? existing
+        : existing.querySelector("a");
+      if (existingLink) {
+        const label = "View standard profile";
+        if (existingLink.href !== standardUrl) {
+          existingLink.href = standardUrl;
+        }
+        if (existingLink.getAttribute("aria-label") !== label) {
+          existingLink.setAttribute("aria-label", label);
+        }
+        if (existingLink.textContent !== label) {
+          existingLink.textContent = label;
+        }
+      }
+      enhancedProfileNativeOverflowMenuAction = existing;
+      enhancedProfileNativeOverflowMenuInjected = true;
+      return true;
+    }
+    if (enhancedProfileNativeOverflowMenuInjected) return false;
+    const menuRoot = getEnhancedProfileNativeOverflowMenuRoot(surface);
+    const template = getEnhancedProfileNativeOverflowMenuTemplate(menuRoot);
+    if (!menuRoot || !template) return false;
+    const action = document.createElement("a");
+    action.href = standardUrl;
+    const nativeRole = template.getAttribute("role")?.trim();
+    if (nativeRole) action.setAttribute("role", nativeRole);
+    action.setAttribute("aria-label", "View standard profile");
+    action.textContent = "View standard profile";
+    styleEnhancedProfileNativeStandardAction(action, template);
+    action.addEventListener("click", (event) => {
+      event.preventDefault();
+      const route = parseEnhancedProfileRoute();
+      if (
+        !route ||
+        route.standardView ||
+        route.userId !== routeUserId ||
+        enhancedProfileRouteUserId !== routeUserId
+      ) {
+        enhancedProfileNativeOverflowMenuAction?.remove();
+        enhancedProfileNativeOverflowMenuAction = null;
+        return;
+      }
+      queueMicrotask(() => {
+        setEnhancedProfileViewMode(routeUserId, "standard");
+      });
+    });
+    const insertion = placeEnhancedProfileNativeStandardAction(
+      menuRoot,
+      template,
+      action
+    );
+    insertion.setAttribute(ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE, "");
+    insertion.dataset.rslEnhancedProfileUserId = routeUserId;
+    enhancedProfileNativeOverflowMenuAction = insertion;
+    enhancedProfileNativeOverflowMenuInjected = true;
+    return true;
+  }
+
+  function findEnhancedProfileStandardNativeOverflowTrigger(userId) {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    const content = document.getElementById("content");
+    if (!normalizedUserId || !content) return null;
+    const preferMobile = typeof matchMedia === "function" &&
+      matchMedia("(max-width: 680px)").matches;
+    const candidates = [];
+    Array.from(content.children).forEach((root, rootIndex) => {
+      if (
+        !root.matches?.(
+          '.profile-platform-container[data-profile-type="User"]'
+        ) ||
+        normalizeEnhancedProfileId(root.dataset.profileId) !== normalizedUserId
+      ) {
+        return;
+      }
+      root.querySelectorAll(
+        'button[id="user-profile-header-contextual-menu-button"]' +
+        '[aria-label="Open contextual menu"][aria-haspopup="dialog"]'
+      ).forEach((trigger, triggerIndex) => {
+        if (
+          !trigger.isConnected ||
+          trigger.disabled === true ||
+          trigger.getAttribute("aria-disabled") === "true"
+        ) {
+          return;
+        }
+        const open =
+          trigger.getAttribute("aria-expanded") === "true" ||
+          trigger.getAttribute("data-state") === "open";
+        const mobile = isEnhancedProfileNativeMobileControl(trigger);
+        let score = open ? 1_000 : 0;
+        if (mobile === preferMobile) score += 20;
+        score -= rootIndex / 100;
+        score -= triggerIndex / 1_000;
+        candidates.push({ trigger, score, open });
+      });
+    });
+    candidates.sort((left, right) => right.score - left.score);
+    return candidates.find((candidate) => candidate.open)?.trigger || null;
+  }
+
+  function removeEnhancedProfileNativeReturnInsertion() {
+    enhancedProfileNativeReturnAction?.remove();
+    enhancedProfileNativeReturnAction = null;
+    enhancedProfileNativeReturnSurface = null;
+    document
+      .querySelectorAll(`[${ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+  }
+
+  function cleanupEnhancedProfileNativeReturnAction(closeOpenMenu = false) {
+    const userId =
+      enhancedProfileNativeReturnUserId || enhancedProfileStandardViewUserId;
+    const trigger = closeOpenMenu
+      ? findEnhancedProfileStandardNativeOverflowTrigger(userId)
+      : null;
+    if (enhancedProfileNativeReturnFrame !== null) {
+      cancelAnimationFrame(enhancedProfileNativeReturnFrame);
+      enhancedProfileNativeReturnFrame = null;
+    }
+    enhancedProfileNativeReturnObserver?.disconnect();
+    enhancedProfileNativeReturnObserver = null;
+    enhancedProfileNativeReturnController?.abort();
+    enhancedProfileNativeReturnController = null;
+    enhancedProfileNativeReturnUserId = null;
+    removeEnhancedProfileNativeReturnInsertion();
+    if (!trigger) return;
+    try {
+      trigger.click();
+    } catch {
+      // Roblox owns this menu; removing our action is sufficient cleanup.
+    }
+  }
+
+  function syncEnhancedProfileNativeReturnAction(userId) {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    const route = parseEnhancedProfileRoute();
+    if (
+      !normalizedUserId ||
+      route?.userId !== normalizedUserId ||
+      enhancedProfileStandardViewUserId !== normalizedUserId
+    ) {
+      cleanupEnhancedProfileNativeReturnAction(false);
+      return false;
+    }
+    const trigger = findEnhancedProfileStandardNativeOverflowTrigger(
+      normalizedUserId
+    );
+    const surface = findEnhancedProfileNativeOverflowMenuSurface(trigger);
+    if (!surface) {
+      removeEnhancedProfileNativeReturnInsertion();
+      return false;
+    }
+    if (surface !== enhancedProfileNativeReturnSurface) {
+      removeEnhancedProfileNativeReturnInsertion();
+      enhancedProfileNativeReturnSurface = surface;
+    }
+    document
+      .querySelectorAll(`[${ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE}]`)
+      .forEach((element) => {
+        if (!surface.contains(element)) element.remove();
+      });
+    const existing = surface.querySelector(
+      `[${ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE}]`
+    );
+    if (existing) {
+      enhancedProfileNativeReturnAction = existing;
+      enhancedProfileNativeReturnSurface = surface;
+      return true;
+    }
+    const menuRoot = getEnhancedProfileNativeOverflowMenuRoot(surface);
+    const template = getEnhancedProfileNativeOverflowMenuTemplate(menuRoot);
+    if (!menuRoot || !template) return false;
+    const action = document.createElement("button");
+    action.type = "button";
+    const nativeRole = template.getAttribute("role")?.trim();
+    if (nativeRole) action.setAttribute("role", nativeRole);
+    action.setAttribute("aria-label", "View RoTool profile");
+    action.textContent = "View RoTool profile";
+    styleEnhancedProfileNativeStandardAction(action, template);
+    action.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      queueMicrotask(() => {
+        setEnhancedProfileViewMode(normalizedUserId, "rotool");
+      });
+    });
+    const insertion = placeEnhancedProfileNativeStandardAction(
+      menuRoot,
+      template,
+      action
+    );
+    insertion.setAttribute(ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE, "");
+    insertion.dataset.rslEnhancedProfileUserId = normalizedUserId;
+    enhancedProfileNativeReturnAction = insertion;
+    enhancedProfileNativeReturnSurface = surface;
+    return true;
+  }
+
+  function scheduleEnhancedProfileNativeReturnAction() {
+    const userId = enhancedProfileNativeReturnUserId;
+    if (!userId) return;
+    if (enhancedProfileNativeReturnFrame === null) {
+      enhancedProfileNativeReturnFrame = requestAnimationFrame(() => {
+        enhancedProfileNativeReturnFrame = null;
+        syncEnhancedProfileNativeReturnAction(userId);
+      });
+    }
+    queueMicrotask(() => {
+      if (enhancedProfileNativeReturnFrame === null) return;
+      cancelAnimationFrame(enhancedProfileNativeReturnFrame);
+      enhancedProfileNativeReturnFrame = null;
+      syncEnhancedProfileNativeReturnAction(userId);
+    });
+  }
+
+  function installEnhancedProfileNativeReturnAction(userId) {
+    const normalizedUserId = normalizeEnhancedProfileId(userId);
+    if (!normalizedUserId) {
+      cleanupEnhancedProfileNativeReturnAction(false);
+      return false;
+    }
+    if (
+      enhancedProfileNativeReturnController &&
+      enhancedProfileNativeReturnUserId === normalizedUserId
+    ) {
+      scheduleEnhancedProfileNativeReturnAction();
+      return true;
+    }
+    cleanupEnhancedProfileNativeReturnAction(false);
+    enhancedProfileNativeReturnUserId = normalizedUserId;
+    const controller = new AbortController();
+    enhancedProfileNativeReturnController = controller;
+    document.addEventListener("click", (event) => {
+      const trigger = event.target?.closest?.(
+        'button[id="user-profile-header-contextual-menu-button"]' +
+        '[aria-label="Open contextual menu"][aria-haspopup="dialog"]'
+      );
+      if (!trigger) return;
+      queueMicrotask(scheduleEnhancedProfileNativeReturnAction);
+    }, { capture: true, signal: controller.signal });
+    enhancedProfileNativeReturnObserver = new MutationObserver(
+      scheduleEnhancedProfileNativeReturnAction
+    );
+    enhancedProfileNativeReturnObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-controls", "aria-expanded", "data-state"]
+    });
+    scheduleEnhancedProfileNativeReturnAction();
+    return true;
+  }
+
+  function scheduleEnhancedProfileNativeStandardAction() {
+    if (enhancedProfileNativeOverflowMenuFrame === null) {
+      enhancedProfileNativeOverflowMenuFrame = requestAnimationFrame(
+        syncEnhancedProfileNativeStandardAction
+      );
+    }
+    queueMicrotask(() => {
+      if (enhancedProfileNativeOverflowMenuFrame === null) return;
+      cancelAnimationFrame(enhancedProfileNativeOverflowMenuFrame);
+      enhancedProfileNativeOverflowMenuFrame = null;
+      syncEnhancedProfileNativeStandardAction();
+    });
+  }
+
+  function installEnhancedProfileNativeOverflowMenuObserver(trigger) {
+    enhancedProfileNativeOverflowMenuObserver?.disconnect();
+    enhancedProfileNativeOverflowMenuObserver = new MutationObserver(
+      scheduleEnhancedProfileNativeStandardAction
+    );
+    enhancedProfileNativeOverflowMenuObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+    enhancedProfileNativeOverflowMenuObserver.observe(trigger, {
+      attributes: true,
+      attributeFilter: ["aria-controls", "aria-expanded", "data-state"]
+    });
+    scheduleEnhancedProfileNativeStandardAction();
+  }
+
+  function cleanupEnhancedProfileNativeOverflow(closeOpenMenu = true) {
+    if (enhancedProfileNativeOverflowPositionFrame !== null) {
+      cancelAnimationFrame(enhancedProfileNativeOverflowPositionFrame);
+      enhancedProfileNativeOverflowPositionFrame = null;
+    }
+    enhancedProfileNativeOverflowResizeObserver?.disconnect();
+    enhancedProfileNativeOverflowResizeObserver = null;
+    enhancedProfileNativeOverflowMenuObserver?.disconnect();
+    enhancedProfileNativeOverflowMenuObserver = null;
+    removeEnhancedProfileNativeStandardAction();
+    enhancedProfileNativeOverflowController?.abort();
+    enhancedProfileNativeOverflowController = null;
+    const trigger = enhancedProfileNativeOverflowTrigger;
+    if (
+      closeOpenMenu &&
+      trigger?.isConnected &&
+      trigger.getAttribute("aria-expanded") === "true"
+    ) {
+      try {
+        trigger.click();
+      } catch {
+        // Roblox owns the menu; marker cleanup below still removes our overlay.
+      }
+    }
+    if (enhancedProfileNativeOverflowProxySummary) {
+      enhancedProfileNativeOverflowProxySummary.removeAttribute("tabindex");
+      enhancedProfileNativeOverflowProxySummary.removeAttribute("aria-hidden");
+      enhancedProfileNativeOverflowProxySummary.removeAttribute(
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE
+      );
+    }
+    enhancedProfileNativeOverflowProxySummary = null;
+    clearEnhancedProfileNativeOverflowMarkers();
+    restoreEnhancedProfileNativeOverflowStyles();
+    enhancedProfileNativeOverflowRoot = null;
+    enhancedProfileNativeOverflowTrigger = null;
+  }
+
+  function installEnhancedProfileNativeOverflowPositioning(root, trigger) {
+    const sameControl =
+      root === enhancedProfileNativeOverflowRoot &&
+      trigger === enhancedProfileNativeOverflowTrigger;
+    if (!sameControl) cleanupEnhancedProfileNativeOverflow(true);
+    else clearEnhancedProfileNativeOverflowMarkers();
+    enhancedProfileNativeOverflowRoot = root;
+    enhancedProfileNativeOverflowTrigger = trigger;
+    if (!markEnhancedProfileNativeOverflowControl(root, trigger)) {
+      cleanupEnhancedProfileNativeOverflow(false);
+      return false;
+    }
+    if (!enhancedProfileNativeOverflowController) {
+      const controller = new AbortController();
+      enhancedProfileNativeOverflowController = controller;
+      window.addEventListener(
+        "scroll",
+        scheduleEnhancedProfileNativeOverflowPosition,
+        { capture: true, passive: true, signal: controller.signal }
+      );
+      window.addEventListener("resize", () => {
+        const content = document.getElementById("content");
+        if (content && enhancedProfileLoadState === "ready") {
+          suppressNativeEnhancedProfileRoots(content);
+        }
+      }, { passive: true, signal: controller.signal });
+      trigger.addEventListener("click", () => {
+        queueMicrotask(scheduleEnhancedProfileNativeStandardAction);
+      }, { capture: true, signal: controller.signal });
+    }
+    installEnhancedProfileNativeOverflowMenuObserver(trigger);
+    enhancedProfileNativeOverflowResizeObserver?.disconnect();
+    enhancedProfileNativeOverflowResizeObserver =
+      typeof ResizeObserver === "function" ? new ResizeObserver(
+        scheduleEnhancedProfileNativeOverflowPosition
+      ) : null;
+    const summary = enhancedProfileShadowRoot?.querySelector(
+      ".rtp-overflow > summary"
+    );
+    if (summary) enhancedProfileNativeOverflowResizeObserver?.observe(summary);
+    if (enhancedProfileHost) {
+      enhancedProfileNativeOverflowResizeObserver?.observe(enhancedProfileHost);
+    }
+    const positioned = positionEnhancedProfileNativeOverflowTrigger();
+    scheduleEnhancedProfileNativeOverflowPosition();
+    return positioned;
+  }
+
+  function syncEnhancedProfileNativeOverflow(roots) {
+    const selected = findEnhancedProfileNativeOverflowControl(roots);
+    if (!selected) {
+      cleanupEnhancedProfileNativeOverflow(true);
+      return false;
+    }
+    return installEnhancedProfileNativeOverflowPositioning(
+      selected.root,
+      selected.trigger
+    );
+  }
+
+  function ensureEnhancedProfileSuppressionStyle() {
+    let style = document.getElementById(ENHANCED_PROFILE_STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = ENHANCED_PROFILE_STYLE_ID;
+      (document.head || document.documentElement).append(style);
+    }
+    const nativeRoot =
+      `#content > [${ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE}]`;
+    const coverRoot =
+      `${nativeRoot}[${ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE}]`;
+    const overflowRoot =
+      `${nativeRoot}[${ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE}]`;
+    const presenceRoot =
+      `#${ENHANCED_PROFILE_HOST_ID} ` +
+      `[${ENHANCED_PROFILE_PRESENCE_ATTRIBUTE}]`;
+    const retainedChild =
+      `:not([${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}])` +
+      `:not([${ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE}])` +
+      `:not([${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}])` +
+      `:not([${ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE}])`;
+    const source = `
+      ${nativeRoot}:not([${ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE}]):not([${ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE}]) {
+        display: none !important;
+      }
+      ${coverRoot},
+      ${overflowRoot} {
+        display: contents !important;
+      }
+      ${coverRoot} > ${retainedChild},
+      ${overflowRoot} > ${retainedChild},
+      ${coverRoot} [${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}] > ${retainedChild},
+      ${coverRoot} [${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}] > ${retainedChild},
+      ${overflowRoot} [${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}] > ${retainedChild},
+      ${overflowRoot} [${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}] > ${retainedChild} {
+        display: none !important;
+      }
+      ${coverRoot} [${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}],
+      ${coverRoot} [${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}],
+      ${overflowRoot} [${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}],
+      ${overflowRoot} [${ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE}] {
+        display: contents !important;
+      }
+      ${coverRoot} [${ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE}] {
+        position: relative !important;
+        display: block !important;
+        box-sizing: border-box !important;
+        width: 100% !important;
+        height: 300px !important;
+        min-height: 300px !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+        border-radius: 8px !important;
+      }
+      ${nativeRoot} [${ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE}] {
+        position: fixed !important;
+        top: var(--rsl-enhanced-profile-overflow-top, -10000px) !important;
+        right: auto !important;
+        bottom: auto !important;
+        left: var(--rsl-enhanced-profile-overflow-left, -10000px) !important;
+        z-index: 1000 !important;
+        display: grid !important;
+        width: var(--rsl-enhanced-profile-overflow-width, 40px) !important;
+        min-width: var(--rsl-enhanced-profile-overflow-width, 40px) !important;
+        max-width: var(--rsl-enhanced-profile-overflow-width, 40px) !important;
+        height: var(--rsl-enhanced-profile-overflow-height, 40px) !important;
+        min-height: var(--rsl-enhanced-profile-overflow-height, 40px) !important;
+        max-height: var(--rsl-enhanced-profile-overflow-height, 40px) !important;
+        margin: 0 !important;
+        transform: none !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        place-items: center !important;
+      }
+      ${presenceRoot} > .avatar.avatar-card-fullbody {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+      }
+      @media (max-width: 680px) {
+        ${coverRoot} [${ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE}] {
+          width: calc(100% - 30px) !important;
+          margin-right: 15px !important;
+          margin-left: 15px !important;
+        }
+      }
+    `;
+    if (style.textContent !== source) style.textContent = source;
+    return style;
+  }
+
+  function clearEnhancedProfileNativeCoverMarkers() {
+    const markerSelector =
+      `[${ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE}], ` +
+      `[${ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE}], ` +
+      `[${ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE}]`;
+    const marked = new Set(document.querySelectorAll(markerSelector));
+    for (const root of enhancedProfileSuppressedRoots) {
+      if (root?.matches?.(markerSelector)) marked.add(root);
+      root?.querySelectorAll?.(markerSelector)
+        .forEach((element) => marked.add(element));
+    }
+    marked.forEach((element) => {
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE);
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE);
+      element.removeAttribute(ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE);
+    });
+    enhancedProfileHost?.removeAttribute(
+      ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE
+    );
+  }
+
+  function markEnhancedProfileNativeCover(root, cover) {
+    if (!root || !cover || !root.contains(cover)) return false;
+    root.setAttribute(ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE, "");
+    cover.setAttribute(ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE, "");
+    let ancestor = cover.parentElement;
+    while (ancestor && ancestor !== root) {
+      ancestor.setAttribute(
+        ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE,
+        ""
+      );
+      ancestor = ancestor.parentElement;
+    }
+    return ancestor === root;
+  }
+
+  function suppressNativeEnhancedProfileRoots(content) {
+    if (enhancedProfileLoadState === "error") {
+      restoreNativeEnhancedProfileRoots();
+      return;
+    }
+    ensureEnhancedProfileSuppressionStyle();
+    clearEnhancedProfileNativeCoverMarkers();
+    const roots = Array.from(content.children).filter((child) =>
+      child !== enhancedProfileHost &&
+      child.matches?.(
+        '.profile-platform-container[data-profile-type="User"]'
+      )
+    );
+    const nativeCoverRoot = roots.find((root) =>
+      normalizeEnhancedProfileId(root.dataset.profileId) ===
+        enhancedProfileRouteUserId &&
+      root.querySelector(
+        ".currently-wearing-avatar-with-background"
+      )
+    ) || null;
+    const nativeCover = nativeCoverRoot?.querySelector(
+      ".currently-wearing-avatar-with-background"
+    ) || null;
+    for (const root of roots) {
+      if (!root.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)) {
+        root.setAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE, "");
+      }
+      enhancedProfileSuppressedRoots.add(root);
+    }
+    const usesNativeCover = Boolean(
+      nativeCoverRoot &&
+      nativeCover &&
+      markEnhancedProfileNativeCover(nativeCoverRoot, nativeCover)
+    );
+    enhancedProfileHost?.toggleAttribute(
+      ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE,
+      usesNativeCover
+    );
+    if (!enhancedProfileHost?.isConnected) return;
+    if (usesNativeCover) {
+      if (nativeCoverRoot.nextSibling !== enhancedProfileHost) {
+        content.insertBefore(enhancedProfileHost, nativeCoverRoot.nextSibling);
+      }
+    } else if (content.firstElementChild !== enhancedProfileHost) {
+      content.prepend(enhancedProfileHost);
+    }
+    syncEnhancedProfileNativeOverflow(roots);
+  }
+
+  function restoreNativeEnhancedProfileRoots() {
+    cleanupEnhancedProfileNativeOverflow(true);
+    document
+      .querySelectorAll(`[${ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE}]`)
+      .forEach((element) =>
+        element.removeAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)
+      );
+    for (const element of enhancedProfileSuppressedRoots) {
+      element.removeAttribute?.(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE);
+    }
+    enhancedProfileSuppressedRoots.clear();
+    clearEnhancedProfileNativeCoverMarkers();
+    const content = document.getElementById("content");
+    if (
+      content &&
+      enhancedProfileHost?.isConnected &&
+      enhancedProfileHost.parentElement === content &&
+      content.firstElementChild !== enhancedProfileHost
+    ) {
+      content.prepend(enhancedProfileHost);
+    }
+  }
+
+  function setEnhancedProfileHostHidden(hidden) {
+    if (!enhancedProfileHost) return;
+    enhancedProfileHost.hidden = hidden;
+    enhancedProfileHost.style.setProperty(
+      "display",
+      hidden ? "none" : "block",
+      "important"
+    );
+  }
+
+  function clearEnhancedProfilePendingTopReset() {
+    enhancedProfilePendingTopResetUserId = null;
+    if (enhancedProfileTopResetFrame !== null) {
+      window.cancelAnimationFrame(enhancedProfileTopResetFrame);
+      enhancedProfileTopResetFrame = null;
+    }
+  }
+
+  function scheduleEnhancedProfileTopReset(userId, epoch) {
+    if (enhancedProfilePendingTopResetUserId !== userId) return;
+    enhancedProfilePendingTopResetUserId = null;
+    if (enhancedProfileTopResetFrame !== null) {
+      window.cancelAnimationFrame(enhancedProfileTopResetFrame);
+    }
+    enhancedProfileTopResetFrame = window.requestAnimationFrame(() => {
+      enhancedProfileTopResetFrame = null;
+      if (
+        epoch !== enhancedProfileLifecycleEpoch ||
+        userId !== enhancedProfileRouteUserId ||
+        enhancedProfileLoadState !== "ready" ||
+        !enhancedProfileHost?.isConnected
+      ) {
+        return;
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }
+
+  function syncEnhancedProfileHostTheme() {
+    if (!enhancedProfileHost) return;
+    const darkTheme =
+      document.documentElement.classList.contains("dark-theme") ||
+      document.body?.classList.contains("dark-theme");
+    enhancedProfileHost.dataset.rslTheme = darkTheme ? "dark" : "light";
+    const roproTheme =
+      document.documentElement.classList.contains("ropro-profile-theme-active") ||
+      document.body?.classList.contains("ropro-profile-theme-active") ||
+      Boolean(
+        document.getElementById("roproThemeFrame") ||
+        document.getElementById("roproThemeBackdropFrame")
+      );
+    enhancedProfileHost.toggleAttribute("data-rsl-ropro-theme", roproTheme);
+  }
+
+  function createEnhancedProfileHost(content, userId) {
+    document.getElementById(ENHANCED_PROFILE_HOST_ID)?.remove();
+    const host = document.createElement("div");
+    host.id = ENHANCED_PROFILE_HOST_ID;
+    host.dataset.rslEnhancedProfileUserId = userId;
+    host.hidden = true;
+    host.style.setProperty("display", "none", "important");
+    host.style.setProperty("width", "100%", "important");
+    host.style.setProperty("min-width", "0", "important");
+    const root = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = ENHANCED_PROFILE_CSS;
+    const app = makeEnhancedProfileElement("div", "rtp-app");
+    app.setAttribute("aria-live", "polite");
+    root.append(style, app);
+    enhancedProfileHost = host;
+    enhancedProfileShadowRoot = root;
+    syncEnhancedProfileHostTheme();
+    content.prepend(host);
+    renderEnhancedProfile();
+    return host;
+  }
+
+  function cleanupEnhancedProfileFeature(options = {}) {
+    const preserveStandardView = options.preserveStandardView === true;
+    enhancedProfileLifecycleEpoch += 1;
+    window.clearTimeout(enhancedProfileStatusTimer);
+    enhancedProfileStatusTimer = null;
+    clearEnhancedProfilePendingTopReset();
+    enhancedProfileOverflowController?.abort();
+    enhancedProfileOverflowController = null;
+    cancelEnhancedProfileBadgeCountAnimation();
+    window.clearTimeout(enhancedProfileBadgeCountStartTimer);
+    window.clearTimeout(enhancedProfileRelationshipsStartTimer);
+    enhancedProfileBadgeCountStartTimer = null;
+    enhancedProfileRelationshipsStartTimer = null;
+    enhancedProfileBadgeCountRequest = null;
+    enhancedProfileBadgeCountDisplayedValue = null;
+    cleanupEnhancedProfileCarouselObservers();
+    cleanupEnhancedProfileThumbnailObserver();
+    cleanupEnhancedProfileNativeReturnAction(false);
+    restoreNativeEnhancedProfileRoots();
+    enhancedProfileHost?.remove();
+    document.getElementById(ENHANCED_PROFILE_HOST_ID)?.remove();
+    document.getElementById(ENHANCED_PROFILE_STYLE_ID)?.remove();
+    enhancedProfileHost = null;
+    enhancedProfileShadowRoot = null;
+    enhancedProfileRouteUserId = null;
+    enhancedProfileLoadState = "idle";
+    enhancedProfileErrorCode = "";
+    enhancedProfileData = null;
+    enhancedProfileActiveTab = "about";
+    if (!preserveStandardView) enhancedProfileStandardViewUserId = null;
+  }
+
+  function mountEnhancedProfile() {
+    const featureEnabled = isFeatureEnabled("enhancedProfiles");
+    const route = featureEnabled ? getEnhancedProfileEffectiveRoute() : null;
+    if (!featureEnabled || !route) {
+      if (enhancedProfileHost || enhancedProfileRouteUserId) {
+        cleanupEnhancedProfileFeature();
+      } else {
+        enhancedProfileStandardViewUserId = null;
+        cleanupEnhancedProfileNativeReturnAction(false);
+      }
+      return;
+    }
+    if (route.standardView) {
+      if (enhancedProfileHost || enhancedProfileRouteUserId) {
+        cleanupEnhancedProfileFeature({ preserveStandardView: true });
+      }
+      installEnhancedProfileNativeReturnAction(route.userId);
+      return;
+    }
+    cleanupEnhancedProfileNativeReturnAction(false);
+    const content = document.getElementById("content");
+    if (!content) return;
+    const routeChanged = enhancedProfileRouteUserId !== route.userId;
+    if (routeChanged) {
+      cleanupEnhancedProfileFeature();
+      enhancedProfileRouteUserId = route.userId;
+      enhancedProfilePendingTopResetUserId = route.userId;
+      enhancedProfileActiveTab = getEnhancedProfileTabFromLocation();
+      enhancedProfileLoadState = "loading";
+    } else {
+      const routeTab = getEnhancedProfileTabFromLocation();
+      if (routeTab !== enhancedProfileActiveTab) {
+        enhancedProfileActiveTab = routeTab;
+        syncEnhancedProfileTabUi(false);
+      }
+    }
+    const needsHost =
+      !enhancedProfileHost ||
+      !enhancedProfileHost.isConnected ||
+      enhancedProfileHost.parentElement !== content ||
+      enhancedProfileHost.dataset.rslEnhancedProfileUserId !== route.userId;
+    if (needsHost) {
+      createEnhancedProfileHost(content, route.userId);
+    } else {
+      syncEnhancedProfileHostTheme();
+    }
+    if (enhancedProfileLoadState === "ready") {
+      setEnhancedProfileHostHidden(false);
+      suppressNativeEnhancedProfileRoots(content);
+    } else if (enhancedProfileLoadState === "loading") {
+      setEnhancedProfileHostHidden(true);
+      restoreNativeEnhancedProfileRoots();
+    }
+    if (routeChanged || enhancedProfileLoadState === "idle") {
+      void loadEnhancedProfileData();
+    }
+  }
+
   function mountExtensionFeatures() {
+    syncAccountRecoveryModalRouteState();
     syncExtensionUpdateHomeVisitState();
     mountFeatureSettingsButton();
+    mountAccountRecoverySettingsMenuItem();
     if (!featureSettingsLoaded) {
       return;
     }
+    mountEnhancedProfile();
     mountNativeEventScheduleButtons();
     if (isFeatureEnabled("experiencePlaces")) {
       mountExperiencePlaces();
@@ -20655,6 +27303,41 @@
       ) {
         return;
       }
+    }
+    const recoverySettingsKeys = [
+      "recoverySnapshots",
+      "recoverySnapshotMenu",
+      "recoverySnapshotArchive",
+      "recoverySnapshotReminder"
+    ];
+    const recoverySettingsChanged = recoverySettingsKeys.some(
+      (key) => previousSettings[key] !== nextSettings[key]
+    );
+    if (
+      previousSettings.recoverySnapshots !==
+        nextSettings.recoverySnapshots ||
+      previousSettings.recoverySnapshotArchive !==
+        nextSettings.recoverySnapshotArchive ||
+      previousSettings.recoverySnapshotReminder !==
+        nextSettings.recoverySnapshotReminder
+    ) {
+      recomputeAccountRecoveryReminder();
+    }
+    if (
+      recoverySettingsChanged &&
+      FEATURE_SETTING_DEFINITIONS.every(
+        ({ key }) =>
+          recoverySettingsKeys.includes(key) ||
+          previousSettings[key] === nextSettings[key]
+      )
+      ) {
+      if (
+        previousSettings.recoverySnapshots !== nextSettings.recoverySnapshots ||
+        previousSettings.recoverySnapshotMenu !== nextSettings.recoverySnapshotMenu
+      ) {
+        mountAccountRecoverySettingsMenuItem();
+      }
+      return;
     }
     if (
       previousSettings.sidebarShortcuts !== nextSettings.sidebarShortcuts ||
@@ -20941,13 +27624,21 @@
               <input class="rsl-field__input bg-surface-0 content-emphasis stroke-muted stroke-standard radius-medium height-1000 padding-x-medium" name="url" inputmode="url" autocomplete="off" placeholder="https://www.roblox.com/games/..." required>
             </label>
 
+            <label class="rsl-shortcut-tab-option">
+              <input type="checkbox" name="openInNewTab">
+              <span class="rsl-shortcut-tab-option__copy">
+                <strong class="content-emphasis text-label-medium">Open in a new tab</strong>
+                <span class="content-default text-body-small">Keep the current Roblox page open.</span>
+              </span>
+            </label>
+
             <p class="rsl-error" role="alert"></p>
           </form>
 
           <section class="rsl-manager" aria-labelledby="rsl-manager-title">
             <h3 id="rsl-manager-title" class="content-emphasis text-title-medium">Your shortcuts</h3>
             <div class="rsl-manager__list" role="list"></div>
-            <p class="rsl-sr-only" data-rsl-reorder-status role="status" aria-live="polite" aria-atomic="true"></p>
+            <p class="rsl-sr-only" data-rsl-manager-status role="status" aria-live="polite" aria-atomic="true"></p>
           </section>
         </div>
 
@@ -21001,6 +27692,7 @@
 
       const data = new FormData(form);
       const label = String(data.get("label") || "").trim();
+      const openInNewTab = data.has("openInNewTab");
 
       if (!label) {
         error.textContent = "Enter a name.";
@@ -21009,7 +27701,10 @@
 
       try {
         const url = normalizeUrl(String(data.get("url") || ""));
-        shortcuts = [...shortcuts, { id: createId(), label, url }];
+        shortcuts = [
+          ...shortcuts,
+          { id: createId(), label, url, openInNewTab }
+        ];
         await storageSet(shortcuts);
         form.reset();
         renderManager();
@@ -21056,7 +27751,7 @@
     mountSidebar();
 
     const dialog = document.getElementById(DIALOG_ID);
-    const status = dialog?.querySelector("[data-rsl-reorder-status]");
+    const status = dialog?.querySelector("[data-rsl-manager-status]");
     if (status) {
       status.textContent = `Moved ${moved.label} to position ${toIndex + 1} of ${shortcuts.length}.`;
     }
@@ -21177,6 +27872,37 @@
       controls.setAttribute("role", "group");
       controls.setAttribute("aria-label", `Actions for ${shortcut.label}`);
 
+      const newTabOption = document.createElement("label");
+      newTabOption.className = "rsl-manager__tab-option";
+
+      const newTabInput = document.createElement("input");
+      newTabInput.type = "checkbox";
+      newTabInput.checked = shortcut.openInNewTab === true;
+      newTabInput.setAttribute(
+        "aria-label",
+        `Open ${shortcut.label} in a new tab`
+      );
+      newTabInput.addEventListener("change", async () => {
+        const openInNewTab = newTabInput.checked;
+        shortcuts = shortcuts.map((entry) =>
+          entry.id === shortcut.id
+            ? { ...entry, openInNewTab }
+            : entry
+        );
+        mountSidebar();
+        const status = dialog.querySelector("[data-rsl-manager-status]");
+        if (status) {
+          status.textContent = openInNewTab
+            ? `${shortcut.label} will open in a new tab.`
+            : `${shortcut.label} will open in this tab.`;
+        }
+        await storageSet(shortcuts);
+      });
+
+      const newTabLabel = document.createElement("span");
+      newTabLabel.textContent = "New tab";
+      newTabOption.append(newTabInput, newTabLabel);
+
       const moveUp = document.createElement("button");
       moveUp.className = "rsl-order-button content-action-utility radius-medium";
       moveUp.type = "button";
@@ -21227,7 +27953,7 @@
       });
 
       text.append(name, url);
-      controls.append(moveUp, moveDown, remove);
+      controls.append(newTabOption, moveUp, moveDown, remove);
       item.append(dragHandle, text, controls);
       list.append(item);
     });
@@ -21285,6 +28011,11 @@
   let extensionUpdateActiveClaimContextId = null;
   let extensionUpdatePageSuspended = false;
   let extensionUpdateNavigationAwayFromHome = false;
+  let accountRecoveryReminderRequestId = 0;
+  let accountRecoveryReminderRequestPromise = null;
+  let accountRecoveryReminderRefreshPending = false;
+  let accountRecoveryReminderTimer = null;
+  let accountRecoveryReminderTimerDueAt = 0;
   const extensionUpdateDocumentVisitPrefix = (() => {
     try {
       const uuid = globalThis.crypto?.randomUUID?.();
@@ -21669,6 +28400,10 @@
     }
     const onHome = !extensionUpdatePageSuspended && isHomePage();
     if (!onHome) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
       if (extensionUpdateHomeVisitId !== null) {
         extensionUpdateHomeVisitId = null;
         extensionUpdateHomeVisitClaimAttempted = false;
@@ -21722,18 +28457,23 @@
       extensionUpdateFeedbackRefreshPending = false;
       clearExtensionUpdateStatusTimer();
       removeExtensionUpdateFeedback();
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
     }
   }
 
   function handleExtensionUpdateNavigationSettled() {
     extensionUpdateNavigationAwayFromHome = false;
     syncExtensionUpdateHomeVisitState();
+    requestAccountRecoveryReminderWhenVisible(true);
     queueMount();
   }
 
   function handleExtensionUpdateNavigationError() {
     extensionUpdateNavigationAwayFromHome = false;
     syncExtensionUpdateHomeVisitState();
+    requestAccountRecoveryReminderWhenVisible(true);
     if (document.visibilityState === "visible") {
       requestExtensionUpdateStatusWhenVisible(true);
     }
@@ -21861,8 +28601,18 @@
     );
   }
 
-  function removeExtensionUpdateFeedback() {
-    document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)?.remove();
+  function hasRoToolSystemFeedback() {
+    return Boolean(
+      document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID) ||
+      document.getElementById(ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID)
+    );
+  }
+
+  function resetRoToolSystemFeedbackObservationIfUnused() {
+    if (hasRoToolSystemFeedback()) {
+      queueExtensionUpdateFeedbackPositionSync();
+      return;
+    }
     if (extensionUpdateFeedbackPositionFrame !== null) {
       window.cancelAnimationFrame(extensionUpdateFeedbackPositionFrame);
       extensionUpdateFeedbackPositionFrame = null;
@@ -21870,6 +28620,11 @@
     extensionUpdateFeedbackNativeObserver?.disconnect();
     extensionUpdateFeedbackNativeObserver = null;
     extensionUpdateFeedbackObservedNativeSurfaces = new WeakSet();
+  }
+
+  function removeExtensionUpdateFeedback() {
+    document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)?.remove();
+    resetRoToolSystemFeedbackObservationIfUnused();
   }
 
   function observeNativeSystemFeedback() {
@@ -21883,6 +28638,7 @@
       const surface = inner.closest?.(".sg-system-feedback") || inner;
       if (
         surface.id === EXTENSION_UPDATE_FEEDBACK_ID ||
+        surface.id === ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID ||
         extensionUpdateFeedbackObservedNativeSurfaces.has(surface)
       ) {
         return;
@@ -22111,7 +28867,9 @@
     if (
       !nativeSurface ||
       nativeSurface.id === EXTENSION_UPDATE_FEEDBACK_ID ||
+      nativeSurface.id === ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID ||
       nativeAlert.closest?.(`#${EXTENSION_UPDATE_FEEDBACK_ID}`) ||
+      nativeAlert.closest?.(`#${ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID}`) ||
       nativeSurface.isConnected === false ||
       nativeSurface.hidden ||
       nativeAlert.hidden ||
@@ -22146,8 +28904,13 @@
   }
 
   function syncExtensionUpdateFeedbackPosition() {
-    const feedback = document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID);
-    if (!feedback) {
+    const feedback = document.getElementById(
+      EXTENSION_UPDATE_FEEDBACK_ID
+    );
+    const recoveryFeedback = document.getElementById(
+      ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID
+    );
+    if (!feedback && !recoveryFeedback) {
       return;
     }
 
@@ -22157,8 +28920,15 @@
         ".alert-system-feedback .alert.on"
       )
     ).some(isActiveNativeSystemFeedbackAlert);
-    if (feedback.hidden !== shouldDefer) {
+    if (feedback && feedback.hidden !== shouldDefer) {
       feedback.hidden = shouldDefer;
+    }
+    const shouldDeferRecovery = shouldDefer || Boolean(feedback);
+    if (
+      recoveryFeedback &&
+      recoveryFeedback.hidden !== shouldDeferRecovery
+    ) {
+      recoveryFeedback.hidden = shouldDeferRecovery;
     }
   }
 
@@ -22178,7 +28948,7 @@
   function queueExtensionUpdateFeedbackPositionSync() {
     if (
       extensionUpdateFeedbackPositionFrame !== null ||
-      !document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)
+      !hasRoToolSystemFeedback()
     ) {
       return;
     }
@@ -22560,10 +29330,405 @@
     );
   }
 
+  function isAccountRecoveryReminderEligible() {
+    return Boolean(
+      featureSettingsLoaded &&
+      featureSettingsStorageLoadedSuccessfully &&
+      featureSettings.recoverySnapshots !== false &&
+      featureSettings.recoverySnapshotReminder !== false &&
+      featureSettings.recoverySnapshotArchive !== true
+    );
+  }
+
+  function isAccountRecoveryReminderContextEligible() {
+    return Boolean(
+      window.top === window &&
+      !extensionUpdatePageSuspended &&
+      !extensionUpdateNavigationAwayFromHome &&
+      isAccountRecoveryReminderEligible() &&
+      isHomePage()
+    );
+  }
+
+  function isAccountRecoveryReminderPresentationEligible() {
+    return Boolean(
+      isAccountRecoveryReminderContextEligible() &&
+      document.visibilityState === "visible"
+    );
+  }
+
+  function normalizeAccountRecoveryReminderResponse(response, requestId) {
+    if (!response || typeof response !== "object" || Array.isArray(response)) {
+      return null;
+    }
+    const keys = Object.keys(response).sort();
+    const nextNoticeAt = response.nextNoticeAt === null
+      ? null
+      : normalizeExtensionUpdateTimestamp(response.nextNoticeAt);
+    if (
+      keys.length !== 4 ||
+      keys[0] !== "nextNoticeAt" ||
+      keys[1] !== "ok" ||
+      keys[2] !== "requestId" ||
+      keys[3] !== "showNotice" ||
+      response.ok !== true ||
+      response.requestId !== requestId ||
+      typeof response.showNotice !== "boolean" ||
+      (response.nextNoticeAt !== null && nextNoticeAt === null) ||
+      (
+        nextNoticeAt !== null &&
+        nextNoticeAt >
+          Date.now() + ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS +
+            ACCOUNT_RECOVERY_REMINDER_RETRY_MS
+      )
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      showNotice: response.showNotice,
+      nextNoticeAt
+    });
+  }
+
+  function clearAccountRecoveryReminderTimer() {
+    if (accountRecoveryReminderTimer !== null) {
+      window.clearTimeout(accountRecoveryReminderTimer);
+      accountRecoveryReminderTimer = null;
+    }
+    accountRecoveryReminderTimerDueAt = 0;
+  }
+
+  function invalidateAccountRecoveryReminderRequest() {
+    accountRecoveryReminderRequestId += 1;
+  }
+
+  function scheduleAccountRecoveryReminderTimer(nextNoticeAt) {
+    clearAccountRecoveryReminderTimer();
+    if (
+      !isAccountRecoveryReminderEligible() ||
+      !isHomePage() ||
+      document.visibilityState !== "visible" ||
+      extensionUpdatePageSuspended
+    ) {
+      return;
+    }
+    const now = Date.now();
+    const requestedAt = normalizeExtensionUpdateTimestamp(nextNoticeAt) ||
+      now + ACCOUNT_RECOVERY_REMINDER_RETRY_MS;
+    const dueAt = Math.max(now + 1_000, requestedAt);
+    accountRecoveryReminderTimerDueAt = dueAt;
+    accountRecoveryReminderTimer = window.setTimeout(() => {
+      accountRecoveryReminderTimer = null;
+      accountRecoveryReminderTimerDueAt = 0;
+      requestAccountRecoveryReminderWhenVisible(true);
+    }, dueAt - now);
+  }
+
+  function removeAccountRecoveryReminderFeedback() {
+    document.getElementById(ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID)?.remove();
+    resetRoToolSystemFeedbackObservationIfUnused();
+  }
+
+  function renderAccountRecoveryReminderFeedback(status) {
+    const shouldShow = Boolean(
+      status?.showNotice === true &&
+      isAccountRecoveryReminderContextEligible()
+    );
+    if (!shouldShow) return null;
+
+    const existing = document.getElementById(
+      ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID
+    );
+    if (existing) {
+      queueExtensionUpdateFeedbackPositionSync();
+      return existing;
+    }
+
+    const feedback = document.createElement("div");
+    feedback.id = ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID;
+    feedback.className =
+      "sg-system-feedback rsl-extension-update-feedback " +
+      "rsl-account-recovery-reminder-feedback";
+
+    const inner = document.createElement("div");
+    inner.className =
+      "alert-system-feedback rsl-extension-update-feedback__inner";
+
+    const alert = document.createElement("div");
+    alert.className =
+      "alert alert-info on rsl-extension-update-feedback__alert";
+    alert.setAttribute("role", "status");
+    alert.setAttribute("aria-live", "polite");
+    alert.setAttribute("aria-atomic", "true");
+
+    const content = document.createElement("span");
+    content.className =
+      "alert-content rsl-extension-update-feedback__content";
+    content.append(
+      document.createTextNode(
+        "Automatic snapshots are off. Change it in "
+      )
+    );
+
+    const settings = document.createElement("button");
+    settings.type = "button";
+    settings.className =
+      "rsl-extension-update-feedback__link " +
+      "rsl-account-recovery-reminder-feedback__settings";
+    settings.textContent = "settings";
+    settings.setAttribute("aria-label", "Open Automatic snapshot settings");
+    settings.addEventListener("click", (event) => {
+      if (!event.isTrusted) return;
+      const opener = document.querySelector(
+        `#${FEATURE_SETTINGS_NAV_ID} button`
+      );
+      removeAccountRecoveryReminderFeedback();
+      openAutomaticSnapshotSettings(opener);
+    });
+    content.append(settings, document.createTextNode("."));
+
+    const closeControl = document.createElement("span");
+    closeControl.className =
+      "icon-close-white rsl-extension-update-feedback__close";
+    closeControl.setAttribute("role", "button");
+    closeControl.setAttribute("tabindex", "0");
+    closeControl.title = "Dismiss";
+    closeControl.setAttribute(
+      "aria-label",
+      "Dismiss Automatic snapshots reminder"
+    );
+    const dismiss = (event) => {
+      if (
+        !event.isTrusted ||
+        (
+          event.type === "keydown" &&
+          event.key !== "Enter" &&
+          event.key !== " "
+        )
+      ) {
+        return;
+      }
+      if (event.type === "keydown" && event.key === " ") {
+        event.preventDefault();
+      }
+      removeAccountRecoveryReminderFeedback();
+    };
+    closeControl.addEventListener("click", dismiss);
+    closeControl.addEventListener("keydown", dismiss);
+
+    alert.append(content, closeControl);
+    inner.append(alert);
+    feedback.append(inner);
+    feedback.hidden = true;
+    (document.body || document.documentElement).append(feedback);
+    enableExtensionUpdateFeedbackFallback(
+      feedback,
+      inner,
+      alert,
+      closeControl
+    );
+    syncExtensionUpdateFeedbackPosition();
+    return feedback;
+  }
+
+  function refreshAccountRecoveryReminder() {
+    if (extensionUpdateNavigationAwayFromHome) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      return accountRecoveryReminderRequestPromise || Promise.resolve(null);
+    }
+    if (!isAccountRecoveryReminderContextEligible()) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
+      return Promise.resolve(null);
+    }
+    if (document.visibilityState !== "visible") {
+      return accountRecoveryReminderRequestPromise || Promise.resolve(null);
+    }
+    if (accountRecoveryReminderRequestPromise) {
+      return accountRecoveryReminderRequestPromise;
+    }
+
+    const requestId = ++accountRecoveryReminderRequestId;
+    const request = sendExtensionUpdateMessage({
+      type: ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE,
+      requestId
+    }).then((response) => {
+      if (requestId !== accountRecoveryReminderRequestId) return null;
+      const normalized = normalizeAccountRecoveryReminderResponse(
+        response,
+        requestId
+      );
+      if (!normalized) {
+        scheduleAccountRecoveryReminderTimer(
+          Date.now() + ACCOUNT_RECOVERY_REMINDER_RETRY_MS
+        );
+        return null;
+      }
+      if (!isAccountRecoveryReminderContextEligible()) {
+        accountRecoveryReminderRefreshPending = false;
+        removeAccountRecoveryReminderFeedback();
+        clearAccountRecoveryReminderTimer();
+        return null;
+      }
+      if (normalized.showNotice) {
+        renderAccountRecoveryReminderFeedback(normalized);
+      }
+      scheduleAccountRecoveryReminderTimer(normalized.nextNoticeAt);
+      return normalized;
+    });
+    const tracked = request.finally(() => {
+      if (accountRecoveryReminderRequestPromise === tracked) {
+        accountRecoveryReminderRequestPromise = null;
+      }
+      if (accountRecoveryReminderRefreshPending) {
+        accountRecoveryReminderRefreshPending = false;
+        if (isAccountRecoveryReminderPresentationEligible()) {
+          requestAccountRecoveryReminderWhenVisible(true);
+        }
+      }
+    });
+    accountRecoveryReminderRequestPromise = tracked;
+    return tracked;
+  }
+
+  function requestAccountRecoveryReminderWhenVisible(force = false) {
+    if (!featureSettingsLoaded) {
+      return;
+    }
+    if (extensionUpdateNavigationAwayFromHome) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      return;
+    }
+    if (!isAccountRecoveryReminderContextEligible()) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
+      return;
+    }
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+    if (accountRecoveryReminderRequestPromise) {
+      if (force) {
+        accountRecoveryReminderRefreshPending = true;
+      }
+      return;
+    }
+    if (force) invalidateAccountRecoveryReminderRequest();
+    const now = Date.now();
+    if (!force && accountRecoveryReminderTimerDueAt > now) return;
+    void refreshAccountRecoveryReminder();
+  }
+
+  function recomputeAccountRecoveryReminder({ forceClaim = false } = {}) {
+    if (extensionUpdateNavigationAwayFromHome) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      return;
+    }
+    if (!isAccountRecoveryReminderContextEligible()) {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
+      return;
+    }
+
+    if (document.visibilityState !== "visible") {
+      if (forceClaim) {
+        clearAccountRecoveryReminderTimer();
+      }
+      return;
+    }
+
+    const existingFeedback = document.getElementById(
+      ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID
+    );
+    if (accountRecoveryReminderRequestPromise) {
+      if (forceClaim || !existingFeedback) {
+        accountRecoveryReminderRefreshPending = true;
+      }
+      return;
+    }
+    if (existingFeedback && !forceClaim) {
+      queueExtensionUpdateFeedbackPositionSync();
+      return;
+    }
+
+    clearAccountRecoveryReminderTimer();
+    requestAccountRecoveryReminderWhenVisible(true);
+  }
+
+  function isAccountRecoverySettingsSurface(node) {
+    const element = node?.nodeType === 1 ? node : node?.parentElement;
+    if (!element) return false;
+    const popupIds = getAccountRecoverySettingsPopupIds();
+    for (let current = element; current; current = current.parentElement) {
+      if (popupIds.has(current.getAttribute?.("id") || "")) return true;
+      const role = current.getAttribute?.("role") || "";
+      if (
+        role === "menu" ||
+        current.hasAttribute?.("popover") ||
+        current.classList?.contains("popover-content")
+      ) {
+        const hasSettingsLink = Array.from(
+          current.querySelectorAll?.("a[href]") || []
+        ).some(isNativeAccountSettingsLink);
+        const hasAccountControl = Boolean(
+          current.querySelector?.(
+            ".account-switch-menu-item, .logout-menu-item"
+          )
+        );
+        if (hasSettingsLink || hasAccountControl) return true;
+      }
+    }
+    for (const descendant of Array.from(
+      element.querySelectorAll?.("[id]") || []
+    )) {
+      if (popupIds.has(descendant.getAttribute?.("id") || "")) return true;
+    }
+    for (const anchor of Array.from(
+      element.querySelectorAll?.("a[href]") || []
+    )) {
+      if (
+        isNativeAccountSettingsLink(anchor) &&
+        getAccountRecoveryMenuSurface(anchor, popupIds)
+      ) {
+        return true;
+      }
+    }
+    if (
+      element.querySelector?.(
+        ".account-switch-menu-item, .logout-menu-item"
+      )
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function mutationsAffectExtensionMount(mutations) {
     return mutations.some((mutation) => {
       if (mutation.type === "characterData") {
         return false;
+      }
+      const changedNodes = [
+        ...Array.from(mutation.addedNodes || []),
+        ...Array.from(mutation.removedNodes || [])
+      ];
+      if (
+        isAccountRecoverySettingsSurface(mutation.target) ||
+        changedNodes.some(isAccountRecoverySettingsSurface)
+      ) {
+        return true;
       }
       if (
         isInsideRoToolMountIgnoredSurface(mutation.target) ||
@@ -22571,10 +29736,6 @@
       ) {
         return false;
       }
-      const changedNodes = [
-        ...Array.from(mutation.addedNodes || []),
-        ...Array.from(mutation.removedNodes || [])
-      ];
       return (
         changedNodes.length === 0 ||
         changedNodes.some(
@@ -22591,10 +29752,28 @@
     chrome.runtime.onMessage?.addListener(
       handleExtensionUpdateClaimContextChallenge
     );
+    chrome.runtime.onMessage?.addListener(
+      handleEnhancedProfileBadgeCountProgress
+    );
+    chrome.runtime.onMessage?.addListener(handleShowFeatureSettingsMessage);
+    document.addEventListener(
+      "click",
+      handleAccountRecoverySettingsTriggerClick,
+      true
+    );
+    window.addEventListener("pagehide", () => {
+      closeAccountRecoveryModal(false);
+    });
 
     const observer = new MutationObserver((mutations) => {
-      syncExtensionUpdateHomeVisitState();
-      if (document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID)) {
+      const enteredHome = syncExtensionUpdateHomeVisitState();
+      if (enteredHome) {
+        requestAccountRecoveryReminderWhenVisible(true);
+      }
+      if (
+        document.getElementById(EXTENSION_UPDATE_FEEDBACK_ID) ||
+        document.getElementById(ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID)
+      ) {
         queueExtensionUpdateFeedbackPositionSync();
       }
       if (
@@ -22618,8 +29797,36 @@
       characterData: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["href"]
+      attributeFilter: [
+        "href",
+        "id",
+        "aria-controls",
+        "aria-owns",
+        "aria-describedby",
+        "aria-expanded",
+        "aria-disabled",
+        "aria-label",
+        "aria-haspopup",
+        "disabled",
+        "hidden",
+        "data-profile-id",
+        "data-profile-type",
+        ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE
+      ]
     });
+    const enhancedProfileThemeObserver = new MutationObserver(() => {
+      syncEnhancedProfileHostTheme();
+    });
+    enhancedProfileThemeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"]
+    });
+    if (document.body) {
+      enhancedProfileThemeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["class"]
+      });
+    }
     if (typeof globalThis.navigation?.addEventListener === "function") {
       globalThis.navigation.addEventListener(
         "navigate",
@@ -22638,14 +29845,18 @@
       closeBestFriendHoverCard();
       closePrivateServersDialog(false);
       clearGameTileCcuGraphHoverIntent();
-      syncExtensionUpdateHomeVisitState();
+      if (syncExtensionUpdateHomeVisitState()) {
+        requestAccountRecoveryReminderWhenVisible(true);
+      }
       queueMount();
     });
     window.addEventListener("popstate", () => {
       closeBestFriendHoverCard();
       closePrivateServersDialog(false);
       clearGameTileCcuGraphHoverIntent();
-      syncExtensionUpdateHomeVisitState();
+      if (syncExtensionUpdateHomeVisitState()) {
+        requestAccountRecoveryReminderWhenVisible(true);
+      }
       queueMount();
     });
     window.addEventListener("resize", () => {
@@ -22689,10 +29900,13 @@
         }
         clearExtensionUpdateStatusTimer();
         removeExtensionUpdateFeedback();
+        // Keep a claimed Recovery reminder attached to this Home document.
+        // Changing tabs must not spend its cooldown and silently discard it.
         return;
       }
       syncExtensionUpdateHomeVisitState();
       requestExtensionUpdateStatusWhenVisible(true);
+      requestAccountRecoveryReminderWhenVisible(true);
       refreshBestFriendsHomeIfStale();
     });
     window.addEventListener("pagehide", () => {
@@ -22703,6 +29917,10 @@
       extensionUpdateHomeVisitAttemptedLatest = null;
       clearExtensionUpdateStatusTimer();
       removeExtensionUpdateFeedback();
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
     });
     window.addEventListener("pageshow", (event) => {
       extensionUpdatePageSuspended = false;
@@ -22719,6 +29937,7 @@
       if (document.visibilityState === "visible" && !restoredHomeVisit) {
         requestExtensionUpdateStatusWhenVisible(event.persisted === true);
       }
+      requestAccountRecoveryReminderWhenVisible(event.persisted === true);
     });
     document.addEventListener(
       BEST_FRIEND_ACTION_RESULT_EVENT,
@@ -22743,7 +29962,36 @@
           changes[EXTENSION_UPDATE_PREFERENCES_STORAGE_KEY].newValue
         );
       }
+      if (changes[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY]) {
+        accountRecoveryArchivePreferencesLoadGeneration += 1;
+        const rawValue =
+          changes[ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY].newValue;
+        const nextPreferences = normalizeAccountRecoveryArchivePreferences(
+          rawValue
+        );
+        if (accountRecoveryArchivePreferencesPendingWrites > 0) {
+          if (
+            !accountRecoveryArchivePreferencesDeferredStorageValue ||
+            nextPreferences.revision >=
+              accountRecoveryArchivePreferencesDeferredStorageValue.revision
+          ) {
+            accountRecoveryArchivePreferencesDeferredStorageValue =
+              nextPreferences;
+          }
+        } else if (
+          rawValue == null ||
+          nextPreferences.revision >=
+            accountRecoveryArchivePreferencesConfirmed.revision
+        ) {
+          accountRecoveryArchivePreferences =
+            cloneAccountRecoveryArchivePreferences(nextPreferences);
+          accountRecoveryArchivePreferencesConfirmed =
+            cloneAccountRecoveryArchivePreferences(nextPreferences);
+          renderFeatureSettingsDialog();
+        }
+      }
       if (changes[FEATURE_SETTINGS_STORAGE_KEY]) {
+        featureSettingsStorageLoadedSuccessfully = true;
         featureSettingsLoadGeneration += 1;
         const nextSettings = normalizeFeatureSettings(
           changes[FEATURE_SETTINGS_STORAGE_KEY].newValue
@@ -22761,6 +30009,14 @@
           }
           renderFeatureSettingsDialog();
         }
+      }
+      if (
+        changes[ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY] &&
+        changes[ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY].oldValue != null &&
+        changes[ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY].newValue == null &&
+        featureSettingsLoaded
+      ) {
+        recomputeAccountRecoveryReminder({ forceClaim: true });
       }
 
       if (changes[QUICK_SETTINGS_COLLAPSED_STORAGE_KEY]) {
@@ -22798,9 +30054,7 @@
 
       if (changes[STORAGE_KEY]) {
         const nextValue = changes[STORAGE_KEY].newValue;
-        const nextShortcuts = Array.isArray(nextValue)
-          ? nextValue.slice(0, MAX_SHORTCUTS)
-          : [];
+        const nextShortcuts = normalizeShortcuts(nextValue);
         if (!shortcutListsEqual(shortcuts, nextShortcuts)) {
           shortcuts = nextShortcuts;
           renderManager();
@@ -22854,11 +30108,23 @@
     const collapsedLoadGeneration = quickSettingsCollapsedLoadGeneration;
     const bestFriendsCollapsedGeneration = bestFriendsCollapsedLoadGeneration;
     const homeFriendsCollapsedGeneration = homeFriendsCollapsedLoadGeneration;
+    const recoveryPreferencesGeneration =
+      accountRecoveryArchivePreferencesLoadGeneration;
     Promise.all([
-      featureSettingsStorageGet().catch((error) => {
-        console.error("[RoTool] Failed to load feature settings", error);
-        return { ...DEFAULT_FEATURE_SETTINGS };
-      }),
+      featureSettingsStorageGet()
+        .then((storedSettings) => {
+          if (featureLoadGeneration === featureSettingsLoadGeneration) {
+            featureSettingsStorageLoadedSuccessfully = true;
+          }
+          return storedSettings;
+        })
+        .catch((error) => {
+          if (featureLoadGeneration === featureSettingsLoadGeneration) {
+            featureSettingsStorageLoadedSuccessfully = false;
+          }
+          console.error("[RoTool] Failed to load feature settings", error);
+          return { ...DEFAULT_FEATURE_SETTINGS };
+        }),
       quickSettingsCollapsedStorageGet().catch((error) => {
         console.error("[RoTool] Failed to load Quick Settings layout", error);
         return false;
@@ -22886,6 +30152,15 @@
         applyExtensionUpdatePreferences(mergedFallback);
         extensionUpdatePreferencesLoaded = true;
         return mergedFallback;
+      }),
+      loadAccountRecoveryArchivePreferences().catch((error) => {
+        console.error(
+          "[RoTool] Failed to load Recovery Snapshot preferences",
+          error
+        );
+        return cloneAccountRecoveryArchivePreferences(
+          DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+        );
       })
     ])
       .then(([
@@ -22893,7 +30168,8 @@
         storedCollapsed,
         storedBestFriendsCollapsed,
         storedHomeFriendsCollapsed,
-        storedExtensionUpdatePreferences
+        storedExtensionUpdatePreferences,
+        storedRecoveryArchivePreferences
       ]) => {
         void storedExtensionUpdatePreferences;
         if (featureLoadGeneration === featureSettingsLoadGeneration) {
@@ -22918,25 +30194,35 @@
           homeFriendsCollapsed = storedHomeFriendsCollapsed;
           homeFriendsCollapsedConfirmed = storedHomeFriendsCollapsed;
         }
+        if (
+          recoveryPreferencesGeneration ===
+          accountRecoveryArchivePreferencesLoadGeneration
+        ) {
+          accountRecoveryArchivePreferences =
+            cloneAccountRecoveryArchivePreferences(
+              storedRecoveryArchivePreferences
+            );
+          accountRecoveryArchivePreferencesConfirmed =
+            cloneAccountRecoveryArchivePreferences(
+              storedRecoveryArchivePreferences
+            );
+        }
       })
       .finally(() => {
         extensionUpdatePopupPreferenceApplied =
           featureSettings.updatePopups !== false;
         featureSettingsLoaded = true;
+        accountRecoveryArchivePreferencesLoaded = true;
         featureSettingsApplied = { ...featureSettings };
         renderFeatureSettingsDialog();
         mountExtensionFeatures();
         requestExtensionUpdateStatusWhenVisible();
+        requestAccountRecoveryReminderWhenVisible();
       });
 
     storageGet()
       .then((storedShortcuts) => {
-        shortcuts = storedShortcuts.filter((shortcut) =>
-          shortcut &&
-          typeof shortcut.id === "string" &&
-          typeof shortcut.label === "string" &&
-          typeof shortcut.url === "string"
-        ).slice(0, MAX_SHORTCUTS);
+        shortcuts = normalizeShortcuts(storedShortcuts);
         renderManager();
         mountExtensionFeatures();
       })
@@ -22988,6 +30274,8 @@
       handleExtensionUpdateNavigationStart;
     contentTestHooks.handleExtensionUpdateNavigationSettled =
       handleExtensionUpdateNavigationSettled;
+    contentTestHooks.handleExtensionUpdateNavigationError =
+      handleExtensionUpdateNavigationError;
     contentTestHooks.makeExtensionUpdateClaimContextId =
       makeExtensionUpdateClaimContextId;
     contentTestHooks.handleExtensionUpdateClaimContextChallenge =
@@ -23023,6 +30311,36 @@
       syncExtensionUpdateFeedbackPosition;
     contentTestHooks.removeExtensionUpdateFeedback =
       removeExtensionUpdateFeedback;
+    contentTestHooks.accountRecoveryReminderConstants = Object.freeze({
+      feedbackId: ACCOUNT_RECOVERY_REMINDER_FEEDBACK_ID,
+      messageType: ACCOUNT_RECOVERY_REMINDER_CLAIM_MESSAGE_TYPE,
+      storageKey: ACCOUNT_RECOVERY_REMINDER_STORAGE_KEY,
+      cooldownMs: ACCOUNT_RECOVERY_REMINDER_COOLDOWN_MS,
+      retryMs: ACCOUNT_RECOVERY_REMINDER_RETRY_MS
+    });
+    contentTestHooks.normalizeAccountRecoveryReminderResponse =
+      normalizeAccountRecoveryReminderResponse;
+    contentTestHooks.renderAccountRecoveryReminderFeedback =
+      renderAccountRecoveryReminderFeedback;
+    contentTestHooks.refreshAccountRecoveryReminder =
+      refreshAccountRecoveryReminder;
+    contentTestHooks.requestAccountRecoveryReminderWhenVisible =
+      requestAccountRecoveryReminderWhenVisible;
+    contentTestHooks.recomputeAccountRecoveryReminder =
+      recomputeAccountRecoveryReminder;
+    contentTestHooks.removeAccountRecoveryReminderFeedback =
+      removeAccountRecoveryReminderFeedback;
+    contentTestHooks.openAutomaticSnapshotSettings =
+      openAutomaticSnapshotSettings;
+    contentTestHooks.reviewAutomaticSnapshotSettings =
+      reviewAutomaticSnapshotSettings;
+    contentTestHooks.resetAccountRecoveryReminderForTests = () => {
+      invalidateAccountRecoveryReminderRequest();
+      accountRecoveryReminderRequestPromise = null;
+      accountRecoveryReminderRefreshPending = false;
+      clearAccountRecoveryReminderTimer();
+      removeAccountRecoveryReminderFeedback();
+    };
     contentTestHooks.refreshExtensionUpdateFeedback =
       refreshExtensionUpdateFeedback;
     contentTestHooks.normalizeExtensionUpdateStatus =
@@ -23364,6 +30682,13 @@
     contentTestHooks.syncNativeSidebarVisibility = syncNativeSidebarVisibility;
     contentTestHooks.cleanupNativeSidebarVisibility =
       cleanupNativeSidebarVisibility;
+    contentTestHooks.shortcutIconMarkup = SHORTCUT_ICON_MARKUP;
+    contentTestHooks.getShortcutIconType = getShortcutIconType;
+    contentTestHooks.getThumbnailTarget = getThumbnailTarget;
+    contentTestHooks.normalizeShortcut = normalizeShortcut;
+    contentTestHooks.normalizeShortcuts = normalizeShortcuts;
+    contentTestHooks.shortcutListsEqual = shortcutListsEqual;
+    contentTestHooks.syncShortcutNavigation = syncShortcutNavigation;
     contentTestHooks.isQuickSettingEnabled = isQuickSettingEnabled;
     contentTestHooks.getEnabledQuickSettingAliases =
       getEnabledQuickSettingAliases;
@@ -23372,18 +30697,599 @@
     contentTestHooks.cleanupQuickSettingsHome = cleanupQuickSettingsHome;
     contentTestHooks.isQuickPlayActionEnabled = isQuickPlayActionEnabled;
     contentTestHooks.makeQuickPlaySurface = makeQuickPlaySurface;
+    contentTestHooks.enhancedProfileConstants = Object.freeze({
+      hostId: ENHANCED_PROFILE_HOST_ID,
+      styleId: ENHANCED_PROFILE_STYLE_ID,
+      suppressedAttribute: ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE,
+      nativeCoverRootAttribute:
+        ENHANCED_PROFILE_NATIVE_COVER_ROOT_ATTRIBUTE,
+      nativeCoverPathAttribute:
+        ENHANCED_PROFILE_NATIVE_COVER_PATH_ATTRIBUTE,
+      nativeCoverAttribute: ENHANCED_PROFILE_NATIVE_COVER_ATTRIBUTE,
+      nativeOverflowRootAttribute:
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_ROOT_ATTRIBUTE,
+      nativeOverflowPathAttribute:
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_PATH_ATTRIBUTE,
+      nativeOverflowTriggerAttribute:
+        ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE,
+      nativeStandardActionAttribute:
+        ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE,
+      nativeReturnActionAttribute:
+        ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE,
+      hostNativeCoverAttribute:
+        ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE,
+      messageType: ENHANCED_PROFILE_MESSAGE_TYPE,
+      relationshipsMessageType: ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE,
+      thumbnailMessageType: ENHANCED_PROFILE_THUMBNAIL_MESSAGE_TYPE,
+      badgeCountMessageType: ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE,
+      badgeCountProgressMessageType:
+        ENHANCED_PROFILE_BADGE_COUNT_PROGRESS_MESSAGE_TYPE,
+      standardQuery: ENHANCED_PROFILE_STANDARD_QUERY
+    });
+    contentTestHooks.parseEnhancedProfileRoute = parseEnhancedProfileRoute;
+    contentTestHooks.getEnhancedProfileEffectiveRouteForTests =
+      getEnhancedProfileEffectiveRoute;
+    contentTestHooks.getEnhancedProfileUrlWithoutStandardQueryForTests =
+      getEnhancedProfileUrlWithoutStandardQuery;
+    contentTestHooks.isSafeEnhancedProfileImageUrl =
+      isSafeEnhancedProfileImageUrl;
+    contentTestHooks.normalizeEnhancedProfileResponse =
+      normalizeEnhancedProfileResponse;
+    contentTestHooks.normalizeEnhancedProfileRelationshipsResponse =
+      normalizeEnhancedProfileRelationshipsResponse;
+    contentTestHooks.normalizeEnhancedProfileBadgeCountResponse =
+      normalizeEnhancedProfileBadgeCountResponse;
+    contentTestHooks.getEnhancedProfileCollectionCountLabelForTests =
+      getEnhancedProfileCollectionCountLabel;
+    contentTestHooks.getEnhancedProfileBadgeCountLabelForTests =
+      getEnhancedProfileBadgeCountLabel;
+    contentTestHooks.mountEnhancedProfile = mountEnhancedProfile;
+    contentTestHooks.switchEnhancedProfileViewForTests =
+      setEnhancedProfileViewMode;
+    contentTestHooks.resetEnhancedProfileDocumentViewModeForTests = () => {
+      enhancedProfileStandardViewUserId = null;
+      cleanupEnhancedProfileNativeReturnAction(true);
+    };
+    contentTestHooks.clickEnhancedProfileMoreForTests = () => {
+      const button = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-more-button"
+      );
+      if (!button) return false;
+      button.click();
+      return true;
+    };
+    contentTestHooks.cleanupEnhancedProfileFeature =
+      cleanupEnhancedProfileFeature;
+    contentTestHooks.loadEnhancedProfileData = loadEnhancedProfileData;
+    contentTestHooks.setEnhancedProfileActiveTab = setEnhancedProfileActiveTab;
+    contentTestHooks.setEnhancedProfileMessageSenderForTests = (sender) => {
+      enhancedProfileMessageSenderForTests = sender;
+    };
+    contentTestHooks.setEnhancedProfileRouteUrlForTests = (url) => {
+      enhancedProfileRouteUrlForTests = typeof url === "string" ? url : null;
+    };
+    contentTestHooks.applyEnhancedProfileBadgeCountProgressForTests =
+      applyEnhancedProfileBadgeCountProgress;
+    contentTestHooks.getEnhancedProfileStateForTests = () => ({
+      routeUserId: enhancedProfileRouteUserId,
+      standardViewUserId: enhancedProfileStandardViewUserId,
+      loadState: enhancedProfileLoadState,
+      errorCode: enhancedProfileErrorCode,
+      activeTab: enhancedProfileActiveTab,
+      hostConnected: enhancedProfileHost?.isConnected === true,
+      hostParentId: enhancedProfileHost?.parentElement?.id || "",
+      closedShadowRoot: enhancedProfileHost?.shadowRoot === null,
+      internalHeading:
+        enhancedProfileShadowRoot?.querySelector("h1")?.textContent || "",
+      internalText:
+        enhancedProfileShadowRoot?.querySelector(".rtp-app")?.textContent || "",
+      internalBusy:
+        enhancedProfileShadowRoot
+          ?.querySelector(".rtp-app")
+          ?.getAttribute("aria-busy") || "",
+      badgeCountStatus:
+        enhancedProfileData?.sections?.badges?.status === "ready"
+          ? enhancedProfileData.sections.badges.data.countStatus || ""
+          : "",
+      badgeCountRequestActive: Boolean(enhancedProfileBadgeCountRequest),
+      unsafeNodeCount:
+        enhancedProfileShadowRoot
+          ?.querySelectorAll("script, iframe, object, embed, [onerror]")
+          .length || 0,
+      suppressedCount: enhancedProfileSuppressedRoots.size,
+      roproTheme:
+        enhancedProfileHost?.hasAttribute("data-rsl-ropro-theme") === true,
+      usesNativeAvatarCover:
+        enhancedProfileHost?.hasAttribute(
+          ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE
+        ) === true
+    });
+    contentTestHooks.getEnhancedProfileVisualForTests = () => {
+      const shell = enhancedProfileShadowRoot?.querySelector(".rtp-shell");
+      const hero = enhancedProfileShadowRoot?.querySelector(".rtp-hero");
+      const heroSupport = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-hero-support"
+      );
+      const overlay = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-profile-header-overlay"
+      );
+      const heroMain = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-hero-main"
+      );
+      const actions = enhancedProfileShadowRoot?.querySelector(".rtp-actions");
+      const actionRow = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-action-row"
+      );
+      const description = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-header-description"
+      );
+      const heading = enhancedProfileShadowRoot?.querySelector("h1");
+      const primary = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-button--primary"
+      );
+      const cover = enhancedProfileShadowRoot?.querySelector(".rtp-cover");
+      const headshot = enhancedProfileShadowRoot?.querySelector(".rtp-headshot");
+      const social = enhancedProfileShadowRoot?.querySelector(".rtp-social");
+      const socialPill = social?.querySelector("a, button");
+      const friendAvatar = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-friend-avatar, .rtp-friend .rtp-avatar-fallback"
+      );
+      const baseTile = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-base-tile"
+      );
+      const gameCard = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-game-card"
+      );
+      const gameFallbackPath = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-game-fallback svg path"
+      );
+      const baseFallbackPath = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-base-fallback svg path"
+      );
+      const profileDetails = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-profile-details"
+      );
+      const firstGameMetrics = Array.from(
+        enhancedProfileShadowRoot?.querySelectorAll(
+          ".rtp-game-card .rtp-game-meta span"
+        ) || []
+      ).slice(0, 2);
+      const firstGameName = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-game-card .rtp-game-name"
+      );
+      const firstGameMeta = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-game-card .rtp-game-meta"
+      );
+      const firstGameMetricIcon = firstGameMetrics[0]?.querySelector("svg");
+      const firstItemTitle = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-base-tile--item .rtp-base-tile-title"
+      );
+      const firstItemMeta = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-base-tile--item .rtp-base-tile-meta"
+      );
+      const firstItemMetaIcon = firstItemMeta?.querySelector(
+        ".rtp-robux-icon, svg"
+      );
+      const firstFriendName = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-friend-name"
+      );
+      const sectionHeading = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-section h2"
+      );
+      const tabs = Array.from(
+        enhancedProfileShadowRoot?.querySelectorAll(".rtp-tab") || []
+      );
+      const rect = shell?.getBoundingClientRect?.();
+      const coverRect = cover?.getBoundingClientRect?.();
+      const overlayRect = overlay?.getBoundingClientRect?.();
+      const heroMainRect = heroMain?.getBoundingClientRect?.();
+      const socialRect = social?.getBoundingClientRect?.();
+      const descriptionRect = description?.getBoundingClientRect?.();
+      const detailsRect = profileDetails?.getBoundingClientRect?.();
+      const actionsRect = actions?.getBoundingClientRect?.();
+      return {
+        headingFontSize: heading ? getComputedStyle(heading).fontSize : "",
+        headingFontWeight: heading ? getComputedStyle(heading).fontWeight : "",
+        primaryBackground: primary
+          ? getComputedStyle(primary).backgroundColor
+          : "",
+        primaryTextColor: primary ? getComputedStyle(primary).color : "",
+        primaryHeight: primary?.getBoundingClientRect?.().height || 0,
+        coverHeight: cover?.getBoundingClientRect?.().height || 0,
+        coverBackground: cover ? getComputedStyle(cover).backgroundColor : "",
+        coverBorderRadius: cover ? getComputedStyle(cover).borderRadius : "",
+        coverBottom: coverRect?.bottom || 0,
+        headshotWidth: headshot?.getBoundingClientRect?.().width || 0,
+        socialPillHeight: socialPill?.getBoundingClientRect?.().height || 0,
+        socialPillTexts: Array.from(social?.children || []).map((pill) =>
+          pill.textContent?.replace(/\s+/g, " ").trim() || ""
+        ),
+        socialParentClass: social?.parentElement?.className || "",
+        socialTop: socialRect?.top || 0,
+        socialGap: social ? getComputedStyle(social).gap : "",
+        headerOrder: Array.from(hero?.children || []).map(
+          (element) => element.className || element.tagName.toLowerCase()
+        ),
+        overlayOrder: Array.from(overlay?.children || []).map(
+          (element) => element.className || element.tagName.toLowerCase()
+        ),
+        overlayTop: overlayRect?.top || 0,
+        overlayHeight: overlayRect?.height || 0,
+        overlayMarginTop: overlay ? getComputedStyle(overlay).marginTop : "",
+        headerInfoHeight: heroMainRect?.height || 0,
+        descriptionTop: descriptionRect?.top || 0,
+        descriptionHeight: descriptionRect?.height || 0,
+        heroBackground: hero ? getComputedStyle(hero).backgroundColor : "",
+        heroBorderWidth: hero ? getComputedStyle(hero).borderTopWidth : "",
+        heroBorderRadius: hero ? getComputedStyle(hero).borderRadius : "",
+        heroSupportBorderWidth: heroSupport
+          ? getComputedStyle(heroSupport).borderTopWidth
+          : "",
+        friendAvatarWidth: friendAvatar?.getBoundingClientRect?.().width || 0,
+        baseTileWidth: baseTile?.getBoundingClientRect?.().width || 0,
+        gameCardWidth: gameCard?.getBoundingClientRect?.().width || 0,
+        gameFallbackPath: gameFallbackPath?.getAttribute("d") || "",
+        baseFallbackPath: baseFallbackPath?.getAttribute("d") || "",
+        tabHeight: tabs[0]?.getBoundingClientRect?.().height || 0,
+        profileDetailsTagName: profileDetails?.tagName || "",
+        profileDetailCount:
+          profileDetails?.querySelectorAll(".rtp-profile-detail").length || 0,
+        profileDetailPairs: Array.from(
+          profileDetails?.querySelectorAll(".rtp-profile-detail") || []
+        ).map((row) => ({
+          label: row.querySelector("dt")?.textContent || "",
+          value: row.querySelector("dd")?.textContent || ""
+        })),
+        profileDetailLabels: Array.from(
+          profileDetails?.querySelectorAll(".rtp-profile-detail dt") || []
+        ).map((term) => term.textContent?.trim() || ""),
+        profileDetailsHeight:
+          profileDetails?.getBoundingClientRect?.().height || 0,
+        profileStatusLabels: Array.from(
+          enhancedProfileShadowRoot?.querySelectorAll(
+            ".rtp-name-row .rtp-status-pill"
+          ) || []
+        ).map((status) => status.textContent?.trim() || ""),
+        profileDetailsTop: detailsRect?.top || 0,
+        profileDetailsPaddingTop: profileDetails
+          ? getComputedStyle(profileDetails).paddingTop
+          : "",
+        gameMetricLabels: firstGameMetrics.map(
+          (metric) => metric.getAttribute("aria-label") || ""
+        ),
+        gameNameFontSize: firstGameName
+          ? getComputedStyle(firstGameName).fontSize
+          : "",
+        gameNameFontWeight: firstGameName
+          ? getComputedStyle(firstGameName).fontWeight
+          : "",
+        gameNameLineHeight: firstGameName
+          ? getComputedStyle(firstGameName).lineHeight
+          : "",
+        gameNameMarginTop: firstGameName
+          ? getComputedStyle(firstGameName).marginTop
+          : "",
+        gameNameMarginBottom: firstGameName
+          ? getComputedStyle(firstGameName).marginBottom
+          : "",
+        gameMetaFontSize: firstGameMeta
+          ? getComputedStyle(firstGameMeta).fontSize
+          : "",
+        gameMetaFontWeight: firstGameMeta
+          ? getComputedStyle(firstGameMeta).fontWeight
+          : "",
+        gameMetaLineHeight: firstGameMeta
+          ? getComputedStyle(firstGameMeta).lineHeight
+          : "",
+        gameMetricIconWidth:
+          firstGameMetricIcon?.getBoundingClientRect?.().width || 0,
+        itemTitleFontSize: firstItemTitle
+          ? getComputedStyle(firstItemTitle).fontSize
+          : "",
+        itemTitleFontWeight: firstItemTitle
+          ? getComputedStyle(firstItemTitle).fontWeight
+          : "",
+        itemTitleLineHeight: firstItemTitle
+          ? getComputedStyle(firstItemTitle).lineHeight
+          : "",
+        itemTitleMarginTop: firstItemTitle
+          ? getComputedStyle(firstItemTitle).marginTop
+          : "",
+        itemMetaFontSize: firstItemMeta
+          ? getComputedStyle(firstItemMeta).fontSize
+          : "",
+        itemMetaFontWeight: firstItemMeta
+          ? getComputedStyle(firstItemMeta).fontWeight
+          : "",
+        itemMetaLineHeight: firstItemMeta
+          ? getComputedStyle(firstItemMeta).lineHeight
+          : "",
+        itemMetaIconWidth:
+          firstItemMetaIcon?.getBoundingClientRect?.().width || 0,
+        friendNameFontSize: firstFriendName
+          ? getComputedStyle(firstFriendName).fontSize
+          : "",
+        friendNameFontWeight: firstFriendName
+          ? getComputedStyle(firstFriendName).fontWeight
+          : "",
+        friendNameMarginTop: firstFriendName
+          ? getComputedStyle(firstFriendName).marginTop
+          : "",
+        ownerOverlayCount:
+          enhancedProfileShadowRoot?.querySelectorAll(
+            ".rtp-base-tile-overlay"
+          ).length || 0,
+        mutualFriendsSectionCount:
+          enhancedProfileShadowRoot?.querySelectorAll(
+            "#rtp-mutual-friends-section"
+          ).length || 0,
+        mutualsHref:
+          enhancedProfileShadowRoot
+            ?.querySelector('[data-rtp-social="mutuals"]')
+            ?.getAttribute("href") || "",
+        mutualsTagName:
+          enhancedProfileShadowRoot
+            ?.querySelector('[data-rtp-social="mutuals"]')
+            ?.tagName || "",
+        actionLabels: Array.from(
+          enhancedProfileShadowRoot?.querySelectorAll(
+            ".rtp-action-row .rtp-button"
+          ) || []
+        ).map((button) => button.textContent?.trim() || ""),
+        actionOrder: Array.from(actionRow?.children || []).map((element) =>
+          element.matches?.(".rtp-overflow")
+            ? "overflow"
+            : element.textContent?.replace(/\s+/g, " ").trim() || ""
+        ),
+        actionsTop: actionsRect?.top || 0,
+        actionsHeight: actionsRect?.height || 0,
+        actionsPosition: actions ? getComputedStyle(actions).position : "",
+        sectionHeadingFontSize: sectionHeading
+          ? getComputedStyle(sectionHeading).fontSize
+          : "",
+        hostBackground: enhancedProfileHost
+          ? getComputedStyle(enhancedProfileHost).backgroundColor
+          : "",
+        tabWidthDifference: tabs.length === 2
+          ? Math.abs(
+              tabs[0].getBoundingClientRect().width -
+              tabs[1].getBoundingClientRect().width
+            )
+          : Number.POSITIVE_INFINITY,
+        boxedSectionCount:
+          enhancedProfileShadowRoot?.querySelectorAll(
+            ".rtp-section.rtp-surface"
+          ).length || 0,
+        shellWidth: rect?.width || 0,
+        documentOverflow:
+          Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) -
+          document.documentElement.clientWidth
+      };
+    };
+    contentTestHooks.testEnhancedProfileChatActionForTests = () => {
+      const button = Array.from(
+        enhancedProfileShadowRoot?.querySelectorAll(
+          ".rtp-action-row button.rtp-button"
+        ) || []
+      ).find((candidate) => candidate.textContent?.trim() === "Chat");
+      if (!button) return false;
+      button.click();
+      return true;
+    };
+    contentTestHooks.getEnhancedProfileNativeOverflowStateForTests = () => {
+      const trigger = getEnhancedProfileNativeOverflowTrigger();
+      const summary = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-overflow > summary"
+      );
+      const triggerRect = trigger?.getBoundingClientRect?.() || null;
+      const proxyRect = summary?.getBoundingClientRect?.() || null;
+      const centerX = proxyRect ? proxyRect.left + proxyRect.width / 2 : 0;
+      const centerY = proxyRect ? proxyRect.top + proxyRect.height / 2 : 0;
+      const hit = trigger && proxyRect && proxyRect.width > 0 && proxyRect.height > 0
+        ? document.elementFromPoint(centerX, centerY)
+        : null;
+      const rectangleDifference = triggerRect && proxyRect
+        ? Math.max(
+            Math.abs(triggerRect.left - proxyRect.left),
+            Math.abs(triggerRect.top - proxyRect.top),
+            Math.abs(triggerRect.width - proxyRect.width),
+            Math.abs(triggerRect.height - proxyRect.height)
+          )
+        : Number.POSITIVE_INFINITY;
+      return {
+        bound: Boolean(trigger),
+        variant: trigger?.dataset.testNativeOverflow || "",
+        rootProfileId:
+          normalizeEnhancedProfileId(enhancedProfileNativeOverflowRoot?.dataset?.profileId) ||
+          "",
+        triggerMarker: Boolean(trigger?.hasAttribute(
+          ENHANCED_PROFILE_NATIVE_OVERFLOW_TRIGGER_ATTRIBUTE
+        )),
+        triggerAriaExpanded: trigger?.getAttribute("aria-expanded") || "",
+        proxyAriaHidden: summary?.getAttribute("aria-hidden") || "",
+        proxyTabIndex: summary?.getAttribute("tabindex") || "",
+        proxyMarked: Boolean(summary?.hasAttribute(
+          ENHANCED_PROFILE_NATIVE_OVERFLOW_PROXY_ATTRIBUTE
+        )),
+        proxyRect: proxyRect ? {
+          left: proxyRect.left,
+          top: proxyRect.top,
+          width: proxyRect.width,
+          height: proxyRect.height
+        } : null,
+        triggerRect: triggerRect ? {
+          left: triggerRect.left,
+          top: triggerRect.top,
+          width: triggerRect.width,
+          height: triggerRect.height
+        } : null,
+        rectangleDifference,
+        hitIsTrigger: Boolean(
+          trigger && hit && (hit === trigger || trigger.contains(hit))
+        )
+      };
+    };
+    contentTestHooks.testEnhancedProfileOverflowInteractionsForTests = () => {
+      const details = enhancedProfileShadowRoot?.querySelector(".rtp-overflow");
+      const summary = details?.querySelector("summary");
+      const standardLink = details?.querySelector(".rtp-overflow-menu a");
+      const outsideInsideShadow = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-name-row"
+      );
+      if (!details || !summary || !standardLink || !outsideInsideShadow) {
+        return null;
+      }
+      details.open = false;
+      summary.click();
+      const openedBySummaryClick = details.open;
+      if (!details.open) details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+      let linkClicked = false;
+      standardLink.addEventListener("click", (event) => {
+        event.preventDefault();
+        linkClicked = true;
+      }, { once: true });
+      standardLink.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true
+      }));
+      const openAfterLinkPointerDown = details.open;
+      standardLink.dispatchEvent(new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true
+      }));
+      outsideInsideShadow.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true
+      }));
+      const closedAfterShadowOutside = !details.open;
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+      document.body.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true
+      }));
+      return {
+        standardHref: standardLink.href,
+        openedBySummaryClick,
+        linkClicked,
+        openAfterLinkPointerDown,
+        closedAfterShadowOutside,
+        closedAfterDocumentOutside: !details.open
+      };
+    };
     contentTestHooks.cancelQueuedPrivateServerSupportRequests =
       cancelQueuedPrivateServerSupportRequests;
     contentTestHooks.mountFeatureSettingsButton = mountFeatureSettingsButton;
+    contentTestHooks.mountAccountRecoverySettingsMenuItem =
+      mountAccountRecoverySettingsMenuItem;
+    contentTestHooks.getAccountRecoverySettingsMenuSurfaces =
+      getAccountRecoverySettingsMenuSurfaces;
+    contentTestHooks.scheduleAccountRecoverySettingsMenuMounts =
+      scheduleAccountRecoverySettingsMenuMounts;
+    contentTestHooks.handleAccountRecoverySettingsTriggerClick =
+      handleAccountRecoverySettingsTriggerClick;
+    contentTestHooks.isAccountRecoverySettingsSurface =
+      isAccountRecoverySettingsSurface;
+    contentTestHooks.getAccountRecoveryPageTheme =
+      getAccountRecoveryPageTheme;
+    contentTestHooks.getAccountRecoveryFrameUrl = getAccountRecoveryFrameUrl;
+    contentTestHooks.getAccountRecoveryHomeUrl = getAccountRecoveryHomeUrl;
+    contentTestHooks.isAccountRecoveryDeepLink = isAccountRecoveryDeepLink;
+    contentTestHooks.consumeAccountRecoveryDeepLink =
+      consumeAccountRecoveryDeepLink;
+    contentTestHooks.createAccountRecoveryModalComponent =
+      createAccountRecoveryModalComponent;
+    contentTestHooks.openAccountRecoveryModal = openAccountRecoveryModal;
+    contentTestHooks.closeAccountRecoveryModal = closeAccountRecoveryModal;
+    contentTestHooks.openAccountRecoveryFromLauncher =
+      openAccountRecoveryFromLauncher;
+    contentTestHooks.isAccountRecoveryEnabled = isAccountRecoveryEnabled;
+    contentTestHooks.isAccountRecoverySettingsMenuEnabled =
+      isAccountRecoverySettingsMenuEnabled;
+    contentTestHooks.syncAccountRecoveryModalRouteState =
+      syncAccountRecoveryModalRouteState;
+    contentTestHooks.getAccountRecoveryModalStateForTests = () => ({
+      hasComponent: Boolean(accountRecoveryModalComponent),
+      hostConnected: Boolean(accountRecoveryModalComponent?.host?.isConnected),
+      frameUrl: accountRecoveryModalComponent?.frame?.src || "",
+      open: accountRecoveryModalComponent?.dialog?.open === true
+    });
+    contentTestHooks.accountRecoverySettingsMenuConstants = Object.freeze({
+      itemAttribute: ACCOUNT_RECOVERY_MENU_ITEM_ATTRIBUTE,
+      itemText: ACCOUNT_RECOVERY_MENU_ITEM_TEXT,
+      masterFeatureKey: ACCOUNT_RECOVERY_FEATURE_KEY,
+      menuFeatureKey: ACCOUNT_RECOVERY_SETTINGS_MENU_FEATURE_KEY,
+      modalHostId: ACCOUNT_RECOVERY_MODAL_HOST_ID,
+      pagePath: ACCOUNT_RECOVERY_PAGE_PATH,
+      pageView: ACCOUNT_RECOVERY_PAGE_VIEW
+    });
+    contentTestHooks.accountRecoveryArchivePreferencesConstants = Object.freeze({
+      getMessageType: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_GET_MESSAGE_TYPE,
+      setMessageType: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_SET_MESSAGE_TYPE,
+      storageKey: ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_STORAGE_KEY,
+      frequencies: Object.freeze(
+        ACCOUNT_RECOVERY_ARCHIVE_FREQUENCY_OPTIONS.map(({ value }) => value)
+      ),
+      retentions: Object.freeze([3, 5, 10]),
+      sectionKeys: ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS,
+      defaults: DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+    });
+    contentTestHooks.normalizeAccountRecoveryArchivePreferences =
+      normalizeAccountRecoveryArchivePreferences;
+    contentTestHooks.normalizeAccountRecoveryArchivePreferencesResponse =
+      normalizeAccountRecoveryArchivePreferencesResponse;
+    contentTestHooks.getAccountRecoveryArchivePreferencesStateForTests = () =>
+      ({
+        preferences: cloneAccountRecoveryArchivePreferences(
+          accountRecoveryArchivePreferences
+        ),
+        confirmed: cloneAccountRecoveryArchivePreferences(
+          accountRecoveryArchivePreferencesConfirmed
+        ),
+        loaded: accountRecoveryArchivePreferencesLoaded,
+        saving: accountRecoveryArchivePreferencesSaving,
+        pendingWrites: accountRecoveryArchivePreferencesPendingWrites
+      });
+    contentTestHooks.setAccountRecoveryArchivePreferencesForTests = (
+      rawValue
+    ) => {
+      const normalized = normalizeAccountRecoveryArchivePreferences(rawValue);
+      accountRecoveryArchivePreferences =
+        cloneAccountRecoveryArchivePreferences(normalized);
+      accountRecoveryArchivePreferencesConfirmed =
+        cloneAccountRecoveryArchivePreferences(normalized);
+      accountRecoveryArchivePreferencesLoaded = true;
+      renderFeatureSettingsDialog();
+    };
     contentTestHooks.openFeatureSettingsDialog = openFeatureSettingsDialog;
+    contentTestHooks.handleShowFeatureSettingsMessage =
+      handleShowFeatureSettingsMessage;
     contentTestHooks.setFeatureSettingsForTests = (rawValue) => {
       featureSettings = normalizeFeatureSettings(rawValue);
       featureSettingsConfirmed = { ...featureSettings };
       featureSettingsApplied = { ...featureSettings };
+      if (!accountRecoveryArchivePreferencesLoaded) {
+        accountRecoveryArchivePreferences =
+          cloneAccountRecoveryArchivePreferences(
+            DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+          );
+        accountRecoveryArchivePreferencesConfirmed =
+          cloneAccountRecoveryArchivePreferences(
+            DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES
+          );
+        accountRecoveryArchivePreferencesLoaded = true;
+      }
       extensionUpdatePopupPreferenceApplied =
         featureSettings.updatePopups !== false;
       featureSettingsLoaded = true;
+      featureSettingsStorageLoadedSuccessfully = true;
       renderFeatureSettingsDialog();
+    };
+    contentTestHooks.setFeatureSettingsStorageAvailableForTests = (available) => {
+      featureSettingsStorageLoadedSuccessfully = available === true;
     };
     contentTestHooks.saveFeatureSettingsForTests = async (changedFlags) => {
       const previous = { ...featureSettings };

@@ -22,6 +22,8 @@ jobs:
         run: |
           node --check content.js
           node --check background.js
+          node --check recovery-snapshot.js
+          node --check recovery-archive.js
           $errors = $null
           $tokens = $null
           [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'updater/Update-RoTool.ps1'), [ref]$tokens, [ref]$errors)

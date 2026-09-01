@@ -8,11 +8,13 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 assert.equal(manifest.name, "RoTool");
-assert.equal(manifest.version, "0.19.6");
+assert.equal(manifest.version, "0.19.8");
 assert.ok(manifest.permissions.includes("contextMenus"));
 assert.ok(manifest.permissions.includes("clipboardWrite"));
 assert.ok(manifest.permissions.includes("scripting"));
 assert.ok(manifest.host_permissions.includes("https://create.roblox.com/*"));
+assert.equal(manifest.action.default_popup, "popup.html");
+assert.equal(Object.hasOwn(manifest, "options_ui"), false);
 const contextCopyScript = manifest.content_scripts.find((entry) =>
   entry.js?.includes("context-copy.js")
 );
@@ -26,25 +28,40 @@ const created = [];
 const sent = [];
 const injected = [];
 const fetched = [];
+const openedExtensionTabs = [];
 const hooks = {};
+const actionClickListeners = [];
 let onSend = () => ({ ok: false });
 const chrome = {
   runtime: {
     id: "fixture-extension",
     lastError: null,
+    getURL(relativePath = "") {
+      return `chrome-extension://fixture-extension/${relativePath}`;
+    },
     onInstalled: { addListener() {} },
     onMessage: { addListener() {} }
   },
+  extension: { inIncognitoContext: false },
   contextMenus: {
     create(item, callback) { created.push({ ...item }); callback?.(); },
     removeAll(callback) { created.length = 0; callback?.(); },
     onClicked: { addListener() {} }
+  },
+  action: {
+    onClicked: {
+      addListener(listener) { actionClickListeners.push(listener); }
+    }
   },
   scripting: {
     insertCSS(details, callback) { injected.push(["css", details]); callback?.(); },
     executeScript(details, callback) { injected.push(["js", details]); callback?.(); }
   },
   tabs: {
+    async create(details) {
+      openedExtensionTabs.push(structuredClone(details));
+      return { id: 77, incognito: false, ...structuredClone(details) };
+    },
     sendMessage(tabId, message, options, callback) {
       sent.push({ tabId, message: { ...message }, options: { ...options } });
       const result = onSend(message);
@@ -115,8 +132,29 @@ hooks.setupContextMenus();
 const expectedCount = actions.reduce(
   (count, item) => count + 1 + (item.children?.length || 0),
   0
-) * 2;
+) * 2 + 2;
 assert.equal(created.length, expectedCount);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(
+    created.find((item) => item.id === "rsl-context:feature-settings:open")
+  )),
+  {
+    id: "rsl-context:feature-settings:open",
+    title: "Open RoTool Settings",
+    contexts: ["action"]
+  }
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(
+    created.find((item) => item.id === "rsl-context:account-recovery-archive:open")
+  )),
+  {
+    id: "rsl-context:account-recovery-archive:open",
+    title: "Recovery Snapshots",
+    contexts: ["action"]
+  }
+);
+assert.equal(actionClickListeners.length, 1, "toolbar action listener was not registered");
 for (const scope of ["page", "target"]) {
   const rootId = `rsl-context:${scope}:game-ids`;
   assert.equal(created.filter((item) => item.id === rootId).length, 1);
@@ -144,13 +182,48 @@ assert.ok(
 
 assert.equal(hooks.getCopyRobloxIdsFeatureValue(null), true);
 assert.equal(
+  hooks.getRecoverySnapshotsFeatureValue(null),
+  true,
+  "the additive Recovery master must default on for existing settings"
+);
+assert.equal(
+  hooks.getRecoverySnapshotsFeatureValue({
+    version: 1,
+    flags: { recoverySnapshots: false }
+  }),
+  false
+);
+assert.equal(
   hooks.getCopyRobloxIdsFeatureValue({ version: 1, flags: { copyRobloxIds: false } }),
   false
 );
 hooks.setCopyRobloxIdsEnabledForTests(false);
 hooks.setupContextMenus();
-assert.equal(created.length, 0);
+assert.deepEqual(JSON.parse(JSON.stringify(created)), [{
+  id: "rsl-context:feature-settings:open",
+  title: "Open RoTool Settings",
+  contexts: ["action"]
+}, {
+  id: "rsl-context:account-recovery-archive:open",
+  title: "Recovery Snapshots",
+  contexts: ["action"]
+}]);
 hooks.setCopyRobloxIdsEnabledForTests(true);
+hooks.setRecoverySnapshotsEnabledForTests(false);
+hooks.setupContextMenus();
+assert.equal(
+  created.some(
+    (item) => item.id === "rsl-context:account-recovery-archive:open"
+  ),
+  true,
+  "the Recovery master hid deliberate action-menu archive access"
+);
+assert.ok(
+  created.some((item) => item.id === "rsl-context:feature-settings:open"),
+  "disabling Recovery must not hide RoTool Settings"
+);
+hooks.setRecoverySnapshotsEnabledForTests(true);
+hooks.setupContextMenus();
 
 const tabUrl = "https://www.roblox.com/games/555/open-page";
 const snapshot = (overrides = {}) => ({
@@ -161,7 +234,11 @@ const snapshot = (overrides = {}) => ({
   ids: { placeId: "222", userId: null },
   ...overrides
 });
-const reset = () => { sent.length = 0; injected.length = 0; };
+const reset = () => {
+  sent.length = 0;
+  injected.length = 0;
+  openedExtensionTabs.length = 0;
+};
 const copied = () => sent
   .filter((entry) => entry.message.type === "rsl:copy-context-text")
   .map((entry) => entry.message.text);
@@ -185,6 +262,84 @@ const clickPlace = (extra = {}, tabExtra = {}) => hooks.handleContextMenuClick(
 );
 
 async function main() {
+  reset();
+  onSend = (message) => message.type === "rsl:show-feature-settings"
+    ? { ok: true, type: "rsl:show-feature-settings" }
+    : { ok: false };
+  assert.equal(await hooks.handleFeatureSettingsActionClick({
+    id: 41,
+    windowId: 1,
+    incognito: false,
+    active: true,
+    url: tabUrl
+  }), true);
+  assert.deepEqual(sent, [{
+    tabId: 41,
+    message: { type: "rsl:show-feature-settings" },
+    options: { frameId: 0 }
+  }]);
+
+  reset();
+  onSend = () => ({ ok: true });
+  assert.equal(
+    await hooks.sendFeatureSettingsShowMessageToTab(41, 100),
+    false,
+    "an untyped acknowledgement opened Settings"
+  );
+
+  reset();
+  onSend = (message) => message.type === "rsl:show-feature-settings"
+    ? { ok: true, type: "rsl:show-feature-settings" }
+    : { ok: false };
+  await hooks.handleContextMenuClick(
+    { menuItemId: "rsl-context:feature-settings:open" },
+    { id: 41, windowId: 1, incognito: false, active: true, url: tabUrl }
+  );
+  assert.equal(sent[0]?.message?.type, "rsl:show-feature-settings");
+
+  reset();
+  hooks.setRecoverySnapshotsEnabledForTests(false);
+  await hooks.handleContextMenuClick(
+    { menuItemId: "rsl-context:account-recovery-archive:open" },
+    { id: 41, windowId: 1, incognito: false, active: true, url: tabUrl }
+  );
+  assert.deepEqual(openedExtensionTabs, [{
+    url: "chrome-extension://fixture-extension/recovery-archive.html",
+    active: true
+  }], "the Recovery master blocked deliberate action-menu archive access");
+  hooks.setRecoverySnapshotsEnabledForTests(true);
+
+  reset();
+  await hooks.handleContextMenuClick(
+    { menuItemId: "rsl-context:account-recovery-archive:open" },
+    { id: 41, windowId: 1, incognito: false, active: true, url: tabUrl }
+  );
+  assert.deepEqual(openedExtensionTabs, [{
+    url: "chrome-extension://fixture-extension/recovery-archive.html",
+    active: true
+  }], "Recovery Snapshots did not open its extension-owned archive directly");
+  assert.equal(sent.length, 0, "opening the archive unexpectedly required a Roblox tab message");
+
+  reset();
+  await hooks.handleContextMenuClick(
+    { menuItemId: "rsl-context:account-recovery-archive:open" },
+    { id: 42, windowId: 2, incognito: true, active: true, url: tabUrl }
+  );
+  assert.equal(openedExtensionTabs.length, 0, "incognito action opened the private archive");
+
+  reset();
+  chrome.extension.inIncognitoContext = true;
+  await hooks.handleContextMenuClick(
+    { menuItemId: "rsl-context:account-recovery-archive:open" },
+    { id: 43, windowId: 3, incognito: false, active: true, url: tabUrl }
+  );
+  chrome.extension.inIncognitoContext = false;
+  assert.equal(
+    openedExtensionTabs.length,
+    0,
+    "a split-incognito extension context opened the private archive"
+  );
+
   reset(); ready(snapshot());
   await clickPlace({
     linkUrl: "https://www.roblox.com/games/111/link",

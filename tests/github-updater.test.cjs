@@ -22,11 +22,11 @@ const exampleConfiguration = JSON.parse(
 );
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
 
-assert.equal(manifest.version, "0.19.6", "the current release version must match its manifest");
+assert.equal(manifest.version, "0.19.8", "the current release version must match its manifest");
 assert.match(
   updaterSource,
-  /^\$script:UpdaterVersion\s*=\s*"1\.2\.3"\s*$/m,
-  "the corrected updater core must be newer than the released 1.2.2 core"
+  /^\$script:UpdaterVersion\s*=\s*"1\.2\.6"\s*$/m,
+  "the 30-file updater core must advance for the toolbar popup assets"
 );
 
 const expectedPackageFiles = [
@@ -40,6 +40,15 @@ const expectedPackageFiles = [
   "join-scheduler.html",
   "join-scheduler.css",
   "join-scheduler.js",
+  "recovery-snapshot.html",
+  "recovery-snapshot.css",
+  "recovery-snapshot.js",
+  "recovery-archive.html",
+  "recovery-archive.css",
+  "recovery-archive.js",
+  "popup.html",
+  "popup.css",
+  "popup.js",
   "README.md",
   "icons/id-16.png",
   "icons/id-32.png",
@@ -57,7 +66,7 @@ assert.deepEqual(packageFiles, expectedPackageFiles, "managed release allowlist 
 assert.equal(
   packageFiles.includes("UPDATING.md"),
   false,
-  "the GitHub-rendered short guide must not change the 21-file updater contract"
+  "the GitHub-rendered short guide must not change the 30-file updater contract"
 );
 assert.equal(new Set(packageFiles.map((item) => item.toLowerCase())).size, packageFiles.length);
 for (const relative of packageFiles) {

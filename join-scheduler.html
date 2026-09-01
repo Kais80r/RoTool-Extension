@@ -104,7 +104,7 @@
               <h3 id="time-section-title" class="rsl-feature-settings__group-title content-default text-label-medium">Time</h3>
             </div>
             <div class="rsl-feature-settings__list form-section__panel">
-              <label class="field-label" for="schedule-time">Date and time</label>
+              <label class="field-label" for="schedule-time">Reminder or join time</label>
               <input id="schedule-time" class="text-input" type="datetime-local" required data-schedule-time>
               <p class="field-help" data-time-zone></p>
               <article class="official-event" data-official-event hidden>
@@ -114,6 +114,16 @@
                   <span data-official-event-time></span>
                 </div>
               </article>
+              <div class="event-time-presets" data-event-time-presets hidden>
+                <span id="event-time-presets-label" class="event-time-presets__label">Quick timing</span>
+                <div class="event-time-presets__buttons" role="group" aria-labelledby="event-time-presets-label">
+                  <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-event-offset-minutes="0">At event start</button>
+                  <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-event-offset-minutes="5">5 min before</button>
+                  <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-event-offset-minutes="10">10 min before</button>
+                  <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-event-offset-minutes="15">15 min before</button>
+                  <button class="rsl-button rsl-button--secondary button button--secondary button--compact" type="button" data-event-offset-minutes="30">30 min before</button>
+                </div>
+              </div>
             </div>
           </section>
 

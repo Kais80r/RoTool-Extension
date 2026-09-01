@@ -11,7 +11,8 @@ const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
-assert.equal(manifest.version, "0.19.6");
+assert.equal(manifest.version, "0.19.8");
+assert.match(manifest.description, /Enhanced Profiles/i);
 assert.match(manifest.description, /Join Scheduler/i);
 assert.ok(manifest.permissions.includes("storage"));
 
@@ -29,8 +30,13 @@ for (const key of [
   "updatePopups",
   "bestFriends",
   "friendFilters",
+  "enhancedProfiles",
   "quickPlay",
   "gameCcu",
+  "recoverySnapshots",
+  "recoverySnapshotMenu",
+  "recoverySnapshotArchive",
+  "recoverySnapshotReminder",
   "gameEvents",
   "joinScheduler",
   "serverHistory",
@@ -70,6 +76,83 @@ assert.match(
 );
 assert.match(
   content,
+  /key: "recoverySnapshots"[\s\S]*?label: "Recovery Snapshots"[\s\S]*?advancedControls:[\s\S]*?type: "feature"[\s\S]*?key: "recoverySnapshotMenu"[\s\S]*?type: "feature"[\s\S]*?key: "recoverySnapshotArchive"[\s\S]*?type: "feature"[\s\S]*?key: "recoverySnapshotReminder"[\s\S]*?type: "archiveSelect"[\s\S]*?key: "frequency"[\s\S]*?type: "archiveSelect"[\s\S]*?key: "retention"[\s\S]*?label: "Information to capture automatically"[\s\S]*?dynamicSummary: "recoverySnapshotSections"[\s\S]*?ACCOUNT_RECOVERY_ARCHIVE_SECTION_DEFINITIONS\.map[\s\S]*?key: "openRecoverySnapshot"[\s\S]*?key: "openRecoverySnapshotArchive"[\s\S]*?label: "View saved snapshots"[\s\S]*?actionLabel: "Open"[\s\S]*?children:[\s\S]*?key: "recoverySnapshotMenu"[\s\S]*?key: "recoverySnapshotArchive"[\s\S]*?defaultEnabled: false[\s\S]*?key: "recoverySnapshotReminder"/,
+  "Recovery Snapshots Advanced must own the Settings-menu shortcut, automatic capture, reminder, schedule, retention, privacy choices, and account tools"
+);
+const recoveryDefinitionStart = content.indexOf('key: "recoverySnapshots"');
+const recoveryDefinitionEnd = content.indexOf(
+  'key: "gameEvents"',
+  recoveryDefinitionStart
+);
+const recoveryDefinitionSource = content.slice(
+  recoveryDefinitionStart,
+  recoveryDefinitionEnd
+);
+assert.doesNotMatch(
+  recoveryDefinitionSource,
+  /independentOfParent:\s*true/,
+  "the Recovery master switch must gate its shortcut, automatic capture, and reminder"
+);
+assert.equal(
+  (recoveryDefinitionSource.match(/availableWhenDisabled:\s*true/g) || []).length,
+  2,
+  "the current-snapshot and saved-snapshot actions must remain available when Recovery automation is off"
+);
+const recoveryReminderLabelIndex = content.indexOf(
+  'label: "Automatic snapshot reminders"'
+);
+assert.ok(
+  recoveryReminderLabelIndex >= 0,
+  "Recovery Snapshots Advanced must expose Automatic snapshot reminders"
+);
+const recoveryReminderDefinitionSource = content.slice(
+  content.lastIndexOf("Object.freeze({", recoveryReminderLabelIndex),
+  content.indexOf("})", recoveryReminderLabelIndex) + 2
+);
+assert.match(
+  recoveryReminderDefinitionSource,
+  /key: "recoverySnapshotReminder"[\s\S]*?label: "Automatic snapshot reminders"[\s\S]*?description:\s*"Show a Home reminder every 3 hours while Automatic snapshots are off\."/,
+  "the reminder switch must state its exact three-hour Home scope"
+);
+assert.doesNotMatch(
+  recoveryReminderDefinitionSource,
+  /defaultEnabled: false/,
+  "Automatic snapshot reminders must default on"
+);
+assert.match(
+  content,
+  /function reviewAutomaticSnapshotSettings\(dialog\)[\s\S]*?setFeatureSettingsDisclosureExpanded\(disclosure, children, true\)[\s\S]*?automaticSwitch\.focus\(\{ preventScroll: true \}\)/,
+  "the review helper must reveal and focus the real Automatic snapshots switch"
+);
+assert.match(
+  content,
+  /contentTestHooks\.reviewAutomaticSnapshotSettings\s*=\s*reviewAutomaticSnapshotSettings/,
+  "the browser fixture must be able to exercise the Automatic snapshots scroll/focus review path"
+);
+assert.match(content, /const ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES_VERSION = 2/);
+assert.match(
+  content,
+  /const DEFAULT_ACCOUNT_RECOVERY_ARCHIVE_PREFERENCES[\s\S]*?frequency: "daily"[\s\S]*?retention: 5[\s\S]*?sections: Object\.freeze\(\[\.\.\.ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS\]\)/,
+  "fresh automatic-capture preferences must include every supported section"
+);
+const recoverySectionsSource = content.slice(
+  content.indexOf("  const ACCOUNT_RECOVERY_ARCHIVE_SECTION_DEFINITIONS"),
+  content.indexOf("  const ACCOUNT_RECOVERY_ARCHIVE_SECTION_KEYS")
+);
+assert.doesNotMatch(
+  recoverySectionsSource,
+  /defaultEnabled: false/,
+  "Recently played must no longer be silently excluded from fresh automatic captures"
+);
+assert.match(content, /rsl:get-account-recovery-archive-preferences/);
+assert.match(content, /rsl:set-account-recovery-archive-preferences/);
+assert.doesNotMatch(
+  content,
+  /key: "recoverySnapshotArchive",\s*group: "Tools"/,
+  "Automatic snapshots must not appear as a duplicate top-level Tools row"
+);
+assert.match(
+  content,
   /key: "sidebarServerHistory"[\s\S]*?label: "Server History"/,
   "the independently remembered Server History sidebar choice must default on"
 );
@@ -79,13 +162,15 @@ assert.match(
   "the top-of-page reminder needs an exact, non-system-notification Settings label and scope"
 );
 const friendFiltersDefinitionIndex = content.indexOf('key: "friendFilters"');
+const enhancedProfilesDefinitionIndex = content.indexOf('key: "enhancedProfiles"');
 const updatePopupsDefinitionIndex = content.indexOf('key: "updatePopups"');
 const quickPlayDefinitionIndex = content.indexOf('key: "quickPlay"');
 assert.ok(
   friendFiltersDefinitionIndex >= 0 &&
-    updatePopupsDefinitionIndex > friendFiltersDefinitionIndex &&
+    enhancedProfilesDefinitionIndex > friendFiltersDefinitionIndex &&
+    updatePopupsDefinitionIndex > enhancedProfilesDefinitionIndex &&
     quickPlayDefinitionIndex > updatePopupsDefinitionIndex,
-  "RoTool Update Popups must be the final Interface setting, directly before Experiences"
+  "Interface settings must order Friend Lists & Filters, Enhanced Profiles, and RoTool Update Popups directly before Experiences"
 );
 assert.match(
   content,
@@ -95,6 +180,32 @@ assert.match(
 
 assert.match(content, /header\.querySelector\("#navbar-settings"\)/);
 assert.match(content, /button\.setAttribute\("aria-label", "RoTool Settings"\)/);
+assert.match(
+  content,
+  /const FEATURE_SETTINGS_SHOW_MESSAGE_TYPE = "rsl:show-feature-settings"/,
+  "the toolbar entry point needs one explicit feature-settings message type"
+);
+const showFeatureSettingsHandlerSource = content.slice(
+  content.indexOf("  function handleShowFeatureSettingsMessage("),
+  content.indexOf("  function normalizeGameEventId(")
+);
+assert.match(showFeatureSettingsHandlerSource, /messageKeys\.length !== 1/);
+assert.match(showFeatureSettingsHandlerSource, /messageKeys\[0\] !== "type"/);
+assert.match(showFeatureSettingsHandlerSource, /sender\?\.id === chrome\.runtime\.id/);
+assert.match(showFeatureSettingsHandlerSource, /!sender\?\.tab/);
+assert.match(showFeatureSettingsHandlerSource, /window\.top === window/);
+assert.match(showFeatureSettingsHandlerSource, /document\.visibilityState === "visible"/);
+assert.match(showFeatureSettingsHandlerSource, /openFeatureSettingsDialog\(opener\)/);
+assert.match(
+  showFeatureSettingsHandlerSource,
+  /sendResponse\?\.\(\{\s*ok: true,\s*type: FEATURE_SETTINGS_SHOW_MESSAGE_TYPE\s*\}\)/,
+  "the content response must exactly match the background launcher's typed acknowledgement"
+);
+assert.match(
+  content,
+  /chrome\.runtime\.onMessage\?\.addListener\(handleShowFeatureSettingsMessage\)/,
+  "the strict feature-settings runtime handler must be registered"
+);
 assert.match(content, /viewBox="-16 -4 128 128"/);
 const logoFunctionSource = content.slice(
   content.indexOf("  function getRoToolLogoMarkup("),

@@ -561,6 +561,7 @@
       selectedDetails: query("[data-selected-game-details]"),
       scheduleTime: query("[data-schedule-time]"),
       timeZone: query("[data-time-zone]"),
+      eventTimePresets: query("[data-event-time-presets]"),
       officialEvent: query("[data-official-event]"),
       officialTitle: query("[data-official-event-title]"),
       officialTime: query("[data-official-event-time]"),
@@ -991,6 +992,22 @@
       meta.append(makeElement("span", "",
         destination?.type && destination.type !== "public" ? "Private server" : "Public game"
       ));
+      if (
+        schedule.eventStartAt &&
+        schedule.eventStartAt > schedule.startAt
+      ) {
+        const leadMinutes = Math.round(
+          (schedule.eventStartAt - schedule.startAt) / 60_000
+        );
+        meta.append(makeElement("span", "schedule-card__separator", "·"));
+        meta.append(makeElement(
+          "span",
+          "",
+          leadMinutes > 0
+            ? `${leadMinutes} min before event`
+            : "Before event"
+        ));
+      }
       if (destination?.requiresConfirmation) {
         meta.append(makeElement("span", "schedule-card__separator", "·"));
         meta.append(makeElement("span", "schedule-card__warning", "Unverified link"));
@@ -1249,6 +1266,50 @@
       return elements.form.elements.namedItem("destination-type")?.value || "public";
     }
 
+    function setScheduleTimeValue(timestamp) {
+      const normalized = Number(timestamp);
+      elements.scheduleTime.value = toDatetimeLocal(normalized);
+      if (Number.isSafeInteger(normalized) && normalized > 0) {
+        elements.scheduleTime.dataset.rslExactTimestamp = String(normalized);
+      } else {
+        delete elements.scheduleTime.dataset.rslExactTimestamp;
+      }
+    }
+
+    function selectedScheduleTime() {
+      const exactTimestamp = Number(
+        elements.scheduleTime.dataset.rslExactTimestamp
+      );
+      if (
+        Number.isSafeInteger(exactTimestamp) &&
+        exactTimestamp > 0 &&
+        elements.scheduleTime.value === toDatetimeLocal(exactTimestamp)
+      ) {
+        return exactTimestamp;
+      }
+      return parseDatetimeLocal(elements.scheduleTime.value);
+    }
+
+    function updateEventTimePresets(now = Date.now()) {
+      if (!elements.eventTimePresets) return;
+      const hasOfficialTime = Boolean(
+        officialDraft && Number.isSafeInteger(officialDraft.eventStartAt)
+      );
+      elements.eventTimePresets.hidden = !hasOfficialTime;
+      if (!hasOfficialTime) return;
+      const selectedTime = selectedScheduleTime();
+      for (const button of queryAll("[data-event-offset-minutes]")) {
+        const offsetMinutes = Number(button.dataset.eventOffsetMinutes);
+        const target = officialDraft.eventStartAt - offsetMinutes * 60_000;
+        button.disabled = !Number.isSafeInteger(offsetMinutes) ||
+          offsetMinutes < 0 || target <= now;
+        button.setAttribute(
+          "aria-pressed",
+          String(!button.disabled && selectedTime === target)
+        );
+      }
+    }
+
     function updateSubmitCopy() {
       setFoundationButtonLabel(elements.submit, modeValue() === "auto"
         ? "Schedule Auto-Join"
@@ -1266,7 +1327,7 @@
         ? "the selected private server"
         : "the public game";
       elements.consentSummary.textContent = selectedGame
-        ? `At ${formatDateTime(parseDatetimeLocal(elements.scheduleTime.value))}, RoTool will try once to open ${selectedGame.name} in ${destination}.`
+        ? `At ${formatDateTime(selectedScheduleTime())}, RoTool will try once to open ${selectedGame.name} in ${destination}.`
         : "Choose a game and time before confirming automatic joining.";
       updateSubmitCopy();
     }
@@ -1364,8 +1425,9 @@
       elements.selectionHelp.hidden = false;
       elements.selectedGame.hidden = true;
       elements.officialEvent.hidden = true;
-      elements.scheduleTime.readOnly = false;
-      elements.scheduleTime.removeAttribute("aria-readonly");
+      if (elements.eventTimePresets) elements.eventTimePresets.hidden = true;
+      elements.scheduleTime.removeAttribute("max");
+      delete elements.scheduleTime.dataset.rslExactTimestamp;
       elements.scheduleTime.min = toDatetimeLocal(Date.now() + 60_000);
       elements.scheduleTime.value = toDatetimeLocal(Date.now() + 3_600_000);
       elements.privateFields.hidden = true;
@@ -1406,12 +1468,13 @@
     }
 
     function applyOfficialDraft(draft) {
+      const eventStartAt = Number(draft.eventStartAt ?? draft.startAt);
       officialDraft = {
         universeId: String(draft.universeId),
         placeId: String(draft.placeId),
         gameName: String(draft.gameName || "Roblox game"),
         title: String(draft.title || draft.gameName || "Roblox event"),
-        startAt: Number(draft.startAt),
+        eventStartAt,
         endAt: Number(draft.endAt) || null,
         eventId: draft.eventId ? String(draft.eventId) : null
       };
@@ -1423,12 +1486,13 @@
         playerCount: null,
         thumbnailUrl: thumbnails.get(officialDraft.universeId) || null
       });
-      elements.scheduleTime.value = toDatetimeLocal(officialDraft.startAt);
-      elements.scheduleTime.readOnly = true;
-      elements.scheduleTime.setAttribute("aria-readonly", "true");
+      setScheduleTimeValue(officialDraft.eventStartAt);
+      elements.scheduleTime.max = toDatetimeLocal(officialDraft.eventStartAt);
       elements.officialEvent.hidden = false;
       elements.officialTitle.textContent = officialDraft.title;
-      elements.officialTime.textContent = formatDateTime(officialDraft.startAt);
+      elements.officialTime.textContent =
+        `Event starts ${formatDateTime(officialDraft.eventStartAt)}`;
+      updateEventTimePresets();
       updateMode();
     }
 
@@ -1456,7 +1520,7 @@
         playerCount: null,
         thumbnailUrl: thumbnails.get(schedule.universeId) || null
       });
-      elements.scheduleTime.value = toDatetimeLocal(schedule.startAt);
+      setScheduleTimeValue(schedule.startAt);
       const modeInput = elements.form.querySelector(
         `input[name="schedule-mode"][value="${schedule.mode === "auto" ? "auto" : "notify"}"]`
       );
@@ -1475,10 +1539,12 @@
           placeId: schedule.placeId,
           gameName: schedule.gameName,
           title: schedule.title,
-          startAt: schedule.startAt,
+          eventStartAt: schedule.eventStartAt || schedule.startAt,
           endAt: schedule.endAt,
           eventId: schedule.eventId
         });
+        setScheduleTimeValue(schedule.startAt);
+        updateEventTimePresets();
       }
       elements.autoJoinConsent.checked = false;
       elements.allowSwitch.checked = false;
@@ -1628,9 +1694,19 @@
         elements.search.focus();
         return null;
       }
-      const startAt = parseDatetimeLocal(elements.scheduleTime.value);
+      const startAt = selectedScheduleTime();
       if (!startAt || startAt <= Date.now()) {
         setStatus(elements.formStatus, "Choose a time in the future.", "error");
+        elements.scheduleTime.setAttribute("aria-invalid", "true");
+        elements.scheduleTime.focus();
+        return null;
+      }
+      if (officialDraft && startAt > officialDraft.eventStartAt) {
+        setStatus(
+          elements.formStatus,
+          "Choose a reminder or join time at or before the official event start.",
+          "error"
+        );
         elements.scheduleTime.setAttribute("aria-invalid", "true");
         elements.scheduleTime.focus();
         return null;
@@ -1759,7 +1835,8 @@
           placeId: submitSnapshot.game.placeId,
           gameName: submitSnapshot.game.name,
           title: submitSnapshot.officialDraft?.title || submitSnapshot.game.name,
-          startAt: submitSnapshot.officialDraft?.startAt || submitSnapshot.startAt,
+          startAt: submitSnapshot.startAt,
+          eventStartAt: submitSnapshot.officialDraft?.eventStartAt || null,
           endAt: submitSnapshot.officialDraft?.endAt || null,
           eventId: submitSnapshot.officialDraft?.eventId || null,
           mode: submitSnapshot.mode,
@@ -2090,8 +2167,9 @@
       officialDraft = null;
       elements.selectedGame.hidden = true;
       elements.officialEvent.hidden = true;
-      elements.scheduleTime.readOnly = false;
-      elements.scheduleTime.removeAttribute("aria-readonly");
+      if (elements.eventTimePresets) elements.eventTimePresets.hidden = true;
+      elements.scheduleTime.removeAttribute("max");
+      delete elements.scheduleTime.dataset.rslExactTimestamp;
       elements.search.hidden = false;
       elements.selectionHelp.hidden = false;
       renderDestinations();
@@ -2143,7 +2221,41 @@
     });
     elements.scheduleTime.addEventListener("change", (event) => {
       if (!isTrustedEvent(event)) return;
+      delete elements.scheduleTime.dataset.rslExactTimestamp;
+      updateEventTimePresets();
       updateMode();
+    });
+    queryAll("[data-event-offset-minutes]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        if (
+          !isTrustedEvent(event) ||
+          !officialDraft ||
+          button.disabled ||
+          submitting ||
+          pendingConfirmation ||
+          draftLoading ||
+          stateLoading
+        ) return;
+        const offsetMinutes = Number(button.dataset.eventOffsetMinutes);
+        const target = officialDraft.eventStartAt - offsetMinutes * 60_000;
+        if (
+          !Number.isSafeInteger(offsetMinutes) ||
+          offsetMinutes < 0 ||
+          target <= Date.now()
+        ) {
+          updateEventTimePresets();
+          setStatus(
+            elements.formStatus,
+            "That earlier time has passed. Choose another time.",
+            "warning"
+          );
+          return;
+        }
+        setScheduleTimeValue(target);
+        elements.scheduleTime.removeAttribute("aria-invalid");
+        updateEventTimePresets();
+        updateMode();
+      });
     });
     elements.savedDestination.addEventListener("change", (event) => {
       if (!isTrustedEvent(event)) return;
@@ -2245,7 +2357,12 @@
     setSchedulerView("list");
     updateNewScheduleAvailability();
     const countdownTimer = setInterval(() => {
-      if (!ownerDocument.hidden) refreshScheduleCountdowns();
+      if (!ownerDocument.hidden) {
+        refreshScheduleCountdowns();
+        if (activeView === "editor" && officialDraft) {
+          updateEventTimePresets();
+        }
+      }
     }, 30_000);
 
     async function openScheduler(draft = null) {

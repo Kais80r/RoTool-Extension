@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>RoTool shortcut icon fixture</title>
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        background: #111216;
+      }
+
+      .theme {
+        padding: 24px;
+      }
+
+      .dark-theme {
+        color: #f7f7f8;
+        background: #191a1f;
+      }
+
+      .light-theme {
+        color: #202227;
+        background: #fff;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(180px, 240px);
+        gap: 8px;
+      }
+
+      .sample {
+        display: flex;
+        min-width: 0;
+        height: 44px;
+        padding: 0 10px;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid currentColor;
+        border-color: color-mix(in srgb, currentColor 18%, transparent);
+        border-radius: 8px;
+      }
+
+      .sample .size-1000 {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+      }
+
+      .sample span:last-child {
+        overflow: hidden;
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body data-test-result="pending">
+    <section class="theme dark-theme">
+      <h1>Dark</h1>
+      <div class="grid"></div>
+    </section>
+    <section class="theme light-theme">
+      <h1>Light</h1>
+      <div class="grid"></div>
+    </section>
+    <script>globalThis.__rslContentTestHooks = { skipInitialize: true };</script>
+    <script src="../content.js"></script>
+    <script>
+      try {
+        const hooks = globalThis.__rslContentTestHooks;
+        const icons = hooks.shortcutIconMarkup;
+        if (
+          hooks.getShortcutIconType("https://www.roblox.com/games/123/example") !==
+            "game" ||
+          hooks.getShortcutIconType("https://example.com/") !== "external"
+        ) {
+          throw new Error("Shortcut URL icon routing failed");
+        }
+
+        const mockThumbnail = (label, colors) =>
+          "data:image/svg+xml;charset=utf-8," +
+          encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+              <defs><linearGradient id="g" x2="1" y2="1">
+                <stop stop-color="${colors[0]}"/><stop offset="1" stop-color="${colors[1]}"/>
+              </linearGradient></defs>
+              <rect width="32" height="32" rx="5" fill="url(#g)"/>
+              <text x="16" y="21" text-anchor="middle" font-family="Arial"
+                font-size="15" font-weight="700" fill="white">${label}</text>
+            </svg>`
+          );
+
+        const makeSvgIcon = (type, custom = false) => {
+          const icon = document.createElement("span");
+          icon.className =
+            "size-1000 rsl-sidebar-icon rsl-sidebar-icon--shortcut" +
+            (custom ? " rsl-sidebar-icon--custom" : "");
+          icon.innerHTML =
+            `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[type]}</svg>`;
+          return icon;
+        };
+
+        const makeThumbnailIcon = (profile = false) => {
+          const icon = document.createElement("span");
+          icon.className =
+            "size-1000 rsl-sidebar-icon rsl-sidebar-icon--shortcut " +
+            "rsl-sidebar-icon--custom rsl-sidebar-icon--thumbnail " +
+            "rsl-owned-thumbnail-frame" +
+            (profile ? " rsl-sidebar-icon--thumbnail-profile" : "");
+          icon.dataset.rslThumbnailState = "loaded";
+          const image = document.createElement("img");
+          image.className =
+            "rsl-sidebar-thumbnail" +
+            (profile ? " rsl-sidebar-thumbnail--profile" : "");
+          image.alt = "";
+          image.src = mockThumbnail(profile ? "P" : "R", profile
+            ? ["#7b4dff", "#dd50a6"]
+            : ["#1464db", "#ed364d"]);
+          icon.append(image);
+          return icon;
+        };
+
+        const samples = [
+          ["Saved game · Rivals", () => makeThumbnailIcon(false)],
+          ["Saved profile", () => makeThumbnailIcon(true)],
+          ["Loading game", () => {
+            const icon = makeSvgIcon("game", true);
+            icon.classList.add("rsl-owned-thumbnail-frame");
+            icon.dataset.rslThumbnailState = "loading";
+            return icon;
+          }],
+          ["External shortcut", () => makeSvgIcon("external", true)],
+          ["Events · unchanged", () => makeSvgIcon("calendar")],
+          ["Add shortcut · unchanged", () => {
+            const icon = document.createElement("span");
+            icon.className = "size-1000 rsl-sidebar-icon rsl-sidebar-icon--plus";
+            return icon;
+          }]
+        ];
+
+        for (const grid of document.querySelectorAll(".grid")) {
+          for (const [name, makeIcon] of samples) {
+            const row = document.createElement("div");
+            row.className = "sample";
+            const label = document.createElement("span");
+            label.textContent = name;
+            row.append(makeIcon(), label);
+            grid.append(row);
+          }
+        }
+
+        const thumbnail = document.querySelector(".rsl-sidebar-thumbnail");
+        const thumbnailStyle = getComputedStyle(thumbnail);
+        const frameStyle = getComputedStyle(thumbnail.parentElement);
+        if (
+          thumbnailStyle.width !== "32px" ||
+          thumbnailStyle.height !== "32px" ||
+          frameStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+        ) {
+          throw new Error("Custom thumbnail sizing or frame cleanup failed");
+        }
+        document.body.dataset.testResult = "pass";
+        document.title = "PASS: RoTool shortcut icon fixture";
+      } catch (error) {
+        document.body.dataset.testResult = "fail";
+        document.body.dataset.testMessage = error?.message || String(error);
+        document.title = `FAIL: ${document.body.dataset.testMessage}`;
+      }
+    </script>
+  </body>
+</html>
