@@ -30,13 +30,22 @@ const ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE =
 const ENHANCED_PROFILE_JOIN_MESSAGE_TYPE = "rsl:join-enhanced-profile";
 const ENHANCED_PROFILE_BADGE_COUNT_MESSAGE_TYPE =
   "rsl:get-enhanced-profile-badge-count";
+const MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE = "rsl:get-mutual-friends-page";
 const ENHANCED_PROFILE_CACHE_TTL_MS = 2 * 60_000;
+const ENHANCED_PROFILE_PARTIAL_CACHE_TTL_MS = 10_000;
 const ENHANCED_PROFILE_BADGE_COUNT_CACHE_TTL_MS = 2 * 60_000;
+const MUTUAL_FRIENDS_PAGE_CACHE_TTL_MS = 2 * 60_000;
 const ENHANCED_PROFILE_MAX_DESCRIPTION_LENGTH = 1_000;
 const ENHANCED_PROFILE_MAX_USERNAME_HISTORY = 12;
 const ENHANCED_PROFILE_MAX_EXPERIENCES = 50;
 const ENHANCED_PROFILE_MAX_FAVORITES = 8;
 const ENHANCED_PROFILE_MAX_FRIENDS = 10;
+const ENHANCED_PROFILE_MAX_MUTUAL_GROUPS = 100;
+const ENHANCED_PROFILE_MAX_OWNED_GROUP_GAME_SOURCES = 8;
+const ENHANCED_PROFILE_OWNED_GROUP_GAME_CONCURRENCY = 4;
+const ENHANCED_PROFILE_OWNED_GROUP_GAME_SOURCE_TIMEOUT_MS = 2_500;
+const ENHANCED_PROFILE_OWNED_GROUP_GAME_TOTAL_BUDGET_MS = 3_000;
+const ENHANCED_PROFILE_GROUP_ROLES_TIMEOUT_MS = 4_000;
 const ENHANCED_PROFILE_MAX_WEARING = 50;
 const ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_IDS = new Set([
   17, // Head / classic body bundles
@@ -53,12 +62,16 @@ const ENHANCED_PROFILE_BUNDLE_ANCHOR_ASSET_TYPE_NAMES = new Map([
   ["dynamichead", "dynamic-head"]
 ]);
 const ENHANCED_PROFILE_MAX_COMMUNITIES = 12;
+const ENHANCED_PROFILE_MAX_OWNED_GROUPS = 100;
 const ENHANCED_PROFILE_MAX_BADGES = 12;
 const ENHANCED_PROFILE_MAX_BADGE_COUNT_PAGES = 1_000;
 const ENHANCED_PROFILE_SECTION_TIMEOUT_MS = 12_000;
 const enhancedProfileRequests = new Map();
 const enhancedProfileRelationshipRequests = new Map();
 const enhancedProfileBadgeCountRequests = new Map();
+const enhancedProfileGroupRoleRequests = new Map();
+const enhancedProfileMutualFriendIdCache = new Map();
+const mutualFriendsPageRequests = new Map();
 
 const CONTEXT_MENU_PREFIX = "rsl-context";
 const FEATURE_SETTINGS_ACTION_MENU_ID =
@@ -750,6 +763,15 @@ class RobloxApiError extends Error {
   }
 }
 
+class EnhancedProfileError extends Error {
+  constructor(code, status = 0) {
+    super(code);
+    this.name = "EnhancedProfileError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 class QuickSettingsError extends Error {
   constructor(code, status = 0) {
     super(code);
@@ -1210,10 +1232,15 @@ async function fetchJson(url, options = {}, retryPolicy = {}) {
   const maxAttempts = Number.isSafeInteger(requestedAttempts)
     ? Math.min(2, Math.max(1, requestedAttempts))
     : 2;
+  const requestedTimeoutMs = Number(retryPolicy.timeoutMs);
+  const timeoutMs = Number.isSafeInteger(requestedTimeoutMs) &&
+    requestedTimeoutMs > 0
+    ? Math.min(FETCH_TIMEOUT_MS, requestedTimeoutMs)
+    : FETCH_TIMEOUT_MS;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, { ...options, signal: controller.signal });
@@ -2669,7 +2696,10 @@ async function fetchFriendIdsFromPaginatedEndpoint(
     }
   } while (cursor);
 
-  return normalizeFriendListItems(friendItems);
+  return {
+    ...normalizeFriendListItems(friendItems),
+    enumeratedItemCount: friendItems.length
+  };
 }
 
 function mergeFriendListResults(results) {
@@ -5351,6 +5381,8 @@ async function getTargetFollowersFilterChunk(
 function resetFriendAggregationStateForTests() {
   friendIdsCache = null;
   friendIdsRequestsByViewer.clear();
+  enhancedProfileMutualFriendIdCache.clear();
+  mutualFriendsPageRequests.clear();
   onlineFriendsCache = null;
   onlineFriendsInFlight = null;
   onlineFriendsEnrichmentInFlight = null;
@@ -17889,6 +17921,9 @@ function normalizeEnhancedProfileCount(value) {
 }
 
 function getEnhancedProfileErrorCode(error) {
+  if (["INCOMPLETE", "OWN_PROFILE", "PRIVACY_OR_REGION"].includes(error?.code)) {
+    return error.code;
+  }
   if (error?.status === 400) return "INVALID";
   if (error?.status === 401) return "UNAUTHENTICATED";
   if (error?.status === 403) return "PRIVATE";
@@ -17935,6 +17970,50 @@ function parseEnhancedProfileRouteUrl(rawUrl) {
   return normalizeId(segments[1]);
 }
 
+function parseMutualFriendsPageRouteUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl) return null;
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "www.roblox.com" ||
+    url.port ||
+    url.username ||
+    url.password
+  ) {
+    return null;
+  }
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (
+    segments.length > 0 &&
+    CONTEXT_MENU_ROBLOX_LOCALE_SET.has(segments[0].toLowerCase())
+  ) {
+    segments.shift();
+  }
+  if (
+    segments.length !== 3 ||
+    segments[0].toLowerCase() !== "users" ||
+    segments[2].toLowerCase() !== "friends"
+  ) {
+    return null;
+  }
+  const hash = String(url.hash || "");
+  if (/^#!\/friends#mutuals$/i.test(hash)) {
+    return normalizeId(segments[1]);
+  }
+  const match = /^#!\/friends(?:\?(.+))?$/i.exec(hash);
+  if (!match) return null;
+  const parameters = new URL(
+    `https://www.roblox.com/?${match[1] || ""}`
+  ).searchParams;
+  if (parameters.get("rotool") !== "mutuals") return null;
+  return normalizeId(segments[1]);
+}
+
 function hasExactEnhancedProfileMessageKeys(message) {
   return Boolean(
     message &&
@@ -17960,6 +18039,35 @@ function isTrustedEnhancedProfileSender(sender, userId) {
   return (
     parseEnhancedProfileRouteUrl(sender.url) === userId &&
     parseEnhancedProfileRouteUrl(sender.tab.url) === userId
+  );
+}
+
+function hasExactMutualFriendsPageMessageKeys(message) {
+  return Boolean(
+    message &&
+    typeof message === "object" &&
+    !Array.isArray(message) &&
+    typeof message.forceRefresh === "boolean" &&
+    Object.keys(message).sort().join(",") ===
+      "forceRefresh,requestId,targetUserId,type"
+  );
+}
+
+function isTrustedMutualFriendsPageSender(sender, targetUserId) {
+  if (
+    getTrustedRobloxTopFrameTabId(sender) === null ||
+    typeof sender?.url !== "string" ||
+    typeof sender?.tab?.url !== "string" ||
+    (typeof sender.documentLifecycle === "string" &&
+      sender.documentLifecycle !== "active") ||
+    (typeof sender.frameType === "string" &&
+      sender.frameType !== "outermost_frame")
+  ) {
+    return false;
+  }
+  return (
+    parseMutualFriendsPageRouteUrl(sender.url) === targetUserId &&
+    parseMutualFriendsPageRouteUrl(sender.tab.url) === targetUserId
   );
 }
 
@@ -18157,12 +18265,12 @@ async function fetchEnhancedProfileCounts(userId) {
   return { ...counts, complete: readyCount === definitions.length };
 }
 
-async function fetchEnhancedProfileFriendCount(userId) {
+async function fetchEnhancedProfileFriendCount(userId, credentials = "omit") {
   const payload = await fetchJson(
     new URL(`/v1/users/${userId}/friends/count`, "https://friends.roblox.com"),
     {
       cache: "no-store",
-      credentials: "omit",
+      credentials: credentials === "include" ? "include" : "omit",
       headers: { Accept: "application/json" }
     },
     { maxAttempts: 1 }
@@ -18197,7 +18305,67 @@ async function fetchEnhancedProfileUsernameHistory(userId) {
   };
 }
 
-function normalizeEnhancedProfileGame(entry, details, iconUrl, ratingPercent) {
+function normalizeEnhancedProfileGameCreatorType(rawValue) {
+  const value = typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
+  if (value === "user") return "User";
+  if (value === "group") return "Group";
+  return null;
+}
+
+function resolveEnhancedProfileGameCreator(
+  entry,
+  details,
+  expectedCreator = null
+) {
+  const rawCreators = [details?.creator, entry?.creator]
+    .filter((creator) => creator && typeof creator === "object");
+  const expectedCreatorId = normalizeId(expectedCreator?.creatorId);
+  const expectedCreatorType = normalizeEnhancedProfileGameCreatorType(
+    expectedCreator?.creatorType
+  );
+  if (expectedCreatorId && expectedCreatorType) {
+    for (const rawCreator of rawCreators) {
+      const rawCreatorId = normalizeId(rawCreator.id);
+      const rawCreatorType = normalizeEnhancedProfileGameCreatorType(
+        rawCreator.type
+      );
+      if (
+        (rawCreatorId && rawCreatorId !== expectedCreatorId) ||
+        (rawCreatorType && rawCreatorType !== expectedCreatorType)
+      ) {
+        return null;
+      }
+    }
+  }
+  const rawCreator = rawCreators.find((creator) =>
+    normalizeId(creator.id) &&
+    normalizeEnhancedProfileGameCreatorType(creator.type)
+  ) || null;
+  const creatorId = expectedCreatorId || normalizeId(rawCreator?.id);
+  const creatorType = expectedCreatorType ||
+    normalizeEnhancedProfileGameCreatorType(rawCreator?.type);
+  if (!creatorId || !creatorType) return null;
+  return {
+    creatorType,
+    creatorId,
+    creatorName:
+      normalizeEnhancedProfileText(expectedCreator?.creatorName, 160) ||
+      rawCreators
+        .map((creator) => normalizeEnhancedProfileText(creator.name, 160))
+        .find(Boolean) || "",
+    creatorIsVerified:
+      expectedCreator?.creatorIsVerified === true ||
+      rawCreators.some((creator) => creator.hasVerifiedBadge === true)
+  };
+}
+
+function normalizeEnhancedProfileGame(
+  entry,
+  details,
+  iconUrl,
+  ratingPercent,
+  expectedCreator = null
+) {
   const universeId = normalizeId(details?.id ?? entry?.id);
   const rootPlaceId = normalizeId(
     details?.rootPlaceId ?? entry?.rootPlace?.id ?? entry?.rootPlaceId
@@ -18206,6 +18374,12 @@ function normalizeEnhancedProfileGame(entry, details, iconUrl, ratingPercent) {
     normalizeEnhancedProfileText(entry?.name, 200) ||
     normalizeEnhancedProfileText(details?.name, 200);
   if (!universeId || !rootPlaceId || !name) return null;
+  const creator = resolveEnhancedProfileGameCreator(
+    entry,
+    details,
+    expectedCreator
+  );
+  if (expectedCreator && !creator) return null;
   const safeRating = normalizeEnhancedProfileCount(ratingPercent);
   return {
     universeId,
@@ -18230,16 +18404,36 @@ function normalizeEnhancedProfileGame(entry, details, iconUrl, ratingPercent) {
       details?.genre_l1 ?? details?.genre ?? entry?.genre,
       80
     ),
+    creatorType: creator?.creatorType || null,
+    creatorId: creator?.creatorId || null,
+    creatorName: creator?.creatorName || "",
+    creatorIsVerified: creator?.creatorIsVerified === true,
     iconUrl: isSafeThumbnailUrl(iconUrl) ? iconUrl : null,
     gameUrl: `https://www.roblox.com/games/${rootPlaceId}`
   };
 }
 
-async function fetchEnhancedProfileGameList(userId, favorite = false) {
+async function fetchEnhancedProfileGameSource({
+  creatorType,
+  creatorId,
+  creatorName = "",
+  creatorIsVerified = false,
+  favorite = false,
+  timeoutMs = null
+}) {
+  const normalizedCreatorId = normalizeId(creatorId);
+  const normalizedCreatorType = normalizeEnhancedProfileGameCreatorType(
+    creatorType
+  );
+  if (!normalizedCreatorId || !normalizedCreatorType) {
+    throw new RobloxApiError(400);
+  }
   const endpoint = new URL(
     favorite
-      ? `/v2/users/${userId}/favorite/games`
-      : `/v2/users/${userId}/games`,
+      ? `/v2/users/${normalizedCreatorId}/favorite/games`
+      : normalizedCreatorType === "Group"
+        ? `/v2/groups/${normalizedCreatorId}/gamesV2`
+        : `/v2/users/${normalizedCreatorId}/games`,
     "https://games.roblox.com"
   );
   endpoint.searchParams.set("accessFilter", "2");
@@ -18249,24 +18443,77 @@ async function fetchEnhancedProfileGameList(userId, favorite = false) {
     cache: "no-store",
     credentials: "omit",
     headers: { Accept: "application/json" }
-  });
+  }, normalizedCreatorType === "Group"
+    ? {
+        maxAttempts: 1,
+        timeoutMs: Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+          ? Math.min(
+              timeoutMs,
+              ENHANCED_PROFILE_OWNED_GROUP_GAME_SOURCE_TIMEOUT_MS
+            )
+          : ENHANCED_PROFILE_OWNED_GROUP_GAME_SOURCE_TIMEOUT_MS
+      }
+    : {});
   if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
-  const limit = favorite
-    ? ENHANCED_PROFILE_MAX_FAVORITES
-    : ENHANCED_PROFILE_MAX_EXPERIENCES;
-  const entries = payload.data
-    .filter((entry) => normalizeId(entry?.id))
-    .slice(0, limit);
-  const universeIds = entries.map((entry) => normalizeId(entry.id));
-  if (universeIds.length === 0) {
-    return {
-      items: [],
-      hasMore: Boolean(payload.nextPageCursor) || payload.data.length > limit,
-      totalCount: payload.data.length,
-      countIsExact:
-        !payload.nextPageCursor && payload.data.length <= limit
-    };
+  const expectedCreator = favorite
+    ? null
+    : {
+        creatorType: normalizedCreatorType,
+        creatorId: normalizedCreatorId,
+        creatorName: normalizeEnhancedProfileText(creatorName, 160),
+        creatorIsVerified: creatorIsVerified === true
+      };
+  const validEntries = payload.data.filter((entry) => normalizeId(entry?.id));
+  const entries = validEntries
+    .slice(0, ENHANCED_PROFILE_MAX_EXPERIENCES)
+    .map((entry) => ({ entry, expectedCreator }));
+  return {
+    entries,
+    hasMore:
+      Boolean(payload.nextPageCursor) ||
+      validEntries.length > ENHANCED_PROFILE_MAX_EXPERIENCES
+  };
+}
+
+function dedupeEnhancedProfileGameCandidates(rawCandidates) {
+  const candidates = [];
+  const seenUniverseIds = new Set();
+  for (const candidate of Array.isArray(rawCandidates) ? rawCandidates : []) {
+    const universeId = normalizeId(candidate?.entry?.id);
+    if (!universeId || seenUniverseIds.has(universeId)) continue;
+    seenUniverseIds.add(universeId);
+    candidates.push(candidate);
   }
+  return candidates;
+}
+
+function sortEnhancedProfileGameCandidates(rawCandidates) {
+  return [...rawCandidates].sort((left, right) => {
+    const leftTimestamp = Date.parse(String(left?.entry?.created ?? ""));
+    const rightTimestamp = Date.parse(String(right?.entry?.created ?? ""));
+    const safeLeft = Number.isFinite(leftTimestamp) ? leftTimestamp : 0;
+    const safeRight = Number.isFinite(rightTimestamp) ? rightTimestamp : 0;
+    return safeRight - safeLeft;
+  });
+}
+
+async function hydrateEnhancedProfileGameCandidates(rawCandidates) {
+  const candidates = [];
+  const selectedUniverseIds = new Set();
+  for (const candidate of Array.isArray(rawCandidates) ? rawCandidates : []) {
+    const universeId = normalizeId(candidate?.entry?.id);
+    if (!universeId) continue;
+    if (
+      !selectedUniverseIds.has(universeId) &&
+      selectedUniverseIds.size >= ENHANCED_PROFILE_MAX_EXPERIENCES
+    ) {
+      continue;
+    }
+    selectedUniverseIds.add(universeId);
+    candidates.push(candidate);
+  }
+  const universeIds = Array.from(selectedUniverseIds);
+  if (universeIds.length === 0) return [];
   const detailEndpoint = new URL("/v1/games", "https://games.roblox.com");
   detailEndpoint.searchParams.set("universeIds", universeIds.join(","));
   const [detailPayload, ratings] = await Promise.all([
@@ -18280,29 +18527,184 @@ async function fetchEnhancedProfileGameList(userId, favorite = false) {
       new Map()
     )
   ]);
+  const requestedIds = new Set(universeIds);
   const detailsById = new Map(
     Array.isArray(detailPayload?.data)
       ? detailPayload.data
           .map((item) => [normalizeId(item?.id), item])
-          .filter(([id]) => id)
+          .filter(([id]) => id && requestedIds.has(id))
       : []
   );
+  const games = candidates
+    .map(({ entry, expectedCreator }) => {
+      const universeId = normalizeId(entry.id);
+      return normalizeEnhancedProfileGame(
+        entry,
+        detailsById.get(universeId),
+        null,
+        ratings.get(universeId),
+        expectedCreator
+      );
+    })
+    .filter(Boolean);
+  const uniqueGames = [];
+  const seenUniverseIds = new Set();
+  for (const game of games) {
+    if (seenUniverseIds.has(game.universeId)) continue;
+    seenUniverseIds.add(game.universeId);
+    uniqueGames.push(game);
+  }
+  return uniqueGames;
+}
+
+async function fetchEnhancedProfileGameList(userId, favorite = false) {
+  const source = await fetchEnhancedProfileGameSource({
+    creatorType: "User",
+    creatorId: userId,
+    favorite
+  });
+  const limit = favorite
+    ? ENHANCED_PROFILE_MAX_FAVORITES
+    : ENHANCED_PROFILE_MAX_EXPERIENCES;
+  const candidates = dedupeEnhancedProfileGameCandidates(source.entries);
+  const items = await hydrateEnhancedProfileGameCandidates(
+    candidates.slice(0, limit)
+  );
+  const hydrationComplete =
+    items.length === Math.min(candidates.length, limit);
+  const coverageStatus = !hydrationComplete
+    ? "partial"
+    : source.hasMore || candidates.length > limit
+      ? "truncated"
+      : "complete";
+  const coverageIsComplete = coverageStatus === "complete";
   return {
-    items: entries
-      .map((entry) => {
-        const universeId = normalizeId(entry.id);
-        return normalizeEnhancedProfileGame(
-          entry,
-          detailsById.get(universeId),
-          null,
-          ratings.get(universeId)
+    items,
+    hasMore: source.hasMore || candidates.length > limit,
+    totalCount: coverageIsComplete ? candidates.length : items.length,
+    countIsExact: coverageIsComplete,
+    coverageIsComplete,
+    coverageStatus
+  };
+}
+
+async function fetchEnhancedProfileOwnedExperienceList(
+  userId,
+  groupRolesRequest
+) {
+  const groupSourceDeadline = Date.now() +
+    ENHANCED_PROFILE_OWNED_GROUP_GAME_TOTAL_BUDGET_MS;
+  const userSourceResultPromise = fetchEnhancedProfileGameSource({
+      creatorType: "User",
+      creatorId: userId
+    }).then(
+      (value) => ({ status: "fulfilled", value }),
+      (reason) => ({ status: "rejected", reason })
+    );
+  const groupRolesResult = await Promise.resolve(groupRolesRequest).then(
+    (value) => ({ status: "fulfilled", value }),
+    (reason) => ({ status: "rejected", reason })
+  );
+  const ownedGroups = [];
+  const seenOwnedGroupIds = new Set();
+  if (groupRolesResult.status === "fulfilled") {
+    for (const group of groupRolesResult.value) {
+      if (
+        group.roleRank !== 255 ||
+        seenOwnedGroupIds.has(group.communityId)
+      ) {
+        continue;
+      }
+      seenOwnedGroupIds.add(group.communityId);
+      ownedGroups.push(group);
+    }
+  }
+  const selectedOwnedGroups = ownedGroups.slice(
+    0,
+    ENHANCED_PROFILE_MAX_OWNED_GROUP_GAME_SOURCES
+  );
+  const groupSourceResults = new Array(selectedOwnedGroups.length);
+  await runWithConcurrency(
+    selectedOwnedGroups,
+    ENHANCED_PROFILE_OWNED_GROUP_GAME_CONCURRENCY,
+    async (group, index) => {
+      const remainingMs = groupSourceDeadline - Date.now();
+      if (remainingMs <= 0) {
+        const timeoutError = new Error(
+          "Owned-group game collection exceeded its time budget."
         );
-      })
-      .filter(Boolean),
-    hasMore: Boolean(payload.nextPageCursor) || payload.data.length > limit,
-    totalCount: payload.data.length,
-    countIsExact:
-      !payload.nextPageCursor && payload.data.length <= limit
+        timeoutError.name = "AbortError";
+        groupSourceResults[index] = {
+          status: "rejected",
+          reason: timeoutError
+        };
+        return;
+      }
+      try {
+        groupSourceResults[index] = {
+          status: "fulfilled",
+          value: await fetchEnhancedProfileGameSource({
+            creatorType: "Group",
+            creatorId: group.communityId,
+            creatorName: group.name,
+            creatorIsVerified: group.isVerified,
+            timeoutMs: remainingMs
+          })
+        };
+      } catch (error) {
+        groupSourceResults[index] = { status: "rejected", reason: error };
+      }
+    }
+  );
+  const userSourceResult = await userSourceResultPromise;
+
+  const fulfilledSources = [];
+  if (userSourceResult.status === "fulfilled") {
+    fulfilledSources.push(userSourceResult.value);
+  }
+  for (const result of groupSourceResults) {
+    if (result?.status === "fulfilled") fulfilledSources.push(result.value);
+  }
+  if (fulfilledSources.length === 0) {
+    throw userSourceResult.status === "rejected"
+      ? userSourceResult.reason
+      : groupSourceResults.find((result) => result?.status === "rejected")
+          ?.reason || new RobloxApiError(502);
+  }
+
+  const sortedCandidates = sortEnhancedProfileGameCandidates(
+    fulfilledSources.flatMap((source) => source.entries)
+  );
+  const candidates = dedupeEnhancedProfileGameCandidates(sortedCandidates);
+  const sourceAvailabilityComplete =
+    userSourceResult.status === "fulfilled" &&
+    groupRolesResult.status === "fulfilled" &&
+    groupSourceResults.every((result) => result?.status === "fulfilled");
+  const sourceListingTruncated =
+    ownedGroups.length > selectedOwnedGroups.length ||
+    fulfilledSources.some((source) => source.hasMore === true) ||
+    candidates.length > ENHANCED_PROFILE_MAX_EXPERIENCES;
+  const items = await hydrateEnhancedProfileGameCandidates(sortedCandidates);
+  const hydrationComplete = items.length === Math.min(
+    candidates.length,
+    ENHANCED_PROFILE_MAX_EXPERIENCES
+  );
+  const coverageStatus = !sourceAvailabilityComplete || !hydrationComplete
+    ? "partial"
+    : sourceListingTruncated
+      ? "truncated"
+      : "complete";
+  const countIsExact = coverageStatus === "complete";
+  const coverageIsComplete = countIsExact;
+  return {
+    items,
+    hasMore:
+      fulfilledSources.some((source) => source.hasMore === true) ||
+      candidates.length > ENHANCED_PROFILE_MAX_EXPERIENCES,
+    totalCount: countIsExact ? candidates.length : items.length,
+    countIsExact,
+    coverageIsComplete,
+    coverageStatus
   };
 }
 
@@ -18732,40 +19134,93 @@ async function fetchEnhancedProfileGroupRoles(userId) {
       credentials: "omit",
       headers: { Accept: "application/json" }
     },
-    { maxAttempts: 1 }
+    {
+      maxAttempts: 1,
+      timeoutMs: ENHANCED_PROFILE_GROUP_ROLES_TIMEOUT_MS
+    }
   );
   if (!Array.isArray(payload?.data)) throw new RobloxApiError(502);
-  return payload.data
-    .map((entry) => {
-      const communityId = normalizeId(entry?.group?.id);
-      const name = normalizeEnhancedProfileText(entry?.group?.name, 160);
-      if (!communityId || !name) return null;
-      return {
-        communityId,
-        name,
-        memberCount: normalizeEnhancedProfileCount(entry?.group?.memberCount),
-        role: normalizeEnhancedProfileText(entry?.role?.name, 120),
-        roleRank: (() => {
-          const rank = normalizeEnhancedProfileCount(entry?.role?.rank);
-          return rank !== null && rank <= 255 ? rank : null;
-        })(),
-        isVerified: entry?.group?.hasVerifiedBadge === true
-      };
-    })
-    .filter(Boolean);
+  const groupsById = new Map();
+  for (const entry of payload.data) {
+    const communityId = normalizeId(entry?.group?.id);
+    const name = normalizeEnhancedProfileText(entry?.group?.name, 160);
+    if (!communityId || !name) continue;
+    const rank = normalizeEnhancedProfileCount(entry?.role?.rank);
+    const item = {
+      communityId,
+      name,
+      memberCount: normalizeEnhancedProfileCount(entry?.group?.memberCount),
+      role: normalizeEnhancedProfileText(entry?.role?.name, 120),
+      roleRank: rank !== null && rank <= 255 ? rank : null,
+      isVerified: entry?.group?.hasVerifiedBadge === true
+    };
+    const existing = groupsById.get(communityId);
+    if (
+      !existing ||
+      (item.roleRank ?? -1) > (existing.roleRank ?? -1)
+    ) {
+      groupsById.set(communityId, item);
+    }
+  }
+  return Array.from(groupsById.values());
 }
 
-async function fetchEnhancedProfileCommunities(userId) {
-  const allItems = await fetchEnhancedProfileGroupRoles(userId);
+function getEnhancedProfileGroupRoles(userId) {
+  const normalizedUserId = normalizeId(userId);
+  if (!normalizedUserId) return Promise.reject(new RobloxApiError(400));
+  const now = Date.now();
+  const cached = enhancedProfileGroupRoleRequests.get(normalizedUserId);
+  if (cached && cached.expiresAt > now) return cached.promise;
+  let request;
+  request = fetchEnhancedProfileGroupRoles(normalizedUserId)
+    .catch((error) => {
+      if (enhancedProfileGroupRoleRequests.get(normalizedUserId)?.promise === request) {
+        enhancedProfileGroupRoleRequests.delete(normalizedUserId);
+      }
+      throw error;
+    });
+  enhancedProfileGroupRoleRequests.set(normalizedUserId, {
+    expiresAt: now + ENHANCED_PROFILE_CACHE_TTL_MS,
+    promise: request
+  });
+  while (enhancedProfileGroupRoleRequests.size > 40) {
+    enhancedProfileGroupRoleRequests.delete(
+      enhancedProfileGroupRoleRequests.keys().next().value
+    );
+  }
+  return request;
+}
+
+async function fetchEnhancedProfileCommunities(
+  userId,
+  groupRolesRequest = null
+) {
+  const allItems = await (
+    groupRolesRequest || getEnhancedProfileGroupRoles(userId)
+  );
+  const serializeCommunity = (item) => ({
+    communityId: item.communityId,
+    name: item.name,
+    memberCount: item.memberCount,
+    role: item.role,
+    isVerified: item.isVerified,
+    iconUrl: null
+  });
   const items = allItems.slice(0, ENHANCED_PROFILE_MAX_COMMUNITIES);
+  const allOwnedItems = allItems.filter((item) => item.roleRank === 255);
+  const ownedItems = allOwnedItems.slice(0, ENHANCED_PROFILE_MAX_OWNED_GROUPS);
   return {
-    items: items.map((item) => ({
-      ...item,
-      iconUrl: null
-    })),
+    items: items.map(serializeCommunity),
     hasMore: allItems.length > items.length,
     totalCount: allItems.length,
-    ownedCount: allItems.filter((item) => item.roleRank === 255).length
+    ownedCount: allOwnedItems.length,
+    ownedGroups: {
+      items: ownedItems.map((item) => ({
+        ...serializeCommunity(item),
+        role: item.role || "Owner"
+      })),
+      hasMore: allOwnedItems.length > ownedItems.length
+    }
   };
 }
 
@@ -19057,6 +19512,53 @@ async function fetchEnhancedProfileFriends(userId) {
   };
 }
 
+async function fetchEnhancedProfileTargetFriendSnapshot(
+  userId,
+  credentials = "include"
+) {
+  const [friendsResult, countResult] = await Promise.allSettled([
+    fetchFriendIdsFromPaginatedEndpoint(userId, credentials),
+    fetchEnhancedProfileFriendCount(userId, credentials)
+  ]);
+  const friendCount = countResult.status === "fulfilled"
+    ? countResult.value
+    : null;
+  if (friendsResult.status !== "fulfilled") {
+    if (friendsResult.reason?.status === 403) {
+      return {
+        data: null,
+        friendCount,
+        explicitlyLimited: true,
+        incomplete: false
+      };
+    }
+    throw friendsResult.reason || new RobloxApiError(502);
+  }
+
+  const friends = friendsResult.value;
+  const enumeratedItemCount = Number.isSafeInteger(friends.enumeratedItemCount)
+    ? friends.enumeratedItemCount
+    : friends.userIds.length;
+  // Roblox includes deleted/unavailable cards as repeated id:-1 rows in its
+  // friend count. A cursor that reached its terminal page is nevertheless a
+  // complete traversal, so a list/count mismatch must not hide valid mutuals.
+  if (enumeratedItemCount > 0 || friendCount === 0) {
+    return {
+      data: friends,
+      friendCount,
+      explicitlyLimited: false,
+      incomplete: false
+    };
+  }
+  const likelyLimited = Number.isSafeInteger(friendCount) && friendCount > 0;
+  return {
+    data: null,
+    friendCount,
+    explicitlyLimited: likelyLimited,
+    incomplete: !likelyLimited
+  };
+}
+
 async function fetchEnhancedProfileRelationshipsForViewer(
   userId,
   viewerUserId
@@ -19064,24 +19566,18 @@ async function fetchEnhancedProfileRelationshipsForViewer(
   const [
     viewerFriendIds,
     targetFriendsResult,
-    targetFriendCount,
     viewerGroups,
     targetGroups
   ] = await Promise.all([
     fetchAllFriendIds(viewerUserId),
-    resolveEnhancedProfileOptional(
-      fetchFriendIdsFromPaginatedEndpoint(userId, "omit").then(
-        (data) => ({ data, explicitlyLimited: false }),
-        (error) => ({
-          data: null,
-          explicitlyLimited: error?.status === 403
-        })
-      ),
-      { data: null, explicitlyLimited: false }
-    ),
-    resolveEnhancedProfileOptional(fetchEnhancedProfileFriendCount(userId)),
-    fetchEnhancedProfileGroupRoles(viewerUserId),
-    fetchEnhancedProfileGroupRoles(userId)
+    fetchEnhancedProfileTargetFriendSnapshot(userId).catch(() => ({
+      data: null,
+      friendCount: null,
+      explicitlyLimited: false,
+      incomplete: false
+    })),
+    getEnhancedProfileGroupRoles(viewerUserId),
+    getEnhancedProfileGroupRoles(userId)
   ]);
   const confirmedViewerUserId = await getAuthenticatedViewerUserId();
   if (confirmedViewerUserId !== viewerUserId) throw new RobloxApiError(401);
@@ -19097,20 +19593,50 @@ async function fetchEnhancedProfileRelationshipsForViewer(
   const viewerGroupIds = new Set(
     viewerGroups.map((group) => group.communityId)
   );
-  const mutualGroupsCount = targetGroups.reduce(
-    (count, group) => count + (viewerGroupIds.has(group.communityId) ? 1 : 0),
-    0
+  const mutualGroupItems = [];
+  const seenMutualGroupIds = new Set();
+  for (const group of targetGroups) {
+    if (
+      !viewerGroupIds.has(group.communityId) ||
+      seenMutualGroupIds.has(group.communityId)
+    ) {
+      continue;
+    }
+    seenMutualGroupIds.add(group.communityId);
+    mutualGroupItems.push({
+      communityId: group.communityId,
+      name: group.name,
+      memberCount: group.memberCount,
+      role: group.role,
+      isVerified: group.isVerified,
+      iconUrl: null
+    });
+  }
+  const mutualGroupsCount = mutualGroupItems.length;
+  const visibleMutualGroups = mutualGroupItems.slice(
+    0,
+    ENHANCED_PROFILE_MAX_MUTUAL_GROUPS
   );
   const isFriend = viewerFriendSet.has(userId);
   const canChat = isFriend ? await getViewerCanChat() : false;
   const mutualFriendsAvailable = Boolean(targetFriends) &&
-    (targetFriendIds.length > 0 || targetFriendCount === 0);
-  const profileLimited = targetFriendsResult.explicitlyLimited || Boolean(
-    targetFriends &&
-    targetFriendIds.length === 0 &&
-    Number.isSafeInteger(targetFriendCount) &&
-    targetFriendCount > 0
-  );
+    targetFriendsResult.incomplete !== true;
+  if (mutualFriendsAvailable) {
+    const cacheKey = `${viewerUserId}:${userId}`;
+    enhancedProfileMutualFriendIdCache.set(cacheKey, {
+      expiresAt: Date.now() + MUTUAL_FRIENDS_PAGE_CACHE_TTL_MS,
+      userIds: mutualFriendIds.slice(),
+      profilesByUserId: targetFriends.profilesByUserId || new Map(),
+      complete: true,
+      targetFriendCount: targetFriendsResult.friendCount
+    });
+    while (enhancedProfileMutualFriendIdCache.size > 40) {
+      enhancedProfileMutualFriendIdCache.delete(
+        enhancedProfileMutualFriendIdCache.keys().next().value
+      );
+    }
+  }
+  const profileLimited = targetFriendsResult.explicitlyLimited === true;
   return {
     mutualFriendsCount: mutualFriendIds.length,
     mutualFriendsAvailable,
@@ -19118,9 +19644,129 @@ async function fetchEnhancedProfileRelationshipsForViewer(
     items: [],
     hasMore: false,
     mutualGroupsCount,
+    mutualGroups: {
+      items: visibleMutualGroups,
+      hasMore: mutualGroupItems.length > visibleMutualGroups.length
+    },
     isFriend,
     canChat
   };
+}
+
+async function fetchMutualFriendsPage(targetUserId, viewerUserId, forceRefresh) {
+  const cacheKey = `${viewerUserId}:${targetUserId}`;
+  const cachedIds = !forceRefresh
+    ? enhancedProfileMutualFriendIdCache.get(cacheKey)
+    : null;
+  let mutualFriendIds;
+  let targetProfiles = new Map();
+
+  if (
+    cachedIds &&
+    cachedIds.expiresAt > Date.now() &&
+    cachedIds.complete === true
+  ) {
+    mutualFriendIds = cachedIds.userIds.slice();
+    targetProfiles = cachedIds.profilesByUserId || targetProfiles;
+  } else {
+    const [viewerFriendIds, targetSnapshot] = await Promise.all([
+      fetchAllFriendIds(viewerUserId, forceRefresh),
+      fetchEnhancedProfileTargetFriendSnapshot(targetUserId)
+    ]);
+    const confirmedViewerUserId = await getAuthenticatedViewerUserId();
+    if (confirmedViewerUserId !== viewerUserId) {
+      throw new RobloxApiError(401);
+    }
+    if (targetSnapshot.explicitlyLimited) {
+      throw new EnhancedProfileError("PRIVACY_OR_REGION", 403);
+    }
+    if (!targetSnapshot.data || targetSnapshot.incomplete) {
+      throw new EnhancedProfileError("INCOMPLETE");
+    }
+    const targetFriends = targetSnapshot.data;
+    const viewerFriendSet = new Set(viewerFriendIds);
+    mutualFriendIds = targetFriends.userIds.filter((userId) =>
+      viewerFriendSet.has(userId)
+    );
+    targetProfiles = targetFriends.profilesByUserId || targetProfiles;
+    enhancedProfileMutualFriendIdCache.set(cacheKey, {
+      expiresAt: Date.now() + MUTUAL_FRIENDS_PAGE_CACHE_TTL_MS,
+      userIds: mutualFriendIds.slice(),
+      profilesByUserId: targetProfiles,
+      complete: true,
+      targetFriendCount: targetSnapshot.friendCount
+    });
+  }
+
+  const [presences, profiles, headshots] = await Promise.all([
+    fetchFriendPresences(mutualFriendIds).catch(() => new Map()),
+    fetchUserProfiles(mutualFriendIds),
+    fetchAvatarHeadshots(mutualFriendIds)
+  ]);
+  const confirmedViewerUserId = await getAuthenticatedViewerUserId();
+  if (confirmedViewerUserId !== viewerUserId) {
+    throw new RobloxApiError(401);
+  }
+  const viewerProfiles =
+    friendIdsCache?.viewerUserId === viewerUserId
+      ? friendIdsCache.profilesByUserId || new Map()
+      : new Map();
+  const friends = mutualFriendIds.map((userId) => {
+    const profile =
+      profiles.get(userId) ||
+      targetProfiles.get(userId) ||
+      viewerProfiles.get(userId);
+    const presence = presences.get(userId);
+    return presence
+      ? makeOnlineFriend(userId, presence, profile, headshots.get(userId))
+      : makeOfflineFriend(userId, profile, headshots.get(userId));
+  });
+  return {
+    ok: true,
+    viewerUserId,
+    targetUserId,
+    totalCount: friends.length,
+    detailsComplete: true,
+    verificationComplete: friends.every(
+      (friend) => friend.isVerifiedKnown === true
+    ),
+    robloxPlusComplete: friends.every(
+      (friend) => friend.isRobloxPlusKnown === true
+    ),
+    friends
+  };
+}
+
+async function getMutualFriendsPage(targetUserId, forceRefresh = false) {
+  const normalizedTargetUserId = normalizeId(targetUserId);
+  if (!normalizedTargetUserId) throw new RobloxApiError(400);
+  const viewerUserId = await getAuthenticatedViewerUserId();
+  if (viewerUserId === normalizedTargetUserId) {
+    throw new EnhancedProfileError("OWN_PROFILE", 400);
+  }
+  const cacheKey = `${viewerUserId}:${normalizedTargetUserId}`;
+  if (forceRefresh) mutualFriendsPageRequests.delete(cacheKey);
+  const cached = mutualFriendsPageRequests.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  let request;
+  request = fetchMutualFriendsPage(
+    normalizedTargetUserId,
+    viewerUserId,
+    forceRefresh
+  ).catch((error) => {
+    if (mutualFriendsPageRequests.get(cacheKey)?.promise === request) {
+      mutualFriendsPageRequests.delete(cacheKey);
+    }
+    throw error;
+  });
+  mutualFriendsPageRequests.set(cacheKey, {
+    expiresAt: Date.now() + MUTUAL_FRIENDS_PAGE_CACHE_TTL_MS,
+    promise: request
+  });
+  while (mutualFriendsPageRequests.size > 40) {
+    mutualFriendsPageRequests.delete(mutualFriendsPageRequests.keys().next().value);
+  }
+  return request;
 }
 
 async function collectEnhancedProfileRelationshipsSection(userId) {
@@ -19153,15 +19799,22 @@ async function collectEnhancedProfileRelationshipsSection(userId) {
 async function collectEnhancedProfile(userId, options = {}) {
   const includePresence = options.includePresence !== false;
   const includeBadges = options.includeBadges !== false;
+  const groupRolesRequest = getEnhancedProfileGroupRoles(userId);
   const loaders = {
     identity: () => fetchEnhancedProfileIdentity(userId),
     counts: () => fetchEnhancedProfileCounts(userId),
     usernames: () => fetchEnhancedProfileUsernameHistory(userId),
     wearing: () => fetchEnhancedProfileCurrentlyWearing(userId),
-    experiences: () => fetchEnhancedProfileGameList(userId, false),
+    experiences: () => fetchEnhancedProfileOwnedExperienceList(
+      userId,
+      groupRolesRequest
+    ),
     favorites: () => fetchEnhancedProfileGameList(userId, true),
     friends: () => fetchEnhancedProfileFriends(userId),
-    communities: () => fetchEnhancedProfileCommunities(userId),
+    communities: () => fetchEnhancedProfileCommunities(
+      userId,
+      groupRolesRequest
+    ),
     inventory: () => fetchEnhancedProfileInventoryVisibility(userId)
   };
   if (includePresence) {
@@ -19186,6 +19839,7 @@ async function collectEnhancedProfile(userId, options = {}) {
 function getEnhancedProfile(userId, forceRefresh = false, options = {}) {
   const includeRelationships = options.includeRelationships !== false;
   const now = Date.now();
+  if (forceRefresh) enhancedProfileGroupRoleRequests.delete(userId);
   const cached = enhancedProfileRequests.get(userId);
   let publicProfilePromise = !forceRefresh && cached?.expiresAt > now
     ? cached.promise
@@ -19201,6 +19855,13 @@ function getEnhancedProfile(userId, forceRefresh = false, options = {}) {
         enhancedProfileRequests.get(userId)?.promise === publicProfilePromise
       ) {
         enhancedProfileRequests.delete(userId);
+      } else if (
+        enhancedProfileRequests.get(userId)?.promise === publicProfilePromise &&
+        (profile?.sections?.experiences?.status !== "ready" ||
+          profile.sections.experiences.data.coverageStatus === "partial")
+      ) {
+        enhancedProfileRequests.get(userId).expiresAt = Date.now() +
+          ENHANCED_PROFILE_PARTIAL_CACHE_TTL_MS;
       }
       return profile;
     })
@@ -19226,32 +19887,13 @@ function getEnhancedProfile(userId, forceRefresh = false, options = {}) {
       ? collectEnhancedProfileRelationshipsSection(userId)
       : Promise.resolve({ status: "pending", code: "LOADING" })
   ]).then(([profile, presence, badges, relationships]) => {
-    const inventoryIsPrivate =
-      profile.sections.inventory?.status === "ready" &&
-      profile.sections.inventory.data.visibility === "limited";
-    const badgeItems = badges?.status === "ready" &&
-      Array.isArray(badges.data?.items)
-      ? badges.data.items
-      : [];
-    const visibleBadges = inventoryIsPrivate && badgeItems.length === 0
-      ? {
-          status: "ready",
-          data: {
-            items: [],
-            hasMore: false,
-            totalCount: null,
-            countIsExact: false,
-            countStatus: "private"
-          }
-        }
-      : badges;
     return {
       ...profile,
       fetchedAt: Date.now(),
       sections: {
         ...profile.sections,
         presence,
-        badges: visibleBadges,
+        badges,
         relationships
       }
     };
@@ -19356,6 +19998,40 @@ function handleEnhancedProfileRelationshipsMessage(
       userId,
       code: getEnhancedProfileErrorCode(error)
     }));
+  return true;
+}
+
+function handleMutualFriendsPageMessage(message, sender, sendResponse) {
+  if (message?.type !== MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE) return false;
+  const requestId = normalizeEnhancedProfileRequestId(message?.requestId);
+  const targetUserId = normalizeId(message?.targetUserId);
+  if (
+    !requestId ||
+    !targetUserId ||
+    !hasExactMutualFriendsPageMessageKeys(message) ||
+    !isTrustedMutualFriendsPageSender(sender, targetUserId)
+  ) {
+    sendResponse({
+      ok: false,
+      requestId: requestId ?? 0,
+      code: "INVALID"
+    });
+    return false;
+  }
+  getMutualFriendsPage(targetUserId, message.forceRefresh)
+    .then((response) => sendResponse({ ...response, requestId }))
+    .catch((error) => {
+      if (error?.status === 401) {
+        authenticatedUserRequest = null;
+        friendIdsCache = null;
+      }
+      sendResponse({
+        ok: false,
+        requestId,
+        targetUserId,
+        code: getEnhancedProfileErrorCode(error)
+      });
+    });
   return true;
 }
 
@@ -19491,15 +20167,23 @@ function handleEnhancedProfileJoinMessage(message, sender, sendResponse) {
 if (globalThis.__rslBackgroundTestHooks) {
   Object.assign(globalThis.__rslBackgroundTestHooks, {
     parseEnhancedProfileRouteUrl,
+    parseMutualFriendsPageRouteUrl,
     hasExactEnhancedProfileMessageKeys,
     isTrustedEnhancedProfileSender,
+    hasExactMutualFriendsPageMessageKeys,
+    isTrustedMutualFriendsPageSender,
     normalizeEnhancedProfileDescription,
     normalizeEnhancedProfileGame,
+    fetchEnhancedProfileGameSource,
+    fetchEnhancedProfileOwnedExperienceList,
+    getEnhancedProfileGroupRoles,
     fetchEnhancedProfileBadges,
     fetchEnhancedProfileBadgeCount,
     getEnhancedProfileBadgeCount,
     fetchEnhancedProfileInventoryVisibility,
+    fetchEnhancedProfileTargetFriendSnapshot,
     fetchEnhancedProfileRelationshipsForViewer,
+    getMutualFriendsPage,
     collectEnhancedProfileRelationshipsSection,
     collectEnhancedProfile,
     getEnhancedProfile,
@@ -19507,6 +20191,7 @@ if (globalThis.__rslBackgroundTestHooks) {
     handleEnhancedProfileMessage,
     handleEnhancedProfileFastMessage,
     handleEnhancedProfileRelationshipsMessage,
+    handleMutualFriendsPageMessage,
     handleEnhancedProfileBadgeCountMessage,
     hasExactEnhancedProfileBadgeCountMessageKeys,
     handleEnhancedProfileJoinMessage,
@@ -19515,12 +20200,22 @@ if (globalThis.__rslBackgroundTestHooks) {
       enhancedProfileRequests.clear();
       enhancedProfileRelationshipRequests.clear();
       enhancedProfileBadgeCountRequests.clear();
+      enhancedProfileGroupRoleRequests.clear();
+      enhancedProfileMutualFriendIdCache.clear();
+      mutualFriendsPageRequests.clear();
     },
     enhancedProfileConstants: Object.freeze({
       maxBadges: ENHANCED_PROFILE_MAX_BADGES,
       maxMutualFriends: ENHANCED_PROFILE_MAX_FRIENDS,
+      maxMutualGroups: ENHANCED_PROFILE_MAX_MUTUAL_GROUPS,
+      maxOwnedGroups: ENHANCED_PROFILE_MAX_OWNED_GROUPS,
+      maxOwnedGroupGameSources:
+        ENHANCED_PROFILE_MAX_OWNED_GROUP_GAME_SOURCES,
+      ownedGroupGameConcurrency:
+        ENHANCED_PROFILE_OWNED_GROUP_GAME_CONCURRENCY,
       fastMessageType: ENHANCED_PROFILE_FAST_MESSAGE_TYPE,
-      relationshipsMessageType: ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE
+      relationshipsMessageType: ENHANCED_PROFILE_RELATIONSHIPS_MESSAGE_TYPE,
+      mutualFriendsPageMessageType: MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE
     })
   });
 }
@@ -19717,6 +20412,10 @@ function handleRuntimeMessage(message, sender, sendResponse) {
       .then((url) => sendResponse({ url }))
       .catch(() => sendResponse({ url: null }));
     return true;
+  }
+
+  if (message?.type === MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE) {
+    return handleMutualFriendsPageMessage(message, sender, sendResponse);
   }
 
   if (message?.type === "rsl:get-all-online-friends") {

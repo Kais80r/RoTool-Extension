@@ -20,6 +20,13 @@ let inventoryCanView = true;
 let targetFriendsVisible = true;
 let targetFriendsFailureStatus = null;
 let targetFriendsNetworkFailure = false;
+let ownedGroupGameMode = "ready";
+let extraOwnedGroupCount = 0;
+let extraMutualGroupCount = 0;
+let extraMutualFriendCount = 0;
+let targetFriendCountOverride = null;
+let targetFriendCountMismatchResponses = 0;
+let targetUnavailableFriendCount = 0;
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -102,7 +109,19 @@ async function fixtureFetch(input, options = {}) {
     });
   }
   if (url.hostname === "friends.roblox.com" && /\/count$/.test(url.pathname)) {
-    const count = url.pathname.includes("followers")
+    const transientTargetFriendMismatch =
+      url.pathname === "/v1/users/123/friends/count" &&
+      targetFriendCountMismatchResponses > 0;
+    if (transientTargetFriendMismatch) targetFriendCountMismatchResponses -= 1;
+    const count =
+      transientTargetFriendMismatch
+        ? 5 + extraMutualFriendCount
+        : url.pathname === "/v1/users/123/friends/count" &&
+      Number.isSafeInteger(targetFriendCountOverride)
+        ? targetFriendCountOverride
+        : url.pathname === "/v1/users/123/friends/count"
+          ? 4 + extraMutualFriendCount + targetUnavailableFriendCount
+        : url.pathname.includes("followers")
       ? 345
       : url.pathname.includes("followings")
         ? 67
@@ -128,7 +147,12 @@ async function fixtureFetch(input, options = {}) {
             { id: 123, name: "FixtureUser", displayName: "Fixture Display" },
             { id: 456, name: "FriendUser", displayName: "Friend Display" },
             { id: 888, name: "User888", displayName: "Display 888" },
-            { id: 777, name: "Viewer Friend 777" }
+            { id: 777, name: "Viewer Friend 777" },
+            ...Array.from({ length: extraMutualFriendCount }, (_, index) => ({
+              id: 10000 + index,
+              name: `SharedUser${index + 1}`,
+              displayName: `Shared User ${index + 1}`
+            }))
           ],
           NextCursor: "viewer-page-2"
         });
@@ -152,7 +176,16 @@ async function fixtureFetch(input, options = {}) {
           PageItems: [
             { id: 456, name: "FriendUser", displayName: "Friend Display" },
             { id: 888, name: "User888", displayName: "Display 888" },
-            { id: 654, name: "Target Friend 654" }
+            { id: 654, name: "Target Friend 654" },
+            ...Array.from({ length: extraMutualFriendCount }, (_, index) => ({
+              id: 10000 + index,
+              name: `SharedUser${index + 1}`,
+              displayName: `Shared User ${index + 1}`
+            })),
+            ...Array.from({ length: targetUnavailableFriendCount }, () => ({
+              id: -1,
+              isDeleted: true
+            }))
           ],
           NextCursor: "target-page-2"
         });
@@ -339,13 +372,40 @@ async function fixtureFetch(input, options = {}) {
         },
         {
           group: {
+            id: 8001,
+            name: "Fixture Community",
+            memberCount: 1200,
+            hasVerifiedBadge: true
+          },
+          role: { name: "Member", rank: 1 }
+        },
+        {
+          group: {
             id: 8003,
             name: "Target Community",
             memberCount: 80,
             hasVerifiedBadge: false
           },
           role: { name: "Member", rank: 1 }
-        }
+        },
+        ...Array.from({ length: extraMutualGroupCount }, (_, index) => ({
+          group: {
+            id: 8200 + index,
+            name: `Shared Community ${index + 1}`,
+            memberCount: 200 + index,
+            hasVerifiedBadge: false
+          },
+          role: { name: "Moderator", rank: 100 }
+        })),
+        ...Array.from({ length: extraOwnedGroupCount }, (_, index) => ({
+          group: {
+            id: 8100 + index,
+            name: `Extra Owned Community ${index + 1}`,
+            memberCount: 10 + index,
+            hasVerifiedBadge: false
+          },
+          role: { name: "Owner", rank: 255 }
+        }))
       ]
     });
   }
@@ -372,7 +432,16 @@ async function fixtureFetch(input, options = {}) {
             hasVerifiedBadge: false
           },
           role: { name: "Owner", rank: 255 }
-        }
+        },
+        ...Array.from({ length: extraMutualGroupCount }, (_, index) => ({
+          group: {
+            id: 8200 + index,
+            name: `Shared Community ${index + 1}`,
+            memberCount: 200 + index,
+            hasVerifiedBadge: false
+          },
+          role: { name: "Member", rank: 1 }
+        }))
       ]
     });
   }
@@ -380,6 +449,9 @@ async function fixtureFetch(input, options = {}) {
     url.hostname === "badges.roblox.com" &&
     url.pathname === "/v1/users/123/badges"
   ) {
+    if (badgeMode === "private") {
+      return json({ errors: [{ message: "Badges are private" }] }, 403);
+    }
     if (badgeMode === "empty") {
       return json({ data: [], nextPageCursor: null });
     }
@@ -424,15 +496,57 @@ async function fixtureFetch(input, options = {}) {
   }
   if (
     url.hostname === "games.roblox.com" &&
+    /^\/v2\/groups\/(8001|81\d{2})\/gamesV2$/.test(url.pathname)
+  ) {
+    assert.equal(url.searchParams.get("accessFilter"), "2");
+    assert.equal(url.searchParams.get("limit"), "50");
+    assert.equal(url.searchParams.get("sortOrder"), "Desc");
+    const groupId = Number(url.pathname.split("/")[3]);
+    if (groupId === 8001 && ownedGroupGameMode === "failure") {
+      return json({ errors: [{ message: "Group games unavailable" }] }, 503);
+    }
+    if (groupId !== 8001) {
+      return json({ data: [], nextPageCursor: null });
+    }
+    const game = {
+      id: 300,
+      name: "Owned Group Fixture",
+      description: "Owned through Fixture Community",
+      creator: { id: 8001, type: "Group" },
+      rootPlace: { id: 3001, type: "Place" },
+      created: "2024-01-02T00:00:00.000Z",
+      updated: "2026-08-29T00:00:00.000Z",
+      placeVisits: 3000
+    };
+    return json({
+      data: [game, { ...game }],
+      nextPageCursor:
+        ownedGroupGameMode === "paginated" ? "group-page-2" : null
+    });
+  }
+  if (
+    url.hostname === "games.roblox.com" &&
     url.pathname === "/v2/users/123/games"
   ) {
+    const staleTransferredGame = {
+      id: 300,
+      name: "Stale personal ownership",
+      description: "Must not hide the valid group-owned candidate",
+      creator: { id: 123, type: "User" },
+      rootPlace: { id: 3001 },
+      created: "2025-01-01T00:00:00.000Z"
+    };
     return json({
       data: [{
         id: 100,
         name: "Created Fixture",
         description: "Original created description",
-        rootPlace: { id: 1001 }
-      }]
+        creator: { id: 123, type: "User" },
+        rootPlace: { id: 1001 },
+        created: "2020-01-01T00:00:00.000Z"
+      }, ...(ownedGroupGameMode === "transfer"
+        ? [staleTransferredGame]
+        : [])]
     });
   }
   if (
@@ -444,7 +558,9 @@ async function fixtureFetch(input, options = {}) {
         id: 200,
         name: "Favorite Fixture",
         description: "Original favorite description",
-        rootPlace: { id: 2001 }
+        creator: { id: 456, type: "User" },
+        rootPlace: { id: 2001 },
+        created: "2021-01-01T00:00:00.000Z"
       }]
     });
   }
@@ -453,14 +569,21 @@ async function fixtureFetch(input, options = {}) {
     return json({
       data: ids.filter(Boolean).map((id) => ({
         id: Number(id),
-        rootPlaceId: id === "100" ? 1001 : 2001,
+        rootPlaceId: id === "100" ? 1001 : id === "300" ? 3001 : 2001,
         name: id === "100"
           ? "Lokalisierte Erstellung"
-          : "Lokalisierter Favorit",
+          : id === "300"
+            ? "Lokalisierte Gruppenerstellung"
+            : "Lokalisierter Favorit",
         description: `Localized description ${id}`,
-        playing: id === "100" ? 12 : 4,
-        visits: id === "100" ? 1000 : 2000,
-        favoritedCount: id === "100" ? 50 : 70,
+        creator: id === "300"
+          ? { id: 8001, name: "Fixture Community", type: "Group", hasVerifiedBadge: true }
+          : id === "100"
+            ? { id: 123, name: "FixtureUser", type: "User", hasVerifiedBadge: true }
+            : { id: 456, name: "FriendUser", type: "User", hasVerifiedBadge: true },
+        playing: id === "100" ? 12 : id === "300" ? 8 : 4,
+        visits: id === "100" ? 1000 : id === "300" ? 3000 : 2000,
+        favoritedCount: id === "100" ? 50 : id === "300" ? 30 : 70,
         maxPlayers: 20,
         created: "2020-01-01T00:00:00.000Z",
         updated: "2026-08-28T10:00:00.000Z",
@@ -608,6 +731,77 @@ assert.equal(
   hooks.parseEnhancedProfileRouteUrl("https://www.roblox.com/users/123/inventory"),
   null
 );
+assert.equal(
+  hooks.parseMutualFriendsPageRouteUrl(
+    "https://www.roblox.com/de/users/123/friends#!/friends?rotool=mutuals"
+  ),
+  "123"
+);
+assert.equal(
+  hooks.parseMutualFriendsPageRouteUrl(
+    "https://www.roblox.com/users/123/friends#!/friends"
+  ),
+  null
+);
+assert.equal(
+  hooks.parseMutualFriendsPageRouteUrl(
+    "https://www.roblox.com/users/123/friends#!/friends#mutuals"
+  ),
+  "123",
+  "RoPro's legacy Mutual Friends route should hand over to RoTool"
+);
+assert.equal(
+  hooks.parseMutualFriendsPageRouteUrl(
+    "https://www.roblox.com/users/123/friends#!/unknown"
+  ),
+  null
+);
+assert.equal(
+  hooks.parseMutualFriendsPageRouteUrl(
+    "https://evil.example/users/123/friends#!/friends?rotool=mutuals"
+  ),
+  null
+);
+assert.equal(
+  hooks.normalizeEnhancedProfileGame(
+    {
+      id: 300,
+      name: "Mismatched creator",
+      rootPlace: { id: 3001 },
+      creator: { id: 8002, type: "Group" }
+    },
+    null,
+    null,
+    null,
+    {
+      creatorType: "Group",
+      creatorId: "8001",
+      creatorName: "Fixture Community"
+    }
+  ),
+  null,
+  "an owned-group game must be discarded when Roblox returns a different creator"
+);
+assert.equal(
+  hooks.normalizeEnhancedProfileGame(
+    {
+      id: 301,
+      name: "Masked mismatched creator",
+      rootPlace: { id: 3011 },
+      creator: { id: 8002, type: "Group" }
+    },
+    { id: 301, creator: {} },
+    null,
+    null,
+    {
+      creatorType: "Group",
+      creatorId: "8001",
+      creatorName: "Fixture Community"
+    }
+  ),
+  null,
+  "an empty detail creator must not mask a mismatched source creator"
+);
 
 const trustedSender = {
   id: "fixture-extension",
@@ -619,6 +813,15 @@ const trustedSender = {
     id: 7,
     active: true,
     url: "https://www.roblox.com/de/users/123/profile"
+  }
+};
+
+const trustedMutualFriendsSender = {
+  ...trustedSender,
+  url: "https://www.roblox.com/de/users/123/friends#!/friends?rotool=mutuals",
+  tab: {
+    ...trustedSender.tab,
+    url: "https://www.roblox.com/de/users/123/friends#!/friends?rotool=mutuals"
   }
 };
 
@@ -655,6 +858,20 @@ function dispatchRelationships(message, sender = trustedSender) {
   });
 }
 
+function dispatchMutualFriends(
+  message,
+  sender = trustedMutualFriendsSender
+) {
+  return new Promise((resolve, reject) => {
+    const keptOpen = hooks.handleMutualFriendsPageMessage(
+      message,
+      sender,
+      resolve
+    );
+    if (!keptOpen) reject(new Error("Valid mutual-friends request was rejected"));
+  });
+}
+
 function dispatchJoin(message, sender = trustedSender) {
   return new Promise((resolve, reject) => {
     const keptOpen = hooks.handleEnhancedProfileJoinMessage(
@@ -687,20 +904,41 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(profile.sections.identity.data.username, "FixtureUser");
   assert.equal(profile.sections.identity.data.isVerified, true);
   assert.equal(profile.sections.identity.data.isRobloxPlus, true);
+  assert.equal(
+    profile.sections.identity.data.createdAt,
+    "2018-04-03T12:34:56.000Z"
+  );
   assert.equal(profile.sections.presence.data.type, "game");
   assert.equal(profile.sections.counts.data.followers, 345);
   assert.deepEqual(
     Array.from(profile.sections.usernames.data.items),
     ["OldFixture", "OlderFixture"]
   );
-  assert.equal(profile.sections.experiences.data.items[0].ratingPercent, 90);
-  assert.equal(profile.sections.experiences.data.totalCount, 1);
+  const personalGame = profile.sections.experiences.data.items.find(
+    (game) => game.universeId === "100"
+  );
+  const ownedGroupGame = profile.sections.experiences.data.items.find(
+    (game) => game.universeId === "300"
+  );
+  assert.equal(personalGame.ratingPercent, 90);
+  assert.equal(profile.sections.experiences.data.totalCount, 2);
   assert.equal(profile.sections.experiences.data.countIsExact, true);
-  assert.equal(profile.sections.experiences.data.items[0].name, "Created Fixture");
+  assert.equal(profile.sections.experiences.data.coverageIsComplete, true);
+  assert.equal(profile.sections.experiences.data.coverageStatus, "complete");
+  assert.equal(personalGame.name, "Created Fixture");
   assert.equal(
-    profile.sections.experiences.data.items[0].description,
+    personalGame.description,
     "Original created description"
   );
+  assert.equal(personalGame.creatorType, "User");
+  assert.equal(personalGame.creatorId, "123");
+  assert.equal(personalGame.creatorName, "FixtureUser");
+  assert.equal(ownedGroupGame.name, "Owned Group Fixture");
+  assert.equal(ownedGroupGame.description, "Owned through Fixture Community");
+  assert.equal(ownedGroupGame.creatorType, "Group");
+  assert.equal(ownedGroupGame.creatorId, "8001");
+  assert.equal(ownedGroupGame.creatorName, "Fixture Community");
+  assert.equal(ownedGroupGame.creatorIsVerified, true);
   assert.equal(profile.sections.favorites.data.items[0].rootPlaceId, "2001");
   assert.equal(profile.sections.favorites.data.totalCount, 1);
   assert.equal(profile.sections.favorites.data.countIsExact, true);
@@ -766,6 +1004,20 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(profile.sections.communities.data.items[0].role, "Owner");
   assert.equal(profile.sections.communities.data.totalCount, 2);
   assert.equal(profile.sections.communities.data.ownedCount, 1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(profile.sections.communities.data.ownedGroups)),
+    {
+      items: [{
+        communityId: "8001",
+        name: "Fixture Community",
+        memberCount: 1200,
+        role: "Owner",
+        isVerified: true,
+        iconUrl: null
+      }],
+      hasMore: false
+    }
+  );
   assert.equal(profile.sections.badges.data.items[0].name, "Fixture Badge");
   assert.equal(profile.sections.badges.data.totalCount, 1);
   assert.equal(profile.sections.badges.data.countIsExact, false);
@@ -775,6 +1027,20 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(profile.sections.relationships.data.mutualFriendsCount, 2);
   assert.equal(profile.sections.relationships.data.mutualFriendsAvailable, true);
   assert.equal(profile.sections.relationships.data.mutualGroupsCount, 1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(profile.sections.relationships.data.mutualGroups)),
+    {
+      items: [{
+        communityId: "8001",
+        name: "Fixture Community",
+        memberCount: 1200,
+        role: "Owner",
+        isVerified: true,
+        iconUrl: null
+      }],
+      hasMore: false
+    }
+  );
   assert.equal(profile.sections.relationships.data.isFriend, true);
   assert.equal(profile.sections.relationships.data.canChat, true);
   assert.deepEqual(Array.from(profile.sections.relationships.data.items), []);
@@ -786,6 +1052,13 @@ function dispatchBadgeCount(message, sender = trustedSender) {
     (call) => call.url === "https://users.roblox.com/v1/users/123"
   ).length;
   assert.equal(userRequestCount, 1, "deduped requests fetched the base profile once");
+  assert.equal(
+    fetchCalls.filter((call) =>
+      call.url === "https://groups.roblox.com/v2/users/123/groups/roles"
+    ).length,
+    1,
+    "base communities, group games, and relationships should share one target group-role request"
+  );
   assert.equal(
     fetchCalls.filter((call) =>
       call.url ===
@@ -823,13 +1096,30 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.ok(fetchCalls.some(
     (call) => call.url.startsWith(
       "https://friends.roblox.com/v1/users/123/friends/find"
-    ) && call.credentials === "omit"
+    ) && call.credentials === "include"
+  ));
+  assert.ok(fetchCalls.some(
+    (call) => call.url ===
+        "https://friends.roblox.com/v1/users/123/friends/count" &&
+      call.credentials === "include"
   ));
   assert.ok(fetchCalls.some(
     (call) => call.url ===
         "https://groups.roblox.com/v2/users/999/groups/roles" &&
       call.credentials === "omit"
   ));
+  const ownedGroupGameCalls = fetchCalls.filter((call) =>
+    call.url.startsWith("https://games.roblox.com/v2/groups/8001/gamesV2?")
+  );
+  assert.equal(ownedGroupGameCalls.length, 1);
+  assert.equal(ownedGroupGameCalls[0].credentials, "omit");
+  assert.equal(
+    fetchCalls.some((call) =>
+      call.url.includes("/v2/groups/8003/gamesV2")
+    ),
+    false,
+    "games from communities where the profile is only a member must stay excluded"
+  );
   assert.ok(fetchCalls.some(
     (call) => call.url ===
         "https://inventory.roblox.com/v1/users/123/can-view-inventory" &&
@@ -960,6 +1250,78 @@ function dispatchBadgeCount(message, sender = trustedSender) {
     relationshipsResponse.section.data.mutualFriendsAvailable,
     true
   );
+
+  extraMutualFriendCount = 14;
+  targetFriendCountOverride = 18;
+  assert.equal(hooks.hasExactMutualFriendsPageMessageKeys({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 93,
+    targetUserId: "123",
+    forceRefresh: true
+  }), true);
+  const mutualFriendsPageResponse = await dispatchMutualFriends({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 93,
+    targetUserId: "123",
+    forceRefresh: true
+  });
+  assert.equal(mutualFriendsPageResponse.ok, true);
+  assert.equal(mutualFriendsPageResponse.totalCount, 16);
+  assert.equal(mutualFriendsPageResponse.friends.length, 16);
+  assert.deepEqual(
+    Array.from(mutualFriendsPageResponse.friends.slice(0, 3), (friend) =>
+      friend.userId
+    ),
+    ["456", "888", "10000"],
+    "the full mutual list must preserve the viewed profile's friend order"
+  );
+  assert.equal(
+    new Set(mutualFriendsPageResponse.friends.map((friend) => friend.userId)).size,
+    16,
+    "the Mutuals page must not duplicate friends"
+  );
+  extraMutualFriendCount = 0;
+  targetFriendCountOverride = null;
+  hooks.clearEnhancedProfileCacheForTests();
+
+  let invalidMutualFriendsResponse = null;
+  assert.equal(hooks.handleMutualFriendsPageMessage({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 94,
+    targetUserId: "456",
+    forceRefresh: false
+  }, trustedMutualFriendsSender, (value) => {
+    invalidMutualFriendsResponse = value;
+  }), false);
+  assert.equal(invalidMutualFriendsResponse.code, "INVALID");
+  assert.equal(hooks.isTrustedMutualFriendsPageSender({
+    ...trustedMutualFriendsSender,
+    frameId: 1
+  }, "123"), false);
+  targetFriendsVisible = false;
+  hooks.clearEnhancedProfileCacheForTests();
+  const privateMutualFriendsResponse = await dispatchMutualFriends({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 95,
+    targetUserId: "123",
+    forceRefresh: true
+  });
+  assert.equal(privateMutualFriendsResponse.ok, false);
+  assert.equal(privateMutualFriendsResponse.code, "PRIVACY_OR_REGION");
+  targetFriendsVisible = true;
+  hooks.clearEnhancedProfileCacheForTests();
+
+  authenticatedViewerMode = "own";
+  const ownMutualFriendsResponse = await dispatchMutualFriends({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 96,
+    targetUserId: "123",
+    forceRefresh: true
+  });
+  assert.equal(ownMutualFriendsResponse.ok, false);
+  assert.equal(ownMutualFriendsResponse.code, "OWN_PROFILE");
+  authenticatedViewerMode = "other";
+  hooks.clearEnhancedProfileCacheForTests();
 
   assert.equal(hooks.hasExactEnhancedProfileJoinMessageKeys({
     type: "rsl:join-enhanced-profile",
@@ -1220,15 +1582,30 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(fetchCalls.at(-1).credentials, "omit");
   badgeMode = "empty";
   hooks.clearEnhancedProfileCacheForTests();
-  const privateBadgeProfile = await hooks.getEnhancedProfile(
+  const emptyBadgeProfile = await hooks.getEnhancedProfile(
     "123",
     true,
     { includeRelationships: false }
   );
-  assert.equal(privateBadgeProfile.sections.badges.status, "ready");
-  assert.equal(privateBadgeProfile.sections.badges.data.countStatus, "private");
-  assert.equal(privateBadgeProfile.sections.badges.data.totalCount, null);
-  assert.deepEqual(Array.from(privateBadgeProfile.sections.badges.data.items), []);
+  assert.equal(emptyBadgeProfile.sections.badges.status, "ready");
+  assert.equal(emptyBadgeProfile.sections.badges.data.countStatus, "pending");
+  assert.equal(emptyBadgeProfile.sections.badges.data.totalCount, 0);
+  assert.deepEqual(Array.from(emptyBadgeProfile.sections.badges.data.items), []);
+  assert.equal(
+    emptyBadgeProfile.sections.inventory.data.visibility,
+    "limited",
+    "inventory privacy must remain independent from public empty badges"
+  );
+
+  badgeMode = "private";
+  hooks.clearEnhancedProfileCacheForTests();
+  const explicitlyPrivateBadgeProfile = await hooks.getEnhancedProfile(
+    "123",
+    true,
+    { includeRelationships: false }
+  );
+  assert.equal(explicitlyPrivateBadgeProfile.sections.badges.status, "unavailable");
+  assert.equal(explicitlyPrivateBadgeProfile.sections.badges.code, "PRIVATE");
   badgeMode = "single";
   inventoryCanView = true;
   hooks.clearEnhancedProfileCacheForTests();
@@ -1247,10 +1624,27 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(countOnlyRelationships.mutualFriendsAvailable, true);
   assert.equal(countOnlyRelationships.profileLimited, false);
   assert.equal(countOnlyRelationships.mutualGroupsCount, 1);
+  assert.equal(countOnlyRelationships.mutualGroups.items[0].communityId, "8001");
+  assert.equal(
+    countOnlyRelationships.mutualGroups.items[0].role,
+    "Owner",
+    "mutual-group roles must belong to the viewed profile, not the viewer"
+  );
+  assert.equal(countOnlyRelationships.mutualGroups.hasMore, false);
   assert.equal(countOnlyRelationships.isFriend, true);
   assert.equal(countOnlyRelationships.canChat, true);
   assert.deepEqual(Array.from(countOnlyRelationships.items), []);
   assert.equal(countOnlyRelationships.hasMore, false);
+  extraMutualGroupCount = 14;
+  hooks.clearEnhancedProfileCacheForTests();
+  const allMutualGroups =
+    await hooks.fetchEnhancedProfileRelationshipsForViewer("123", "999");
+  assert.equal(allMutualGroups.mutualGroupsCount, 15);
+  assert.equal(allMutualGroups.mutualGroups.items.length, 15);
+  assert.equal(allMutualGroups.mutualGroups.items[1].role, "Moderator");
+  assert.equal(allMutualGroups.mutualGroups.hasMore, false);
+  extraMutualGroupCount = 0;
+  hooks.clearEnhancedProfileCacheForTests();
   targetFriendsVisible = false;
   const privateFriendRelationships =
     await hooks.fetchEnhancedProfileRelationshipsForViewer("123", "999");
@@ -1279,6 +1673,7 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(networkFriendRelationships.isFriend, true);
   assert.equal(networkFriendRelationships.canChat, true);
   targetFriendsNetworkFailure = false;
+
   assert.equal(fetchCalls.filter((call) =>
     call.url === "https://users.roblox.com/v1/users"
   ).length, publicProfileCallsBeforeRelationship,
@@ -1290,6 +1685,75 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   ).length, headshotCallsBeforeRelationship,
   "count-only mutuals must not fetch headshots");
 
+  targetUnavailableFriendCount = 3;
+  hooks.clearEnhancedProfileCacheForTests();
+  const placeholderSnapshot =
+    await hooks.fetchEnhancedProfileTargetFriendSnapshot("123");
+  assert.equal(placeholderSnapshot.incomplete, false);
+  assert.equal(placeholderSnapshot.data.enumeratedItemCount, 7);
+  assert.equal(placeholderSnapshot.data.userIds.length, 4);
+  const placeholderRelationships =
+    await hooks.fetchEnhancedProfileRelationshipsForViewer("123", "999");
+  assert.equal(placeholderRelationships.mutualFriendsAvailable, true);
+  assert.equal(placeholderRelationships.mutualFriendsCount, 2);
+  const placeholderMutualPage = await dispatchMutualFriends({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 98,
+    targetUserId: "123",
+    forceRefresh: false
+  });
+  assert.equal(placeholderMutualPage.ok, true);
+  assert.equal(placeholderMutualPage.totalCount, 2);
+  targetUnavailableFriendCount = 0;
+  hooks.clearEnhancedProfileCacheForTests();
+
+  targetFriendCountMismatchResponses = 1;
+  const transientCountCallsBefore = fetchCalls.filter((call) =>
+    call.url === "https://friends.roblox.com/v1/users/123/friends/count"
+  ).length;
+  const recoveredTargetSnapshot =
+    await hooks.fetchEnhancedProfileTargetFriendSnapshot("123");
+  assert.equal(recoveredTargetSnapshot.incomplete, false);
+  assert.equal(recoveredTargetSnapshot.data.userIds.length, 4);
+  assert.equal(
+    fetchCalls.filter((call) =>
+      call.url === "https://friends.roblox.com/v1/users/123/friends/count"
+    ).length - transientCountCallsBefore,
+    1,
+    "a complete cursor traversal must not be repeated for a count race"
+  );
+
+  targetFriendCountOverride = 5;
+  hooks.clearEnhancedProfileCacheForTests();
+  const partialFriendRelationships =
+    await hooks.fetchEnhancedProfileRelationshipsForViewer("123", "999");
+  assert.equal(partialFriendRelationships.mutualFriendsAvailable, true);
+  assert.equal(partialFriendRelationships.profileLimited, false);
+  assert.equal(partialFriendRelationships.mutualFriendsCount, 2);
+  const targetFindCallsAfterPartial = fetchCalls.filter((call) =>
+    call.url.startsWith(
+      "https://friends.roblox.com/v1/users/123/friends/find"
+    )
+  ).length;
+  targetFriendCountOverride = 4;
+  const recoveredMutualFriends = await dispatchMutualFriends({
+    type: hooks.enhancedProfileConstants.mutualFriendsPageMessageType,
+    requestId: 97,
+    targetUserId: "123",
+    forceRefresh: false
+  });
+  assert.equal(recoveredMutualFriends.ok, true);
+  assert.equal(recoveredMutualFriends.totalCount, 2);
+  assert.equal(
+    fetchCalls.filter((call) => call.url.startsWith(
+      "https://friends.roblox.com/v1/users/123/friends/find"
+    )).length,
+    targetFindCallsAfterPartial,
+    "a complete traversal with a stale count should populate the Mutuals cache"
+  );
+  targetFriendCountOverride = null;
+  hooks.clearEnhancedProfileCacheForTests();
+
   authenticatedViewerMode = "own";
   const ownRelationships = await hooks.collectEnhancedProfileRelationshipsSection("123");
   assert.equal(ownRelationships.status, "not_applicable");
@@ -1300,6 +1764,107 @@ function dispatchBadgeCount(message, sender = trustedSender) {
   assert.equal(unavailableRelationships.status, "unavailable");
   assert.equal(unavailableRelationships.code, "UNAUTHENTICATED");
   authenticatedViewerMode = "other";
+
+  ownedGroupGameMode = "failure";
+  hooks.clearEnhancedProfileCacheForTests();
+  const partiallyAvailableGames = await hooks.collectEnhancedProfile("123", {
+    includePresence: false,
+    includeBadges: false
+  });
+  assert.equal(partiallyAvailableGames.sections.experiences.status, "ready");
+  assert.equal(partiallyAvailableGames.sections.experiences.data.totalCount, 1);
+  assert.equal(
+    partiallyAvailableGames.sections.experiences.data.items[0].universeId,
+    "100",
+    "a failed owned-group source must not discard public user-owned games"
+  );
+  assert.equal(
+    partiallyAvailableGames.sections.experiences.data.countIsExact,
+    false
+  );
+  assert.equal(
+    partiallyAvailableGames.sections.experiences.data.coverageIsComplete,
+    false
+  );
+  assert.equal(
+    partiallyAvailableGames.sections.experiences.data.coverageStatus,
+    "partial"
+  );
+  assert.equal(
+    partiallyAvailableGames.sections.experiences.data.hasMore,
+    false,
+    "an unavailable source is partial coverage, not known pagination"
+  );
+
+  ownedGroupGameMode = "paginated";
+  hooks.clearEnhancedProfileCacheForTests();
+  const paginatedGroupGames = await hooks.collectEnhancedProfile("123", {
+    includePresence: false,
+    includeBadges: false
+  });
+  assert.equal(paginatedGroupGames.sections.experiences.data.totalCount, 2);
+  assert.equal(paginatedGroupGames.sections.experiences.data.items.length, 2);
+  assert.equal(paginatedGroupGames.sections.experiences.data.countIsExact, false);
+  assert.equal(paginatedGroupGames.sections.experiences.data.hasMore, true);
+  assert.equal(
+    paginatedGroupGames.sections.experiences.data.coverageStatus,
+    "truncated"
+  );
+
+  ownedGroupGameMode = "transfer";
+  hooks.clearEnhancedProfileCacheForTests();
+  const transferredGameOwnership = await hooks.collectEnhancedProfile("123", {
+    includePresence: false,
+    includeBadges: false
+  });
+  assert.equal(transferredGameOwnership.sections.experiences.data.totalCount, 2);
+  assert.equal(
+    transferredGameOwnership.sections.experiences.data.items.find(
+      (game) => game.universeId === "300"
+    )?.creatorId,
+    "8001",
+    "a stale duplicate must not mask the valid current owner candidate"
+  );
+  assert.equal(
+    transferredGameOwnership.sections.experiences.data.coverageStatus,
+    "complete"
+  );
+
+  ownedGroupGameMode = "ready";
+  extraOwnedGroupCount =
+    hooks.enhancedProfileConstants.maxOwnedGroupGameSources + 3;
+  hooks.clearEnhancedProfileCacheForTests();
+  const boundedCallsStart = fetchCalls.length;
+  const boundedGroupGames = await hooks.collectEnhancedProfile("123", {
+    includePresence: false,
+    includeBadges: false
+  });
+  const boundedGroupGameCalls = fetchCalls.slice(boundedCallsStart).filter(
+    (call) => /^https:\/\/games\.roblox\.com\/v2\/groups\/\d+\/gamesV2\?/.test(
+      call.url
+    )
+  );
+  assert.equal(
+    boundedGroupGameCalls.length,
+    hooks.enhancedProfileConstants.maxOwnedGroupGameSources,
+    "owned-group experience fan-out must stay explicitly bounded"
+  );
+  assert.ok(
+    hooks.enhancedProfileConstants.ownedGroupGameConcurrency <= 4,
+    "owned-group game requests must use a small worker pool"
+  );
+  assert.equal(boundedGroupGames.sections.experiences.data.countIsExact, false);
+  assert.equal(boundedGroupGames.sections.experiences.data.hasMore, false);
+  assert.equal(
+    boundedGroupGames.sections.experiences.data.coverageIsComplete,
+    false
+  );
+  assert.equal(
+    boundedGroupGames.sections.experiences.data.coverageStatus,
+    "truncated"
+  );
+  extraOwnedGroupCount = 0;
+  hooks.clearEnhancedProfileCacheForTests();
 
   usernameMode = "malformed";
   hooks.clearEnhancedProfileCacheForTests();

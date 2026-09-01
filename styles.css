@@ -584,7 +584,53 @@
 
 [data-rsl-native-friends-hidden],
 [data-rsl-native-pagination-hidden],
-[data-rsl-online-search-hidden] {
+[data-rsl-online-search-hidden],
+[data-rsl-mutual-friends-native-hidden],
+[data-rsl-mutual-friends-pager-hidden],
+[data-rsl-mutual-friends-native-search-hidden],
+[data-rsl-mutual-search-hidden],
+[data-rsl-mutual-friends-competing-hidden] {
+  display: none !important;
+}
+
+[data-rsl-mutual-friends-native-panel-active] {
+  display: block !important;
+  visibility: visible !important;
+}
+
+[data-rsl-mutual-friends-ropro-panel-hidden] {
+  display: none !important;
+}
+
+[data-rsl-mutual-friends-tabs] {
+  display: flex !important;
+}
+
+[data-rsl-mutual-friends-tabs] > * {
+  width: 25% !important;
+  min-width: 0;
+  flex: 1 1 25% !important;
+}
+
+[data-rsl-mutual-friends-tabs] > #mutuals:not([data-rsl-mutual-friends-tab]) {
+  display: none !important;
+}
+
+[data-rsl-mutual-friends-tabs] > * > a,
+[data-rsl-mutual-friends-tabs] > * > button {
+  width: 100%;
+}
+
+[data-rsl-mutual-friends-view-active]
+  .friends-content
+  ul.hlist.avatar-cards:not([data-rsl-mutual-friends-list]) {
+  display: none !important;
+}
+
+[data-rsl-mutual-friends-view-active] .friends-content .pager-holder,
+[data-rsl-mutual-friends-view-active] .friends-content .pager-container,
+[data-rsl-mutual-friends-view-active] .friends-content .friends-pager,
+[data-rsl-mutual-friends-view-active] .friends-content.section + .pager-holder {
   display: none !important;
 }
 

@@ -126,6 +126,30 @@
     "data-rsl-enhanced-profile-presence";
   const ENHANCED_PROFILE_PRESENCE_SLOT_NAME =
     "rsl-enhanced-profile-presence";
+  const ENHANCED_PROFILE_ROPRO_CONTROLS_ATTRIBUTE =
+    "data-rsl-enhanced-profile-ropro-controls";
+  const ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME =
+    "rsl-enhanced-profile-ropro-controls";
+  const ENHANCED_PROFILE_ROPRO_BADGE_ATTRIBUTE =
+    "data-rsl-enhanced-profile-ropro-badge";
+  const ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME =
+    "rsl-enhanced-profile-ropro-badge";
+  const ENHANCED_PROFILE_NATIVE_NAME_ICONS_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-name-icons";
+  const ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME =
+    "rsl-enhanced-profile-native-name-icons";
+  const ENHANCED_PROFILE_NATIVE_CURRENT_GAME_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-current-game";
+  const ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME =
+    "rsl-enhanced-profile-native-current-game";
+  const ENHANCED_PROFILE_NATIVE_ACTIONS_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-actions";
+  const ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME =
+    "rsl-enhanced-profile-native-actions";
+  const ENHANCED_PROFILE_NATIVE_ACTION_FALLBACK_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-action-fallback";
+  const ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE =
+    "data-rsl-enhanced-profile-native-name-icon-fallback";
   const ENHANCED_PROFILE_STYLE_ID = "rsl-enhanced-profile-suppression-style";
   const ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE =
     "data-rsl-enhanced-profile-native-hidden";
@@ -163,6 +187,7 @@
   const ENHANCED_PROFILE_THUMBNAIL_IMAGE_TIMEOUT_MS = 5_000;
   const ENHANCED_PROFILE_THUMBNAIL_RETRY_MS = 350;
   const ENHANCED_PROFILE_THUMBNAIL_CONCURRENCY = 6;
+  const ENHANCED_PROFILE_MAX_GROUP_DETAIL_ITEMS = 100;
   const ENHANCED_PROFILE_BADGE_COUNT_START_DELAY_MS = 150;
   const ENHANCED_PROFILE_RELATIONSHIPS_START_DELAY_MS = 350;
   const ENHANCED_PROFILE_THUMBNAIL_KINDS = new Set([
@@ -352,6 +377,25 @@
   const ALL_FRIENDS_FILTER_VALUE = "all";
   const BEST_FRIENDS_FILTER_VALUE = "best-friends";
   const BEST_FRIENDS_DEEP_LINK = "/users/friends?rotool=best-friends#!/friends";
+  const MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE = "rsl:get-mutual-friends-page";
+  const MUTUAL_FRIENDS_PAGE_MODE = "mutuals";
+  const MUTUAL_FRIENDS_TAB_ATTRIBUTE = "data-rsl-mutual-friends-tab";
+  const MUTUAL_FRIENDS_LIST_ATTRIBUTE = "data-rsl-mutual-friends-list";
+  const MUTUAL_FRIENDS_STATE_ATTRIBUTE = "data-rsl-mutual-friends-state";
+  const MUTUAL_FRIENDS_VIEW_ATTRIBUTE = "data-rsl-mutual-friends-view-active";
+  const MUTUAL_FRIENDS_NATIVE_HIDDEN_ATTRIBUTE =
+    "data-rsl-mutual-friends-native-hidden";
+  const MUTUAL_FRIENDS_PAGER_HIDDEN_ATTRIBUTE =
+    "data-rsl-mutual-friends-pager-hidden";
+  const MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE =
+    "data-rsl-mutual-friends-native-search-hidden";
+  const MUTUAL_FRIENDS_SEARCH_ATTRIBUTE = "data-rsl-mutual-friends-search";
+  const MUTUAL_FRIENDS_COMPETING_ATTRIBUTE =
+    "data-rsl-mutual-friends-competing-hidden";
+  const MUTUAL_FRIENDS_NATIVE_PANEL_ATTRIBUTE =
+    "data-rsl-mutual-friends-native-panel-active";
+  const MUTUAL_FRIENDS_ROPRO_PANEL_ATTRIBUTE =
+    "data-rsl-mutual-friends-ropro-panel-hidden";
   const BEST_FRIEND_ACTION_TIMEOUT_MS = 8_000;
   const BEST_FRIEND_GAME_THUMBNAIL_RETRY_MS = 350;
   const BEST_FRIEND_GAME_IMAGE_TIMEOUT_MS = 5_000;
@@ -1278,6 +1322,17 @@
   let enhancedProfileNativeReturnController = null;
   let enhancedProfileNativeReturnFrame = null;
   let enhancedProfileNativeReturnUserId = null;
+  let enhancedProfileRoProControlsRecord = null;
+  let enhancedProfileRoProBadgeRecord = null;
+  let enhancedProfileNativeNameIconsRecord = null;
+  let enhancedProfileNativeCurrentGameRecord = null;
+  let enhancedProfileNativeActionsRecord = null;
+  let enhancedProfileNativeHeaderObserver = null;
+  let enhancedProfileNativeHeaderController = null;
+  let enhancedProfileNativeHeaderObservedRoot = null;
+  let enhancedProfileNativeHeaderSyncFrame = null;
+  let enhancedProfileCollectionDialog = null;
+  let enhancedProfileCollectionDialogOpener = null;
   const enhancedProfileNativeOverflowStyleBackups = new Map();
   const enhancedProfileSuppressedRoots = new Set();
   const enhancedProfileCarouselObservers = new Set();
@@ -1293,6 +1348,23 @@
   let inactiveFriendsChipClass = "";
   let observedFriendsMount = null;
   let friendsMutationObserver = null;
+  let mutualFriendsPageObserver = null;
+  let observedMutualFriendsPageMount = null;
+  let mutualFriendsPageTargetUserId = null;
+  let mutualFriendsPageLoadState = "idle";
+  let mutualFriendsPageErrorCode = "";
+  let mutualFriendsPageItems = [];
+  let mutualFriendsPageTotal = null;
+  let mutualFriendsPageRequestId = 0;
+  let mutualFriendsPageRequestPromise = null;
+  let mutualFriendsPageMessageSenderForTests = null;
+  let mutualFriendsPageRouteUrlForTests = null;
+  let mutualFriendsPageHeadingRecord = null;
+  let mutualFriendsPageSearchRecord = null;
+  let mutualFriendsPageTabModeActive = false;
+  let mutualFriendsPageTabStyleTemplates = null;
+  const boundMutualFriendsSearchInputs = new WeakSet();
+  const mutualFriendsPageTabBackups = new Map();
   let onlineFriendsLoadState = "idle";
   let allOnlineFriends = [];
   let allOfflineFriends = [];
@@ -5507,7 +5579,11 @@
   }
 
   function setClassName(element, className) {
-    if (className && element.className !== className) {
+    if (
+      element &&
+      typeof className === "string" &&
+      element.className !== className
+    ) {
       element.className = className;
     }
   }
@@ -6521,6 +6597,765 @@
     }
 
     return card;
+  }
+
+  function getTargetFriendsPageRoute(rawHref = null) {
+    let url;
+    try {
+      url = new URL(
+        rawHref || mutualFriendsPageRouteUrlForTests || location.href,
+        "https://www.roblox.com"
+      );
+    } catch {
+      return null;
+    }
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "www.roblox.com" ||
+      url.port ||
+      url.username ||
+      url.password
+    ) {
+      return null;
+    }
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (
+      segments.length > 0 &&
+      ENHANCED_PROFILE_LOCALE_SEGMENTS.has(segments[0].toLowerCase())
+    ) {
+      segments.shift();
+    }
+    if (
+      segments.length !== 3 ||
+      segments[0].toLowerCase() !== "users" ||
+      !/^\d{1,20}$/.test(segments[1]) ||
+      segments[1] === "0" ||
+      segments[2].toLowerCase() !== "friends"
+    ) {
+      return null;
+    }
+    const hash = String(url.hash || "");
+    const roProMutualsActive = /^#!\/friends#mutuals$/i.test(hash);
+    const hashMatch = roProMutualsActive
+      ? null
+      : /^#!\/(friends|following|followers)(?:\?(.+))?$/i.exec(
+          hash || "#!/friends"
+        );
+    if (!roProMutualsActive && !hashMatch) return null;
+    const subview = hashMatch?.[1]?.toLowerCase() || "friends";
+    const parameters = new URLSearchParams(hashMatch?.[2] || "");
+    return {
+      targetUserId: segments[1],
+      pathname: url.pathname,
+      subview,
+      mutualsActive:
+        subview === "friends" &&
+        (parameters.get("rotool") === MUTUAL_FRIENDS_PAGE_MODE ||
+          roProMutualsActive)
+    };
+  }
+
+  function getMutualFriendsPageHref(route) {
+    return route
+      ? `${route.pathname}#!/friends?rotool=${MUTUAL_FRIENDS_PAGE_MODE}`
+      : "";
+  }
+
+  function getMutualFriendsTabKind(control) {
+    const text = normalizeVisibleText(control)
+      .replace(/\s*\([\d,.]+\)\s*$/, "")
+      .toLowerCase();
+    if (["friends", "following", "followers"].includes(text)) return text;
+    try {
+      const hash = new URL(control?.href || "", location.href).hash.toLowerCase();
+      const match = /^#!\/(friends|following|followers)(?:\?|$)/.exec(hash);
+      return match?.[1] || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function getMutualFriendsDirectTab(group, control) {
+    let current = control;
+    while (current?.parentElement && current.parentElement !== group) {
+      current = current.parentElement;
+    }
+    return current?.parentElement === group ? current : control;
+  }
+
+  function getMutualFriendsActionableTabControl(tab) {
+    if (tab?.matches("a[href], button")) return tab;
+    return tab?.querySelector("a[href], button, [role='tab']") ||
+      (tab?.matches("[role='tab']") ? tab : null);
+  }
+
+  function findMutualFriendsTabsContext(mount) {
+    const controls = Array.from(mount.querySelectorAll("a[href], [role='tab'], button"));
+    for (const control of controls) {
+      if (getMutualFriendsTabKind(control) !== "friends") continue;
+      const group = control.closest(".nav-tabs, [role='tablist'], ul, nav");
+      if (!group) continue;
+      const scopedControls = Array.from(
+        group.querySelectorAll("a[href], [role='tab'], button")
+      );
+      const byKind = new Map();
+      for (const candidate of scopedControls) {
+        const kind = getMutualFriendsTabKind(candidate);
+        if (!kind) continue;
+        const previous = byKind.get(kind);
+        const candidateIsActionable = candidate.matches("a[href], button");
+        const previousIsActionable = previous?.matches("a[href], button");
+        if (!previous || (candidateIsActionable && !previousIsActionable)) {
+          byKind.set(kind, candidate);
+        }
+      }
+      if (["friends", "following", "followers"].every((kind) => byKind.has(kind))) {
+        return { group, byKind };
+      }
+    }
+    return null;
+  }
+
+  function setMutualFriendsTabLabel(control) {
+    const descendants = [control, ...control.querySelectorAll("*")];
+    const label = descendants.reverse().find((element) =>
+      getMutualFriendsTabKind(element) === "friends" &&
+      element.children.length === 0
+    );
+    (label || control).textContent = "Mutuals";
+  }
+
+  function rememberMutualFriendsTabState(element) {
+    if (!element || mutualFriendsPageTabBackups.has(element)) return;
+    mutualFriendsPageTabBackups.set(element, {
+      className: element.className,
+      ariaSelected: element.getAttribute("aria-selected"),
+      ariaCurrent: element.getAttribute("aria-current")
+    });
+  }
+
+  function restoreMutualFriendsTabStates() {
+    for (const [element, state] of mutualFriendsPageTabBackups) {
+      if (!element.isConnected) continue;
+      element.className = state.className;
+      for (const [attribute, value] of [
+        ["aria-selected", state.ariaSelected],
+        ["aria-current", state.ariaCurrent]
+      ]) {
+        if (value === null) element.removeAttribute(attribute);
+        else element.setAttribute(attribute, value);
+      }
+    }
+    mutualFriendsPageTabBackups.clear();
+  }
+
+  function restoreMutualFriendsTabState(element) {
+    const state = mutualFriendsPageTabBackups.get(element);
+    if (!element || !state) return;
+    setClassName(element, state.className);
+    for (const [attribute, value] of [
+      ["aria-selected", state.ariaSelected],
+      ["aria-current", state.ariaCurrent]
+    ]) {
+      if (value === null) {
+        if (element.hasAttribute(attribute)) element.removeAttribute(attribute);
+      } else if (element.getAttribute(attribute) !== value) {
+        element.setAttribute(attribute, value);
+      }
+    }
+  }
+
+  function syncMutualFriendsTab(mount, route) {
+    const context = findMutualFriendsTabsContext(mount);
+    if (!context) return null;
+    const { group, byKind } = context;
+    group.setAttribute("data-rsl-mutual-friends-tabs", "");
+    const nativeTabs = new Set(
+      Array.from(byKind.values()).map((control) =>
+        getMutualFriendsDirectTab(group, control)
+      )
+    );
+    for (const child of Array.from(group.children)) {
+      if (
+        child.hasAttribute(MUTUAL_FRIENDS_TAB_ATTRIBUTE) ||
+        nativeTabs.has(child)
+      ) {
+        continue;
+      }
+      const text = normalizeVisibleText(child).toLowerCase();
+      if (text.startsWith("mutuals") || text.startsWith("mutual friends")) {
+        child.setAttribute(MUTUAL_FRIENDS_COMPETING_ATTRIBUTE, "");
+      }
+    }
+
+    let tab = group.querySelector(`:scope > [${MUTUAL_FRIENDS_TAB_ATTRIBUTE}]`);
+    if (!tab) {
+      const friendsControl = byKind.get("friends");
+      const friendsTab = getMutualFriendsDirectTab(group, friendsControl);
+      tab = friendsTab.cloneNode(true);
+      tab.setAttribute(MUTUAL_FRIENDS_TAB_ATTRIBUTE, "");
+      tab.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+      tab.removeAttribute("id");
+      const control = getMutualFriendsActionableTabControl(tab);
+      if (!control) return null;
+      setMutualFriendsTabLabel(control);
+      if (control.tagName === "A") {
+        control.href = getMutualFriendsPageHref(route);
+      } else {
+        control.type = "button";
+        control.addEventListener("click", () => {
+          history.pushState(
+            history.state,
+            "",
+            getMutualFriendsPageHref(
+              getTargetFriendsPageRoute(location.href) || route
+            )
+          );
+          queueMount();
+        });
+      }
+      const followersTab = getMutualFriendsDirectTab(
+        group,
+        byKind.get("followers")
+      );
+      followersTab.insertAdjacentElement("afterend", tab);
+    }
+
+    const friendsControl = byKind.get("friends");
+    const followingControl = byKind.get("following");
+    const followersControl = byKind.get("followers");
+    const friendsTab = getMutualFriendsDirectTab(group, friendsControl);
+    const followingTab = getMutualFriendsDirectTab(group, followingControl);
+    const followersTab = getMutualFriendsDirectTab(group, followersControl);
+    const customControl = getMutualFriendsActionableTabControl(tab);
+    if (customControl?.tagName === "A") {
+      const href = getMutualFriendsPageHref(route);
+      if (customControl.getAttribute("href") !== href) {
+        customControl.setAttribute("href", href);
+      }
+    }
+    const nativeEntries = [
+      { kind: "friends", tab: friendsTab, control: friendsControl },
+      { kind: "following", tab: followingTab, control: followingControl },
+      { kind: "followers", tab: followersTab, control: followersControl }
+    ];
+    const applyClasses = (entry, tabClassName, controlClassName) => {
+      setClassName(entry.tab, tabClassName);
+      if (entry.control !== entry.tab) {
+        setClassName(entry.control, controlClassName);
+      }
+    };
+    const setSelected = (entry, selected) => {
+      const value = selected ? "true" : "false";
+      if (entry.control.getAttribute("aria-selected") !== value) {
+        entry.control.setAttribute("aria-selected", value);
+      }
+      if (selected) {
+        if (entry.control.getAttribute("aria-current") !== "page") {
+          entry.control.setAttribute("aria-current", "page");
+        }
+      } else if (entry.control.hasAttribute("aria-current")) {
+        entry.control.removeAttribute("aria-current");
+      }
+    };
+    if (route.mutualsActive) {
+      if (!mutualFriendsPageTabModeActive) {
+        const activeEntry = nativeEntries.find((entry) =>
+          entry.control.getAttribute("aria-selected") === "true" ||
+          entry.control.getAttribute("aria-current") === "page" ||
+          entry.tab.classList.contains("active")
+        ) || nativeEntries[0];
+        const inactiveEntry = nativeEntries.find((entry) =>
+          entry !== activeEntry &&
+          entry.control.getAttribute("aria-selected") !== "true" &&
+          !entry.tab.classList.contains("active")
+        ) || nativeEntries[1];
+        mutualFriendsPageTabStyleTemplates = {
+          activeTabClassName: activeEntry.tab.className,
+          activeControlClassName: activeEntry.control.className,
+          inactiveTabClassName: inactiveEntry.tab.className,
+          inactiveControlClassName: inactiveEntry.control.className
+        };
+      }
+      for (const element of [
+        ...nativeEntries.flatMap((entry) => [entry.tab, entry.control]),
+        tab,
+        customControl
+      ]) {
+        rememberMutualFriendsTabState(element);
+      }
+      mutualFriendsPageTabModeActive = true;
+      const styles = mutualFriendsPageTabStyleTemplates;
+      for (const entry of nativeEntries) {
+        applyClasses(
+          entry,
+          styles.inactiveTabClassName,
+          styles.inactiveControlClassName
+        );
+        setSelected(entry, false);
+      }
+      setClassName(tab, styles.activeTabClassName);
+      if (customControl !== tab) {
+        setClassName(customControl, styles.activeControlClassName);
+      }
+      if (customControl.getAttribute("aria-selected") !== "true") {
+        customControl.setAttribute("aria-selected", "true");
+      }
+      if (customControl.getAttribute("aria-current") !== "page") {
+        customControl.setAttribute("aria-current", "page");
+      }
+    } else {
+      const exitingStyles = mutualFriendsPageTabStyleTemplates;
+      if (mutualFriendsPageTabModeActive) {
+        restoreMutualFriendsTabStates();
+        mutualFriendsPageTabModeActive = false;
+        if (exitingStyles) {
+          for (const entry of nativeEntries) {
+            const selected = entry.kind === route.subview;
+            applyClasses(
+              entry,
+              selected
+                ? exitingStyles.activeTabClassName
+                : exitingStyles.inactiveTabClassName,
+              selected
+                ? exitingStyles.activeControlClassName
+                : exitingStyles.inactiveControlClassName
+            );
+            setSelected(entry, selected);
+          }
+        }
+      }
+      const inactiveEntry = nativeEntries.find((entry) =>
+        entry.kind !== route.subview &&
+        entry.control.getAttribute("aria-selected") !== "true" &&
+        !entry.tab.classList.contains("active")
+      ) || nativeEntries.find((entry) => entry.kind !== route.subview) ||
+        nativeEntries[1];
+      setClassName(
+        tab,
+        exitingStyles?.inactiveTabClassName ?? inactiveEntry.tab.className
+      );
+      if (customControl !== tab) {
+        setClassName(
+          customControl,
+          exitingStyles?.inactiveControlClassName ??
+            inactiveEntry.control.className
+        );
+      }
+      if (customControl.getAttribute("aria-selected") !== "false") {
+        customControl.setAttribute("aria-selected", "false");
+      }
+      if (customControl.hasAttribute("aria-current")) {
+        customControl.removeAttribute("aria-current");
+      }
+      mutualFriendsPageTabStyleTemplates = null;
+    }
+    return tab;
+  }
+
+  function normalizeMutualFriendsPageResponse(response, requestId, targetUserId) {
+    if (
+      !response ||
+      response.ok !== true ||
+      response.requestId !== requestId ||
+      String(response.targetUserId || "") !== targetUserId ||
+      !/^\d{1,20}$/.test(String(response.viewerUserId || "")) ||
+      String(response.viewerUserId) === "0" ||
+      String(response.viewerUserId || "") === targetUserId ||
+      !Array.isArray(response.friends) ||
+      !Number.isSafeInteger(response.totalCount) ||
+      response.totalCount < 0
+    ) {
+      return null;
+    }
+    const friends = [];
+    const seenUserIds = new Set();
+    for (const rawFriend of response.friends) {
+      const friend = normalizeOnlineFriend(rawFriend);
+      if (!friend || seenUserIds.has(friend.userId)) continue;
+      seenUserIds.add(friend.userId);
+      friends.push(friend);
+    }
+    if (friends.length !== response.totalCount) return null;
+    return {
+      viewerUserId: String(response.viewerUserId),
+      targetUserId,
+      totalCount: friends.length,
+      friends
+    };
+  }
+
+  function requestMutualFriendsPage(targetUserId, requestId, forceRefresh) {
+    const message = {
+      type: MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE,
+      requestId,
+      targetUserId,
+      forceRefresh
+    };
+    if (typeof mutualFriendsPageMessageSenderForTests === "function") {
+      return Promise.resolve(mutualFriendsPageMessageSenderForTests(message));
+    }
+    return sendFriendsRuntimeMessage(message, FRIENDS_ADVANCED_RUNTIME_MESSAGE_TIMEOUT_MS);
+  }
+
+  function loadMutualFriendsPage(forceRefresh = false) {
+    const route = getTargetFriendsPageRoute();
+    if (!route?.mutualsActive) return Promise.resolve();
+    if (mutualFriendsPageRequestPromise && !forceRefresh) {
+      return mutualFriendsPageRequestPromise;
+    }
+    const requestId = ++mutualFriendsPageRequestId;
+    const targetUserId = route.targetUserId;
+    mutualFriendsPageLoadState = "loading";
+    mutualFriendsPageErrorCode = "";
+    queueMount();
+    const request = requestMutualFriendsPage(
+      targetUserId,
+      requestId,
+      forceRefresh
+    ).then((response) => {
+      if (
+        requestId !== mutualFriendsPageRequestId ||
+        getTargetFriendsPageRoute()?.targetUserId !== targetUserId
+      ) {
+        return;
+      }
+      const normalized = normalizeMutualFriendsPageResponse(
+        response,
+        requestId,
+        targetUserId
+      );
+      if (!normalized) {
+        const error = new Error("Could not load mutual friends");
+        error.code = response?.code || "ROBLOX_UNAVAILABLE";
+        throw error;
+      }
+      mutualFriendsPageItems = normalized.friends;
+      mutualFriendsPageTotal = normalized.totalCount;
+      mutualFriendsPageLoadState = "ready";
+      mutualFriendsPageErrorCode = "";
+      queueMount();
+    }).catch((error) => {
+      if (requestId !== mutualFriendsPageRequestId) return;
+      mutualFriendsPageItems = [];
+      mutualFriendsPageTotal = null;
+      mutualFriendsPageLoadState = "error";
+      mutualFriendsPageErrorCode = String(error?.code || "ROBLOX_UNAVAILABLE");
+      queueMount();
+    }).finally(() => {
+      if (mutualFriendsPageRequestPromise === request) {
+        mutualFriendsPageRequestPromise = null;
+      }
+    });
+    mutualFriendsPageRequestPromise = request;
+    return request;
+  }
+
+  function restoreMutualFriendsPageCopy() {
+    if (
+      mutualFriendsPageHeadingRecord?.element?.isConnected &&
+      mutualFriendsPageHeadingRecord.element.textContent ===
+        mutualFriendsPageHeadingRecord.appliedText
+    ) {
+      mutualFriendsPageHeadingRecord.element.textContent =
+        mutualFriendsPageHeadingRecord.text;
+    }
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE}]`)
+      .forEach((element) =>
+        element.removeAttribute(MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE)
+      );
+    mutualFriendsPageHeadingRecord = null;
+    mutualFriendsPageSearchRecord = null;
+  }
+
+  function cleanupMutualFriendsPageView(resetState = true) {
+    mutualFriendsPageRequestId += 1;
+    mutualFriendsPageRequestPromise = null;
+    restoreMutualFriendsPageCopy();
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_LIST_ATTRIBUTE}], [${MUTUAL_FRIENDS_STATE_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_NATIVE_HIDDEN_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_NATIVE_HIDDEN_ATTRIBUTE));
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_PAGER_HIDDEN_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_PAGER_HIDDEN_ATTRIBUTE));
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_VIEW_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_VIEW_ATTRIBUTE));
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_NATIVE_PANEL_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_NATIVE_PANEL_ATTRIBUTE));
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_ROPRO_PANEL_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_ROPRO_PANEL_ATTRIBUTE));
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_COMPETING_ATTRIBUTE}]`)
+      .forEach((element) => {
+        if (!element.closest("[data-rsl-mutual-friends-tabs]")) {
+          element.removeAttribute(MUTUAL_FRIENDS_COMPETING_ATTRIBUTE);
+        }
+      });
+    if (resetState) {
+      mutualFriendsPageTargetUserId = null;
+      mutualFriendsPageLoadState = "idle";
+      mutualFriendsPageErrorCode = "";
+      mutualFriendsPageItems = [];
+      mutualFriendsPageTotal = null;
+    }
+  }
+
+  function cleanupMutualFriendsPageFeature() {
+    cleanupMutualFriendsPageView(true);
+    restoreMutualFriendsTabStates();
+    mutualFriendsPageTabModeActive = false;
+    mutualFriendsPageTabStyleTemplates = null;
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_TAB_ATTRIBUTE}]`)
+      .forEach((element) => element.remove());
+    document.querySelectorAll(`[${MUTUAL_FRIENDS_COMPETING_ATTRIBUTE}]`)
+      .forEach((element) => element.removeAttribute(MUTUAL_FRIENDS_COMPETING_ATTRIBUTE));
+    document.querySelectorAll("[data-rsl-mutual-friends-tabs]")
+      .forEach((element) => element.removeAttribute("data-rsl-mutual-friends-tabs"));
+    mutualFriendsPageObserver?.disconnect();
+    mutualFriendsPageObserver = null;
+    observedMutualFriendsPageMount = null;
+  }
+
+  function applyMutualFriendsPageSearch(mount) {
+    const input = mount.querySelector(`[${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}]`);
+    const query = (input?.value || "").trim().toLowerCase().replace(/^@+/, "");
+    mount.querySelectorAll(`[${MUTUAL_FRIENDS_LIST_ATTRIBUTE}] > li[data-rsl-mutual-friend-id]`)
+      .forEach((card) => {
+        const hidden = Boolean(query) &&
+          !String(card.dataset.rslMutualSearchText || "").includes(query);
+        card.toggleAttribute("data-rsl-mutual-search-hidden", hidden);
+      });
+  }
+
+  function bindMutualFriendsPageSearch(mount, input) {
+    if (!input || boundMutualFriendsSearchInputs.has(input)) return;
+    boundMutualFriendsSearchInputs.add(input);
+    input.addEventListener("input", () => applyMutualFriendsPageSearch(mount));
+  }
+
+  function syncMutualFriendsPageSearch(content, mount) {
+    const nativeInput = content.querySelector(
+      `input.friends-filter-searchbar-input:not([${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}]), ` +
+      `input[type='search']:not([${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}])`
+    );
+    if (!nativeInput) return null;
+    if (mutualFriendsPageSearchRecord?.element !== nativeInput) {
+      if (mutualFriendsPageSearchRecord?.element?.isConnected) {
+        mutualFriendsPageSearchRecord.element.removeAttribute(
+          MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE
+        );
+      }
+      mutualFriendsPageSearchRecord?.customInput?.remove();
+      mutualFriendsPageSearchRecord = null;
+    }
+    nativeInput.setAttribute(MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE, "");
+    let input = mutualFriendsPageSearchRecord?.customInput;
+    if (!input?.isConnected) {
+      input = nativeInput.cloneNode(true);
+      input.removeAttribute("id");
+      input.removeAttribute("name");
+      input.removeAttribute("aria-activedescendant");
+      input.setAttribute(MUTUAL_FRIENDS_SEARCH_ATTRIBUTE, "");
+      input.removeAttribute(MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE);
+      input.value = "";
+      input.placeholder = "Search Mutuals";
+      nativeInput.insertAdjacentElement("afterend", input);
+      mutualFriendsPageSearchRecord = { element: nativeInput, customInput: input };
+    }
+    bindMutualFriendsPageSearch(mount, input);
+    return input;
+  }
+
+  function renderMutualFriendsPage(mount) {
+    mount.setAttribute(MUTUAL_FRIENDS_VIEW_ATTRIBUTE, "");
+    const nativeLists = Array.from(
+      mount.querySelectorAll(
+        `.friends-content ul.hlist.avatar-cards:not([${MUTUAL_FRIENDS_LIST_ATTRIBUTE}]):not([${ONLINE_LIST_ATTRIBUTE}])`
+      )
+    );
+    const nativeList = nativeLists[0] || null;
+    captureNativeFriendCardTemplate(nativeList);
+    nativeLists.forEach((list) =>
+      list.setAttribute(MUTUAL_FRIENDS_NATIVE_HIDDEN_ATTRIBUTE, "")
+    );
+    getNativeFriendsPaginationElements(mount, nativeList).forEach((element) =>
+      element.setAttribute(MUTUAL_FRIENDS_PAGER_HIDDEN_ATTRIBUTE, "")
+    );
+    const content = nativeList?.closest(".friends-content") ||
+      mount.querySelector(".friends-content") || mount;
+    const nativePanel = content.closest(".tab-content.rbx-tab-content");
+    nativePanel?.setAttribute(MUTUAL_FRIENDS_NATIVE_PANEL_ATTRIBUTE, "");
+    mount.querySelectorAll(".mutuals-tab-content").forEach((panel) => {
+      if (!panel.contains(content)) {
+        panel.setAttribute(MUTUAL_FRIENDS_ROPRO_PANEL_ATTRIBUTE, "");
+      }
+    });
+    const heading = Array.from(content.querySelectorAll("h1, h2, h3"))
+      .find((element) =>
+        /^(?:Mutual )?Friends(?:\s*\(|$)/i.test(normalizeVisibleText(element))
+      );
+    if (heading) {
+      if (mutualFriendsPageHeadingRecord?.element !== heading) {
+        restoreMutualFriendsPageCopy();
+        mutualFriendsPageHeadingRecord = {
+          element: heading,
+          text: heading.textContent,
+          appliedText: null
+        };
+      }
+      const headingText = mutualFriendsPageLoadState === "ready"
+        ? `Mutual Friends (${mutualFriendsPageTotal})`
+        : mutualFriendsPageLoadState === "loading"
+          ? "Mutual Friends (...)"
+          : "Mutual Friends";
+      if (heading.textContent !== headingText) heading.textContent = headingText;
+      mutualFriendsPageHeadingRecord.appliedText = headingText;
+    }
+    syncMutualFriendsPageSearch(content, mount);
+
+    let list = mount.querySelector(`[${MUTUAL_FRIENDS_LIST_ATTRIBUTE}]`);
+    if (!list) {
+      list = document.createElement("ul");
+      list.className = nativeList?.className || "hlist avatar-cards";
+      list.classList.add("rsl-mutual-friends-list");
+      list.setAttribute(MUTUAL_FRIENDS_LIST_ATTRIBUTE, "");
+    }
+    if (nativeList) {
+      if (list.previousElementSibling !== nativeList) {
+        nativeList.insertAdjacentElement("afterend", list);
+      }
+    } else if (!list.isConnected) {
+      content.append(list);
+    }
+
+    const signature = JSON.stringify([
+      mutualFriendsPageLoadState,
+      mutualFriendsPageItems.map((friend) => [
+        friend.userId,
+        friend.displayName,
+        friend.username,
+        friend.presenceType,
+        friend.headshotUrl
+      ])
+    ]);
+    if (list.dataset.rslMutualListSignature !== signature) {
+      list.dataset.rslMutualListSignature = signature;
+      list.replaceChildren();
+      if (mutualFriendsPageLoadState === "ready") {
+        const fragment = document.createDocumentFragment();
+        for (const friend of mutualFriendsPageItems) {
+          const card = makeOnlineFriendCard(friend);
+          card.id = `rsl-mutual-friend-${friend.userId}`;
+          card.removeAttribute("data-rsl-online-friend-id");
+          card.dataset.rslMutualFriendId = friend.userId;
+          card.dataset.rslMutualSearchText =
+            `${friend.displayName} ${friend.username}`.toLowerCase();
+          fragment.append(card);
+        }
+        list.append(fragment);
+      }
+    }
+    let state = mount.querySelector(`[${MUTUAL_FRIENDS_STATE_ATTRIBUTE}]`);
+    if (mutualFriendsPageLoadState === "ready" && mutualFriendsPageItems.length > 0) {
+      state?.remove();
+    } else {
+      if (!state) {
+        state = document.createElement("div");
+        state.className = "rsl-online-friends-state";
+        state.setAttribute(MUTUAL_FRIENDS_STATE_ATTRIBUTE, "");
+        list.insertAdjacentElement("afterend", state);
+      }
+      const stateSignature = `${mutualFriendsPageLoadState}:${mutualFriendsPageErrorCode}`;
+      if (state.dataset.rslMutualStateSignature !== stateSignature) {
+        state.dataset.rslMutualStateSignature = stateSignature;
+        const message = document.createElement("p");
+        if (mutualFriendsPageLoadState === "loading" || mutualFriendsPageLoadState === "idle") {
+          message.textContent = "Loading all mutual friends...";
+          state.replaceChildren(message);
+        } else if (mutualFriendsPageLoadState === "error") {
+          message.textContent = ["PRIVATE", "PRIVACY_OR_REGION"].includes(
+            mutualFriendsPageErrorCode
+          )
+            ? "Mutual friends are unavailable because this friends list is limited."
+            : "Could not load mutual friends.";
+          const retry = document.createElement("button");
+          retry.type = "button";
+          retry.className = "rsl-online-friends-retry";
+          retry.textContent = "Retry";
+          retry.addEventListener("click", () => void loadMutualFriendsPage(true));
+          state.replaceChildren(message, retry);
+        } else {
+          message.textContent = "No mutual friends found.";
+          state.replaceChildren(message);
+        }
+      }
+    }
+    applyMutualFriendsPageSearch(mount);
+
+    for (const control of mount.querySelectorAll(
+      "button, [role='button'], [role='combobox'], select"
+    )) {
+      if (control.closest(`[${MUTUAL_FRIENDS_TAB_ATTRIBUTE}]`)) continue;
+      const text = normalizeVisibleText(control).toLowerCase();
+      if (
+        text.startsWith("mutual friends") || text.startsWith("mutuals")
+      ) {
+        const group = control.closest("[data-rsl-mutual-friends-tabs]");
+        const competing = group
+          ? getMutualFriendsDirectTab(group, control)
+          : control;
+        competing.setAttribute(MUTUAL_FRIENDS_COMPETING_ATTRIBUTE, "");
+      }
+    }
+  }
+
+  function ensureMutualFriendsPageObserver(mount) {
+    if (observedMutualFriendsPageMount === mount) return;
+    mutualFriendsPageObserver?.disconnect();
+    observedMutualFriendsPageMount = mount;
+    mutualFriendsPageObserver = new MutationObserver(queueMount);
+    mutualFriendsPageObserver.observe(mount, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "aria-selected", "aria-current"]
+    });
+  }
+
+  function mountMutualFriendsPage() {
+    const route = getTargetFriendsPageRoute();
+    if (!route || !isFeatureEnabled("enhancedProfiles")) {
+      cleanupMutualFriendsPageFeature();
+      return;
+    }
+    const viewerUserId = getEnhancedProfileViewerUserId();
+    if (viewerUserId && viewerUserId === route.targetUserId) {
+      cleanupMutualFriendsPageFeature();
+      return;
+    }
+    const mount =
+      document.querySelector("#friends-web-app, #friends-container") ||
+      (document.documentElement.dataset.rslMutualFriendsFixture === "true"
+        ? document.body
+        : null);
+    if (!mount) return;
+    ensureMutualFriendsPageObserver(mount);
+    syncMutualFriendsTab(mount, route);
+    if (!route.mutualsActive) {
+      if (mutualFriendsPageTargetUserId !== null) {
+        cleanupMutualFriendsPageView(true);
+      }
+      return;
+    }
+    if (mutualFriendsPageTargetUserId !== route.targetUserId) {
+      cleanupMutualFriendsPageView(true);
+      mutualFriendsPageTargetUserId = route.targetUserId;
+    }
+    renderMutualFriendsPage(mount);
+    if (mutualFriendsPageLoadState === "idle") {
+      void loadMutualFriendsPage(false);
+    }
   }
 
   function getBaseActivePresenceFriends() {
@@ -22123,6 +22958,58 @@
       margin: 0 !important;
       overflow: visible !important;
     }
+    .rtp-ropro-controls-slot,
+    .rtp-ropro-badge-slot,
+    .rtp-native-name-icons-slot,
+    .rtp-native-current-game-slot,
+    .rtp-native-actions-slot { display: contents; }
+    .rtp-ropro-controls-slot::slotted(#reputationDiv) {
+      display: flex !important;
+      min-width: 0 !important;
+      min-height: 24px !important;
+      align-items: center !important;
+      gap: 4px !important;
+      margin: 6px 0 0 !important;
+      float: none !important;
+      clear: both !important;
+      visibility: visible !important;
+      text-align: left !important;
+    }
+    .rtp-ropro-badge-slot::slotted(.ropro-profile-header-badge) {
+      display: inline-flex !important;
+      width: auto !important;
+      height: 18px !important;
+      margin: 0 !important;
+      align-items: center !important;
+      float: none !important;
+      visibility: visible !important;
+    }
+    .rtp-native-name-icons-slot::slotted([data-rsl-enhanced-profile-native-name-icons]) {
+      display: inline-flex !important;
+      width: auto !important;
+      margin: 0 !important;
+      align-items: center !important;
+      flex: 0 0 auto !important;
+      float: none !important;
+      visibility: visible !important;
+    }
+    .rtp-native-current-game-slot::slotted([data-rsl-enhanced-profile-native-current-game]) {
+      display: flex !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+      max-width: none !important;
+      margin: 0 !important;
+      visibility: visible !important;
+    }
+    .rtp-native-actions-slot::slotted([data-rsl-enhanced-profile-native-actions]) {
+      display: flex !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+      flex: 1 1 auto !important;
+      gap: 8px !important;
+      margin: 0 !important;
+      visibility: visible !important;
+    }
     .rtp-headshot,
     .rtp-avatar-fallback {
       width: 128px;
@@ -22160,7 +23047,13 @@
       font-variant-numeric: slashed-zero;
       font-size: 16px;
     }
+    .rtp-trusted-label { white-space: nowrap; }
     .rtp-badges { display: inline-flex; align-items: center; gap: 4px; }
+    .rtp-native-name-icon-fallback {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
     .rtp-verified {
       display: inline-grid;
       width: 18px;
@@ -22170,6 +23063,7 @@
     }
     .rtp-verified svg,
     .rtp-roblox-plus svg { display: block; width: 100%; height: 100%; }
+    .rtp-roblox-plus svg { fill: currentColor; }
     .rtp-roblox-plus {
       display: inline-grid;
       width: 18px;
@@ -22189,6 +23083,60 @@
       font-size: 12px;
       font-weight: 600;
       white-space: nowrap;
+    }
+    .rtp-profile-limit {
+      position: relative;
+      display: inline-flex;
+    }
+    .rtp-profile-limit summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .rtp-profile-limit summary::-webkit-details-marker { display: none; }
+    .rtp-profile-limit summary:hover,
+    .rtp-profile-limit[open] summary { background: var(--rtp-surface-hover); }
+    .rtp-profile-limit-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 20;
+      width: min(280px, calc(100vw - 32px));
+      padding: 12px;
+      border: 1px solid var(--rtp-border);
+      border-radius: 8px;
+      color: var(--rtp-page-text);
+      background: var(--rtp-surface-raised);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+    }
+    .rtp-profile-limit-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .rtp-profile-limit-copy {
+      margin: 2px 0 8px;
+      color: var(--rtp-muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .rtp-profile-limit-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .rtp-profile-limit-item {
+      display: flex;
+      min-height: 30px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--rtp-border);
+      font-size: 13px;
+    }
+    .rtp-profile-limit-item strong {
+      color: var(--rtp-muted);
+      font-size: 12px;
+      font-weight: 600;
     }
     .rtp-actions {
       position: absolute;
@@ -22303,7 +23251,8 @@
     .rtp-card-link:focus-visible,
     .rtp-friend:focus-visible,
     .rtp-social a:focus-visible,
-    .rtp-social button:focus-visible {
+    .rtp-social button:focus-visible,
+    .rtp-profile-limit summary:focus-visible {
       outline: 2px solid var(--rtp-blue);
       outline-offset: 2px;
     }
@@ -22412,6 +23361,166 @@
       line-height: 18px;
       overflow-wrap: anywhere;
       text-overflow: ellipsis;
+    }
+    .rtp-profile-detail-trigger {
+      display: inline-flex;
+      min-width: 0;
+      align-items: center;
+      margin: -2px -4px;
+      padding: 2px 4px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      font-weight: inherit;
+      line-height: inherit;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .rtp-profile-detail-trigger:hover { background: var(--rtp-surface-hover); }
+    .rtp-profile-detail-trigger:focus-visible,
+    .rtp-collection-dialog button:focus-visible,
+    .rtp-collection-row:focus-visible {
+      outline: 2px solid var(--rtp-blue);
+      outline-offset: 2px;
+    }
+    .rtp-collection-dialog {
+      width: calc(100% - 32px);
+      max-width: 520px;
+      max-height: min(680px, calc(100vh - 32px));
+      margin: auto;
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--rtp-border);
+      border-radius: 12px;
+      color: var(--rtp-page-text);
+      background: var(--rtp-surface-raised);
+      box-shadow: 0 20px 64px rgba(0, 0, 0, .42);
+    }
+    .rtp-collection-dialog::backdrop { background: rgba(0, 0, 0, .58); }
+    .rtp-collection-dialog-surface {
+      display: flex;
+      max-height: min(680px, calc(100vh - 32px));
+      flex-direction: column;
+    }
+    .rtp-collection-dialog-header {
+      display: flex;
+      min-height: 68px;
+      flex: 0 0 auto;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid var(--rtp-border);
+    }
+    .rtp-collection-dialog-header > div { min-width: 0; flex: 1 1 auto; }
+    .rtp-collection-dialog-title { margin: 0; font-size: 20px; line-height: 1.25; }
+    .rtp-collection-dialog-description {
+      margin: 3px 0 0;
+      color: var(--rtp-muted);
+      font-size: 13px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .rtp-collection-dialog-close {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      flex: 0 0 40px;
+      margin: -6px -6px 0 0;
+      padding: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 25px;
+      line-height: 1;
+    }
+    .rtp-collection-dialog-close:hover { background: var(--rtp-surface-hover); }
+    .rtp-collection-list {
+      display: grid;
+      min-height: 0;
+      flex: 1 1 auto;
+      margin: 0;
+      padding: 8px;
+      overflow: auto;
+      overscroll-behavior: contain;
+      list-style: none;
+    }
+    .rtp-collection-list--details { gap: 0; padding: 8px 18px 14px; }
+    .rtp-account-age-row {
+      display: grid;
+      grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr);
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--rtp-border);
+    }
+    .rtp-account-age-row:last-child { border-bottom: 0; }
+    .rtp-account-age-label { color: var(--rtp-muted); font-size: 13px; }
+    .rtp-account-age-value {
+      color: var(--rtp-page-text);
+      font-size: 13px;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .rtp-collection-list-item { min-width: 0; }
+    .rtp-collection-row {
+      display: grid;
+      min-height: 64px;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+    }
+    .rtp-collection-row:hover { background: var(--rtp-surface-hover); }
+    .rtp-collection-visual,
+    .rtp-collection-image,
+    .rtp-collection-visual > .rtp-game-fallback,
+    .rtp-collection-visual > .rtp-base-fallback {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--rtp-surface-strong);
+      object-fit: cover;
+    }
+    .rtp-collection-visual svg { width: 45%; height: 45%; fill: currentColor; }
+    .rtp-collection-copy { min-width: 0; }
+    .rtp-collection-name {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 4px;
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-collection-name-text { overflow: hidden; text-overflow: ellipsis; }
+    .rtp-collection-meta {
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--rtp-muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rtp-collection-chevron { color: var(--rtp-muted); font-size: 22px; }
+    .rtp-collection-dialog-footer {
+      flex: 0 0 auto;
+      padding: 10px 18px 14px;
+      border-top: 1px solid var(--rtp-border);
+      color: var(--rtp-muted);
+      font-size: 12px;
     }
     [data-rtp-profile-badge-count] { font-variant-numeric: tabular-nums; }
     .rtp-profile-detail--wide { flex-basis: 100%; }
@@ -22743,6 +23852,15 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .rtp-game-source {
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--rtp-muted);
+      font-size: 11px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .rtp-base-tile {
       min-width: 0;
       flex: 0 0 calc((100% - 84px) / 7);
@@ -23028,6 +24146,16 @@
     const name = normalizeEnhancedProfileText(rawValue?.name, 200);
     if (!universeId || !rootPlaceId || !name) return null;
     const ratingPercent = normalizeEnhancedProfileCount(rawValue?.ratingPercent);
+    const rawCreatorType = typeof rawValue?.creatorType === "string"
+      ? rawValue.creatorType.trim().toLowerCase()
+      : "";
+    const creatorType = rawCreatorType === "group"
+      ? "group"
+      : rawCreatorType === "user"
+        ? "user"
+        : null;
+    const creatorId = normalizeEnhancedProfileId(rawValue?.creatorId);
+    const creatorName = normalizeEnhancedProfileText(rawValue?.creatorName, 160);
     return {
       universeId,
       rootPlaceId,
@@ -23042,9 +24170,57 @@
       createdAt: normalizeEnhancedProfileDate(rawValue?.createdAt),
       updatedAt: normalizeEnhancedProfileDate(rawValue?.updatedAt),
       genre: normalizeEnhancedProfileText(rawValue?.genre, 80),
+      creatorType: creatorType && creatorId && creatorName ? creatorType : null,
+      creatorId: creatorType && creatorId && creatorName ? creatorId : null,
+      creatorName: creatorType && creatorId && creatorName ? creatorName : null,
+      creatorIsVerified:
+        Boolean(creatorType && creatorId && creatorName) &&
+        rawValue?.creatorIsVerified === true,
       iconUrl: isSafeEnhancedProfileImageUrl(rawValue?.iconUrl)
         ? rawValue.iconUrl
         : null
+    };
+  }
+
+  function normalizeEnhancedProfileMutualGroups(
+    rawValue,
+    mutualGroupsCount
+  ) {
+    if (
+      rawValue !== undefined &&
+      rawValue !== null &&
+      (
+        typeof rawValue !== "object" ||
+        Array.isArray(rawValue) ||
+        !Array.isArray(rawValue.items)
+      )
+    ) {
+      return null;
+    }
+    const items = [];
+    const seenCommunityIds = new Set();
+    for (const item of rawValue?.items || []) {
+      const communityId = normalizeEnhancedProfileId(item?.communityId);
+      const name = normalizeEnhancedProfileText(item?.name, 160);
+      if (!communityId || !name || seenCommunityIds.has(communityId)) continue;
+      seenCommunityIds.add(communityId);
+      items.push({
+        communityId,
+        name,
+        memberCount: normalizeEnhancedProfileCount(item?.memberCount),
+        role: normalizeEnhancedProfileText(item?.role, 120),
+        isVerified: item?.isVerified === true,
+        iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
+          ? item.iconUrl
+          : null
+      });
+      if (items.length >= ENHANCED_PROFILE_MAX_GROUP_DETAIL_ITEMS) break;
+    }
+    if (mutualGroupsCount < items.length) return null;
+    return {
+      items,
+      hasMore:
+        rawValue?.hasMore === true || mutualGroupsCount > items.length
     };
   }
 
@@ -23175,9 +24351,28 @@
         .slice(0, limit);
       const totalCount = normalizeEnhancedProfileCount(value.totalCount);
       const countIsExact = value.countIsExact === true;
+      const coverageIsComplete = typeof value.coverageIsComplete === "boolean"
+        ? value.coverageIsComplete
+        : countIsExact;
+      const coverageStatus = ["complete", "truncated", "partial"].includes(
+        value.coverageStatus
+      )
+        ? value.coverageStatus
+        : coverageIsComplete
+          ? "complete"
+          : value.hasMore === true
+            ? "truncated"
+            : "partial";
       if (
         (countIsExact && totalCount === null) ||
-        (totalCount !== null && totalCount < items.length)
+        (totalCount !== null && totalCount < items.length) ||
+        (countIsExact && !coverageIsComplete) ||
+        (coverageStatus === "complete") !== coverageIsComplete ||
+        (coverageStatus === "complete" && !countIsExact) ||
+        (value.coverageStatus !== undefined &&
+          !["complete", "truncated", "partial"].includes(
+            value.coverageStatus
+          ))
       ) {
         return null;
       }
@@ -23185,7 +24380,9 @@
         items,
         hasMore: value.hasMore === true,
         totalCount,
-        countIsExact
+        countIsExact,
+        coverageIsComplete,
+        coverageStatus
       };
     };
     const experiences = normalizeEnhancedProfileSection(
@@ -23236,9 +24433,16 @@
         const mutualGroupsCount = normalizeEnhancedProfileCount(
           value.mutualGroupsCount
         );
+        const mutualGroups = mutualGroupsCount === null
+          ? null
+          : normalizeEnhancedProfileMutualGroups(
+              value.mutualGroups,
+              mutualGroupsCount
+            );
         if (
           mutualFriendsCount === null ||
           mutualGroupsCount === null ||
+          !mutualGroups ||
           mutualFriendsCount < items.length ||
           typeof value.mutualFriendsAvailable !== "boolean" ||
           typeof value.isFriend !== "boolean" ||
@@ -23254,6 +24458,7 @@
           hasMore:
             value.hasMore === true || mutualFriendsCount > items.length,
           mutualGroupsCount,
+          mutualGroups,
           isFriend: value.isFriend,
           canChat: value.canChat
         };
@@ -23262,29 +24467,57 @@
     const communities = normalizeEnhancedProfileSection(
       response.sections.communities,
       (value) => {
-        const items = (Array.isArray(value.items) ? value.items : [])
-          .map((item) => {
+        const normalizeCommunityItems = (rawItems, limit = 12) => {
+          if (!Array.isArray(rawItems)) return null;
+          const seenCommunityIds = new Set();
+          const items = [];
+          for (const item of rawItems) {
             const communityId = normalizeEnhancedProfileId(item?.communityId);
             const name = normalizeEnhancedProfileText(item?.name, 160);
-            return communityId && name
-              ? {
-                  communityId,
-                  name,
-                  memberCount: normalizeEnhancedProfileCount(item?.memberCount),
-                  role: normalizeEnhancedProfileText(item?.role, 120),
-                  isVerified: item?.isVerified === true,
-                  iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
-                    ? item.iconUrl
-                    : null
-                }
-              : null;
-          })
-          .filter(Boolean)
-          .slice(0, 12);
+            if (!communityId || !name || seenCommunityIds.has(communityId)) {
+              continue;
+            }
+            seenCommunityIds.add(communityId);
+            items.push({
+              communityId,
+              name,
+              memberCount: normalizeEnhancedProfileCount(item?.memberCount),
+              role: normalizeEnhancedProfileText(item?.role, 120),
+              isVerified: item?.isVerified === true,
+              iconUrl: isSafeEnhancedProfileImageUrl(item?.iconUrl)
+                ? item.iconUrl
+                : null
+            });
+            if (items.length >= limit) break;
+          }
+          return items;
+        };
+        const items = normalizeCommunityItems(
+          Array.isArray(value.items) ? value.items : []
+        );
         const totalCount = normalizeEnhancedProfileCount(value.totalCount);
         const ownedCount = normalizeEnhancedProfileCount(value.ownedCount);
+        const rawOwnedGroups = value.ownedGroups;
         if (
+          rawOwnedGroups !== undefined &&
+          rawOwnedGroups !== null &&
+          (
+            typeof rawOwnedGroups !== "object" ||
+            Array.isArray(rawOwnedGroups) ||
+            !Array.isArray(rawOwnedGroups.items)
+          )
+        ) {
+          return null;
+        }
+        const ownedItems = normalizeCommunityItems(
+          Array.isArray(rawOwnedGroups?.items) ? rawOwnedGroups.items : [],
+          ENHANCED_PROFILE_MAX_GROUP_DETAIL_ITEMS
+        );
+        if (
+          !items ||
+          !ownedItems ||
           (totalCount !== null && totalCount < items.length) ||
+          (ownedCount !== null && ownedCount < ownedItems.length) ||
           (totalCount !== null && ownedCount !== null && ownedCount > totalCount)
         ) {
           return null;
@@ -23293,7 +24526,13 @@
           items,
           hasMore: value.hasMore === true,
           totalCount,
-          ownedCount
+          ownedCount,
+          ownedGroups: {
+            items: ownedItems,
+            hasMore:
+              rawOwnedGroups?.hasMore === true ||
+              (ownedCount !== null && ownedCount > ownedItems.length)
+          }
         };
       }
     );
@@ -23457,9 +24696,16 @@
       const mutualGroupsCount = normalizeEnhancedProfileCount(
         value.mutualGroupsCount
       );
+      const mutualGroups = mutualGroupsCount === null
+        ? null
+        : normalizeEnhancedProfileMutualGroups(
+            value.mutualGroups,
+            mutualGroupsCount
+          );
       if (
         mutualFriendsCount === null ||
         mutualGroupsCount === null ||
+        !mutualGroups ||
         mutualFriendsCount < items.length ||
         typeof value.mutualFriendsAvailable !== "boolean" ||
         typeof value.isFriend !== "boolean" ||
@@ -23474,6 +24720,7 @@
         items,
         hasMore: value.hasMore === true || mutualFriendsCount > items.length,
         mutualGroupsCount,
+        mutualGroups,
         isFriend: value.isFriend,
         canChat: value.canChat
       };
@@ -23654,6 +24901,18 @@
   function cleanupEnhancedProfileThumbnailObserver() {
     enhancedProfileThumbnailObserver?.disconnect();
     enhancedProfileThumbnailObserver = null;
+  }
+
+  function unobserveEnhancedProfileThumbnailDescendants(root) {
+    if (!root) return;
+    const targets = [
+      ...(root.matches?.("[data-rtp-thumbnail-kind]") ? [root] : []),
+      ...(root.querySelectorAll?.("[data-rtp-thumbnail-kind]") || [])
+    ];
+    for (const target of targets) {
+      enhancedProfileThumbnailObserver?.unobserve(target);
+      delete target._rtpLoadThumbnail;
+    }
   }
 
   function makeEnhancedProfileHydratedImage({
@@ -23863,6 +25122,12 @@
       : formatted;
   }
 
+  function getEnhancedProfileGameCreatorLabel(game) {
+    return game?.creatorType === "group" && game.creatorName
+      ? `Owned group · ${game.creatorName}`
+      : "Profile";
+  }
+
   function formatEnhancedProfileDate(value, includeTime = false) {
     const timestamp = Date.parse(value || "");
     if (!Number.isFinite(timestamp)) return "Unavailable";
@@ -23876,6 +25141,7 @@
               day: "numeric",
               hour: "numeric",
               minute: "2-digit",
+              second: "2-digit",
               timeZoneName: "short"
             }
           : { dateStyle: "medium" }
@@ -23885,24 +25151,84 @@
     }
   }
 
-  function formatEnhancedProfileAccountAge(value) {
+  function addEnhancedProfileUtcMonthsClamped(date, monthCount) {
+    const result = new Date(date.getTime());
+    const originalDay = result.getUTCDate();
+    result.setUTCDate(1);
+    result.setUTCMonth(result.getUTCMonth() + monthCount);
+    const lastDay = new Date(Date.UTC(
+      result.getUTCFullYear(),
+      result.getUTCMonth() + 1,
+      0
+    )).getUTCDate();
+    result.setUTCDate(Math.min(originalDay, lastDay));
+    return result;
+  }
+
+  function getEnhancedProfileAccountAgeDetails(value, nowValue = Date.now()) {
     const createdAt = Date.parse(value || "");
-    if (!Number.isFinite(createdAt) || createdAt > Date.now()) return "Unavailable";
+    const nowTimestamp = Number(nowValue);
+    if (
+      !Number.isFinite(createdAt) ||
+      !Number.isFinite(nowTimestamp) ||
+      createdAt > nowTimestamp
+    ) {
+      return null;
+    }
     const created = new Date(createdAt);
-    const now = new Date();
-    let totalMonths =
+    const now = new Date(nowTimestamp);
+    let totalMonths = Math.max(
+      0,
       (now.getUTCFullYear() - created.getUTCFullYear()) * 12 +
-      now.getUTCMonth() - created.getUTCMonth();
-    const monthAnniversary = new Date(createdAt);
-    monthAnniversary.setUTCMonth(created.getUTCMonth() + totalMonths);
-    if (monthAnniversary > now) totalMonths -= 1;
-    totalMonths = Math.max(0, totalMonths);
-    const years = Math.floor(totalMonths / 12);
-    const months = totalMonths % 12;
+        now.getUTCMonth() - created.getUTCMonth()
+    );
+    let anniversary = addEnhancedProfileUtcMonthsClamped(created, totalMonths);
+    while (totalMonths > 0 && anniversary.getTime() > nowTimestamp) {
+      totalMonths -= 1;
+      anniversary = addEnhancedProfileUtcMonthsClamped(created, totalMonths);
+    }
+    while (
+      addEnhancedProfileUtcMonthsClamped(created, totalMonths + 1).getTime() <=
+        nowTimestamp
+    ) {
+      totalMonths += 1;
+      anniversary = addEnhancedProfileUtcMonthsClamped(created, totalMonths);
+    }
+    return {
+      createdAt: new Date(createdAt).toISOString(),
+      years: Math.floor(totalMonths / 12),
+      months: totalMonths % 12,
+      days: Math.max(
+        0,
+        Math.floor((nowTimestamp - anniversary.getTime()) / 86_400_000)
+      ),
+      totalDays: Math.max(
+        0,
+        Math.floor((nowTimestamp - createdAt) / 86_400_000)
+      )
+    };
+  }
+
+  function formatEnhancedProfileDetailedAccountAge(details) {
+    if (!details) return "Unavailable";
+    return [
+      [details.years, "year"],
+      [details.months, "month"],
+      [details.days, "day"]
+    ]
+      .map(([value, unit]) => `${formatEnhancedProfileNumber(value)} ${unit}${
+        value === 1 ? "" : "s"
+      }`)
+      .join(", ");
+  }
+
+  function formatEnhancedProfileAccountAge(value) {
+    const details = getEnhancedProfileAccountAgeDetails(value);
+    if (!details) return "Unavailable";
+    const { years, months, days } = details;
     if (years > 0 && months > 0) return `${years}Y ${months}M`;
     if (years > 0) return `${years}Y`;
     if (months > 0) return `${months}M`;
-    const days = Math.max(0, Math.floor((Date.now() - createdAt) / 86_400_000));
     return `${days}D`;
   }
 
@@ -24638,8 +25964,370 @@
   function getEnhancedProfileInventoryLabel(inventorySection) {
     if (inventorySection?.status !== "ready") return null;
     if (inventorySection.data.visibility === "public") return "Public";
-    if (inventorySection.data.visibility === "limited") return "Limited";
+    if (inventorySection.data.visibility === "limited") return "Private";
     return null;
+  }
+
+  function cleanupEnhancedProfileCollectionDialog(restoreFocus = false) {
+    const dialog = enhancedProfileCollectionDialog;
+    const opener = enhancedProfileCollectionDialogOpener;
+    enhancedProfileCollectionDialog = null;
+    enhancedProfileCollectionDialogOpener = null;
+    if (dialog?.open) {
+      try {
+        dialog.close();
+      } catch {
+        dialog.removeAttribute("open");
+      }
+    }
+    unobserveEnhancedProfileThumbnailDescendants(dialog);
+    dialog?.remove();
+    if (restoreFocus && opener?.isConnected) {
+      opener.focus({ preventScroll: true });
+    }
+  }
+
+  function closeEnhancedProfileCollectionDialog(restoreFocus = true) {
+    const dialog = enhancedProfileCollectionDialog;
+    if (!dialog) return;
+    const opener = enhancedProfileCollectionDialogOpener;
+    enhancedProfileCollectionDialogOpener = null;
+    const routeUserId = enhancedProfileRouteUserId;
+    const restoreOpenerFocus = () => {
+      if (
+        restoreFocus &&
+        opener?.isConnected &&
+        enhancedProfileHost?.isConnected &&
+        enhancedProfileCollectionDialog === dialog &&
+        dialog.open !== true &&
+        parseEnhancedProfileRoute()?.userId === routeUserId &&
+        enhancedProfileRouteUserId === routeUserId
+      ) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+    if (dialog.open && typeof dialog.close === "function") {
+      if (restoreFocus) {
+        dialog.addEventListener("close", restoreOpenerFocus, { once: true });
+      }
+      dialog.close();
+    } else {
+      dialog.removeAttribute("open");
+      restoreOpenerFocus();
+    }
+  }
+
+  function ensureEnhancedProfileCollectionDialog() {
+    if (
+      enhancedProfileCollectionDialog?.isConnected &&
+      enhancedProfileCollectionDialog.getRootNode() === enhancedProfileShadowRoot
+    ) {
+      return enhancedProfileCollectionDialog;
+    }
+    cleanupEnhancedProfileCollectionDialog(false);
+    if (!enhancedProfileShadowRoot) return null;
+    const dialog = makeEnhancedProfileElement(
+      "dialog",
+      "rtp-collection-dialog"
+    );
+    dialog.id = "rtp-profile-collection-dialog";
+    dialog.setAttribute("aria-modal", "true");
+    const surface = makeEnhancedProfileElement(
+      "div",
+      "rtp-collection-dialog-surface"
+    );
+    const header = makeEnhancedProfileElement(
+      "header",
+      "rtp-collection-dialog-header"
+    );
+    const heading = makeEnhancedProfileElement("div");
+    const title = makeEnhancedProfileElement(
+      "h2",
+      "rtp-collection-dialog-title"
+    );
+    title.id = "rtp-profile-collection-title";
+    const description = makeEnhancedProfileElement(
+      "p",
+      "rtp-collection-dialog-description"
+    );
+    description.id = "rtp-profile-collection-description";
+    heading.append(title, description);
+    const closeButton = makeEnhancedProfileElement(
+      "button",
+      "rtp-collection-dialog-close",
+      "×"
+    );
+    closeButton.type = "button";
+    closeButton.setAttribute("aria-label", "Close");
+    closeButton.addEventListener("click", () => {
+      closeEnhancedProfileCollectionDialog(true);
+    });
+    header.append(heading, closeButton);
+    const list = makeEnhancedProfileElement("ul", "rtp-collection-list");
+    const footer = makeEnhancedProfileElement(
+      "footer",
+      "rtp-collection-dialog-footer"
+    );
+    surface.append(header, list, footer);
+    dialog.append(surface);
+    dialog.setAttribute("aria-labelledby", title.id);
+    dialog.setAttribute("aria-describedby", description.id);
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeEnhancedProfileCollectionDialog(true);
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) closeEnhancedProfileCollectionDialog(true);
+    });
+    enhancedProfileShadowRoot.append(dialog);
+    enhancedProfileCollectionDialog = dialog;
+    return dialog;
+  }
+
+  function makeEnhancedProfileCollectionRow(kind, item) {
+    const isGame = kind === "games";
+    const href = isGame
+      ? `/games/${item.rootPlaceId}`
+      : `/communities/${item.communityId}`;
+    const row = makeEnhancedProfileElement("a", "rtp-collection-row");
+    row.href = href;
+    row.setAttribute(
+      "aria-label",
+      isGame ? `View ${item.name}` : `View community ${item.name}`
+    );
+    const visual = makeEnhancedProfileElement("span", "rtp-collection-visual");
+    visual.append(
+      isGame
+        ? makeEnhancedProfileGameImage(item, "rtp-collection-image")
+        : makeEnhancedProfileBaseImage(
+            item.iconUrl,
+            "",
+            { kind: "community", id: item.communityId },
+            "rtp-collection-image"
+          )
+    );
+    const copy = makeEnhancedProfileElement("span", "rtp-collection-copy");
+    const name = makeEnhancedProfileElement("span", "rtp-collection-name");
+    name.append(makeEnhancedProfileElement(
+      "span",
+      "rtp-collection-name-text",
+      item.name
+    ));
+    if (!isGame && item.isVerified) {
+      name.append(makeEnhancedProfileVerifiedIcon("rtp-mini-verified"));
+    }
+    const metaParts = isGame
+      ? [
+          getEnhancedProfileGameCreatorLabel(item),
+          item.playing !== null
+            ? `${formatEnhancedProfileCompactNumber(item.playing)} active`
+            : "",
+          item.ratingPercent !== null ? `${item.ratingPercent}% rating` : ""
+        ]
+      : [
+          item.role || "Member",
+          item.memberCount !== null
+            ? `${formatEnhancedProfileMemberCount(item.memberCount)} members`
+            : ""
+        ];
+    copy.append(
+      name,
+      makeEnhancedProfileElement(
+        "span",
+        "rtp-collection-meta",
+        metaParts.filter(Boolean).join(" · ")
+      )
+    );
+    const chevron = makeEnhancedProfileElement(
+      "span",
+      "rtp-collection-chevron",
+      "›"
+    );
+    chevron.setAttribute("aria-hidden", "true");
+    row.append(visual, copy, chevron);
+    const listItem = makeEnhancedProfileElement(
+      "li",
+      "rtp-collection-list-item"
+    );
+    listItem.append(row);
+    return listItem;
+  }
+
+  function showEnhancedProfileDetailDialog(dialog, data, opener) {
+    if (
+      !dialog ||
+      !opener?.isConnected ||
+      data?.userId !== enhancedProfileRouteUserId
+    ) {
+      return false;
+    }
+    dialog.dataset.rtpCollectionRouteUserId = data.userId;
+    enhancedProfileCollectionDialogOpener = opener;
+    try {
+      dialog.showModal();
+    } catch {
+      enhancedProfileCollectionDialogOpener = null;
+      dialog.removeAttribute("open");
+      return false;
+    }
+    window.requestAnimationFrame(() => {
+      if (
+        !dialog.open ||
+        enhancedProfileCollectionDialog !== dialog ||
+        dialog.dataset.rtpCollectionRouteUserId !== enhancedProfileRouteUserId
+      ) {
+        return;
+      }
+      dialog.querySelector(".rtp-collection-dialog-close")
+        ?.focus({ preventScroll: true });
+    });
+    return true;
+  }
+
+  function makeEnhancedProfileAccountAgeRow(label, value, dateTime = "") {
+    const row = makeEnhancedProfileElement("li", "rtp-account-age-row");
+    const valueElement = makeEnhancedProfileElement(
+      dateTime ? "time" : "span",
+      "rtp-account-age-value",
+      value
+    );
+    if (dateTime) valueElement.dateTime = dateTime;
+    row.append(
+      makeEnhancedProfileElement("span", "rtp-account-age-label", label),
+      valueElement
+    );
+    return row;
+  }
+
+  function openEnhancedProfileAccountAgeDialog(data, opener) {
+    const details = getEnhancedProfileAccountAgeDetails(
+      data?.sections?.identity?.data?.createdAt
+    );
+    if (
+      !details ||
+      !opener?.isConnected ||
+      data?.userId !== enhancedProfileRouteUserId
+    ) {
+      return false;
+    }
+    const dialog = ensureEnhancedProfileCollectionDialog();
+    if (!dialog) return false;
+    if (dialog.open) closeEnhancedProfileCollectionDialog(false);
+    const title = dialog.querySelector(".rtp-collection-dialog-title");
+    const description = dialog.querySelector(
+      ".rtp-collection-dialog-description"
+    );
+    const list = dialog.querySelector(".rtp-collection-list");
+    const footer = dialog.querySelector(".rtp-collection-dialog-footer");
+    const username = data.sections.identity.data.username;
+    title.textContent = "Account age";
+    description.textContent = `Account creation details for @${username}.`;
+    list.classList.add("rtp-collection-list--details");
+    unobserveEnhancedProfileThumbnailDescendants(list);
+    list.replaceChildren(
+      makeEnhancedProfileAccountAgeRow(
+        "Created",
+        formatEnhancedProfileDate(details.createdAt, true),
+        details.createdAt
+      ),
+      makeEnhancedProfileAccountAgeRow(
+        "Calendar age",
+        formatEnhancedProfileDetailedAccountAge(details)
+      ),
+      makeEnhancedProfileAccountAgeRow(
+        "Total days",
+        formatEnhancedProfileNumber(details.totalDays)
+      )
+    );
+    footer.hidden = true;
+    footer.textContent = "";
+    dialog.dataset.rtpCollectionKind = "account-age";
+    return showEnhancedProfileDetailDialog(dialog, data, opener);
+  }
+
+  function openEnhancedProfileCollectionDialog(kind, data, opener) {
+    const isGames = kind === "games";
+    const isMutualGroups = kind === "mutual-groups";
+    const isOwnedGroups = kind === "owned-groups";
+    const items = isGames
+      ? data?.sections?.experiences?.data?.items
+      : isMutualGroups
+        ? data?.sections?.relationships?.data?.mutualGroups?.items
+        : isOwnedGroups
+          ? data?.sections?.communities?.data?.ownedGroups?.items
+          : null;
+    if (
+      !["games", "mutual-groups", "owned-groups"].includes(kind) ||
+      !Array.isArray(items) ||
+      items.length === 0 ||
+      !opener?.isConnected ||
+      data?.userId !== enhancedProfileRouteUserId
+    ) {
+      return false;
+    }
+    const dialog = ensureEnhancedProfileCollectionDialog();
+    if (!dialog) return false;
+    if (dialog.open) closeEnhancedProfileCollectionDialog(false);
+    const title = dialog.querySelector(".rtp-collection-dialog-title");
+    const description = dialog.querySelector(
+      ".rtp-collection-dialog-description"
+    );
+    const list = dialog.querySelector(".rtp-collection-list");
+    const footer = dialog.querySelector(".rtp-collection-dialog-footer");
+    const username = data.sections.identity.data.username;
+    title.textContent = isGames
+      ? "Games"
+      : isMutualGroups
+        ? "Mutual groups"
+        : "Owned groups";
+    description.textContent = isGames
+      ? `Public experiences owned by @${username} or groups they own.`
+      : isMutualGroups
+        ? `Communities you share with @${username}. Roles shown belong to @${username}.`
+        : `Communities owned by @${username}.`;
+    list.classList.remove("rtp-collection-list--details");
+    unobserveEnhancedProfileThumbnailDescendants(list);
+    list.replaceChildren(...items.map((item) =>
+      makeEnhancedProfileCollectionRow(kind, item)
+    ));
+    const count = isGames
+      ? data.sections.experiences.data.totalCount
+      : isMutualGroups
+        ? data.sections.relationships.data.mutualGroupsCount
+        : data.sections.communities.data.ownedCount;
+    const hasMore = isGames
+      ? data.sections.experiences.data.hasMore
+      : isMutualGroups
+        ? data.sections.relationships.data.mutualGroups.hasMore
+        : data.sections.communities.data.ownedGroups.hasMore;
+    const gameCoverageStatus = isGames
+      ? data.sections.experiences.data.coverageStatus
+      : "complete";
+    const hasPartialGameCoverage = gameCoverageStatus === "partial";
+    const hasTruncatedGameCoverage = gameCoverageStatus === "truncated";
+    footer.hidden = !hasPartialGameCoverage &&
+      !hasTruncatedGameCoverage &&
+      !hasMore &&
+      (!Number.isSafeInteger(count) || count <= items.length);
+    footer.textContent = hasPartialGameCoverage
+      ? `Some owned-game sources were unavailable. Showing ${
+          formatEnhancedProfileNumber(items.length)
+        } loaded ${items.length === 1 ? "game" : "games"}.`
+      : hasTruncatedGameCoverage
+        ? hasMore
+          ? `Showing the first ${formatEnhancedProfileNumber(items.length)} games.`
+          : `Showing ${formatEnhancedProfileNumber(items.length)} loaded ${
+              items.length === 1 ? "game" : "games"
+            }; games from additional owned groups may not be included.`
+      : Number.isSafeInteger(count) && count > items.length
+        ? `Showing ${formatEnhancedProfileNumber(items.length)} of ${
+            formatEnhancedProfileNumber(count)
+          }${isGames && data.sections.experiences.data.countIsExact === false ? "+" : ""}.`
+        : hasMore
+          ? `Showing the first ${formatEnhancedProfileNumber(items.length)}.`
+          : "";
+    dialog.dataset.rtpCollectionKind = kind;
+    return showEnhancedProfileDetailDialog(dialog, data, opener);
   }
 
   function makeEnhancedProfileHeaderDetail(label, value, options = {}) {
@@ -24649,29 +26337,160 @@
       `rtp-profile-detail${options.wide ? " rtp-profile-detail--wide" : ""}`
     );
     const term = makeEnhancedProfileElement("dt", "", label);
-    const detail = makeEnhancedProfileElement("dd", "", value);
+    const detail = makeEnhancedProfileElement("dd");
+    if (typeof options.onClick === "function") {
+      const trigger = makeEnhancedProfileElement(
+        "button",
+        "rtp-profile-detail-trigger",
+        value
+      );
+      trigger.type = "button";
+      trigger.dataset.rtpProfileDetailAction = options.action || "";
+      trigger.setAttribute("aria-haspopup", "dialog");
+      trigger.setAttribute("aria-controls", "rtp-profile-collection-dialog");
+      trigger.setAttribute("aria-label", options.ariaLabel || `View ${label}`);
+      trigger.addEventListener("click", () => options.onClick(trigger));
+      detail.append(trigger);
+    } else {
+      detail.textContent = String(value);
+    }
     if (options.title) detail.title = options.title;
     row.append(term, detail);
     return row;
   }
 
-  function isEnhancedProfileLimited(data) {
+  function getEnhancedProfileLimitations(data) {
+    const limitations = [];
+    const labels = new Set();
+    const add = (label, status) => {
+      if (!label || labels.has(label)) return;
+      labels.add(label);
+      limitations.push({ label, status });
+    };
+    const sections = data?.sections || {};
     const relationships = data?.sections?.relationships;
+    if (sections.friends?.code === "PRIVATE") add("Friends", "Private");
     if (
       relationships?.status === "ready" &&
       relationships.data.profileLimited === true
     ) {
-      return true;
+      add("Mutual friends", "Limited");
+    } else if (relationships?.code === "PRIVATE") {
+      add("Mutual friends", "Private");
+    }
+    if (sections.communities?.code === "PRIVATE") {
+      add("Communities", "Private");
     }
     if (
-      data?.sections?.badges?.status === "ready" &&
-      data.sections.badges.data.countStatus === "private"
+      sections.inventory?.status === "ready" &&
+      sections.inventory.data.visibility === "limited"
     ) {
-      return true;
+      add("Inventory", "Private");
+    } else if (sections.inventory?.code === "PRIVATE") {
+      add("Inventory", "Private");
     }
-    return ["friends", "communities", "badges"].some(
-      (sectionName) => data?.sections?.[sectionName]?.code === "PRIVATE"
+    if (
+      (sections.badges?.status === "ready" &&
+        sections.badges.data.countStatus === "private") ||
+      sections.badges?.code === "PRIVATE"
+    ) {
+      add("Badges", "Private");
+    }
+    for (const [sectionName, label] of [
+      ["presence", "Presence"],
+      ["counts", "Friends, followers and following"],
+      ["usernames", "Previous names"],
+      ["wearing", "Currently Wearing"],
+      ["experiences", "Experiences"],
+      ["favorites", "Favorites"]
+    ]) {
+      if (sections[sectionName]?.code === "PRIVATE") add(label, "Private");
+    }
+    return limitations;
+  }
+
+  function makeEnhancedProfileLimitDisclosure(limitations) {
+    if (!Array.isArray(limitations) || limitations.length === 0) return null;
+    const disclosure = makeEnhancedProfileElement(
+      "details",
+      "rtp-profile-limit"
     );
+    const trigger = makeEnhancedProfileElement(
+      "summary",
+      "rtp-status-pill rtp-status-pill--limited",
+      "Profile Limited"
+    );
+    const panelId = "rtp-profile-limitations-panel";
+    const titleId = "rtp-profile-limitations-title";
+    trigger.setAttribute("aria-controls", panelId);
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.title = "View private or limited Roblox profile sections";
+    const panel = makeEnhancedProfileElement("div", "rtp-profile-limit-panel");
+    panel.id = panelId;
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-labelledby", titleId);
+    const title = makeEnhancedProfileElement(
+      "h2",
+      "rtp-profile-limit-title",
+      "Private or limited profile sections"
+    );
+    title.id = titleId;
+    const copy = makeEnhancedProfileElement(
+      "p",
+      "rtp-profile-limit-copy",
+      "These parts of the Roblox profile are hidden by privacy or regional settings."
+    );
+    const list = makeEnhancedProfileElement("ul", "rtp-profile-limit-list");
+    for (const limitation of limitations) {
+      const item = makeEnhancedProfileElement("li", "rtp-profile-limit-item");
+      item.dataset.rtpProfileLimitLabel = limitation.label;
+      item.dataset.rtpProfileLimitStatus = limitation.status;
+      item.append(
+        makeEnhancedProfileElement("span", "", limitation.label),
+        makeEnhancedProfileElement("strong", "", limitation.status)
+      );
+      list.append(item);
+    }
+    panel.append(title, copy, list);
+    disclosure.append(trigger, panel);
+    const positionPanel = () => {
+      if (!disclosure.open || !panel.isConnected) return;
+      panel.style.removeProperty("transform");
+      const rect = panel.getBoundingClientRect();
+      const minimum = 16;
+      const maximum = Math.max(minimum, window.innerWidth - 16);
+      const shift = rect.left < minimum
+        ? minimum - rect.left
+        : rect.right > maximum
+          ? maximum - rect.right
+          : 0;
+      if (shift) panel.style.transform = `translateX(${Math.round(shift)}px)`;
+    };
+    disclosure.addEventListener("toggle", () => {
+      trigger.setAttribute("aria-expanded", String(disclosure.open));
+      if (disclosure.open) {
+        window.requestAnimationFrame(positionPanel);
+      } else {
+        panel.style.removeProperty("transform");
+      }
+    });
+    disclosure.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !disclosure.open) return;
+      event.preventDefault();
+      disclosure.open = false;
+      trigger.focus({ preventScroll: true });
+    });
+    disclosure.addEventListener("focusout", () => {
+      window.setTimeout(() => {
+        if (
+          disclosure.open &&
+          !disclosure.contains(enhancedProfileShadowRoot?.activeElement)
+        ) {
+          disclosure.open = false;
+        }
+      }, 0);
+    });
+    return disclosure;
   }
 
   function makeEnhancedProfileHeaderDetails(data) {
@@ -24682,6 +26501,9 @@
     );
     const relationships = data.sections.relationships;
     const communities = data.sections.communities;
+    const accountAgeDetails = getEnhancedProfileAccountAgeDetails(
+      identity.createdAt
+    );
     const details = makeEnhancedProfileElement("div", "rtp-profile-details");
     details.setAttribute("aria-label", "Profile details");
     const grid = makeEnhancedProfileElement("dl", "rtp-profile-details-grid");
@@ -24703,10 +26525,18 @@
       }
     }
     const rows = [
-      identity.createdAt
+      accountAgeDetails
         ? makeEnhancedProfileHeaderDetail(
             "Account age",
-            formatEnhancedProfileAccountAge(identity.createdAt)
+            formatEnhancedProfileAccountAge(identity.createdAt),
+            {
+              action: "account-age",
+              ariaLabel: "View exact account creation details",
+              onClick: (trigger) => openEnhancedProfileAccountAgeDialog(
+                data,
+                trigger
+              )
+            }
           )
         : null,
       isForeignProfile && relationships.status === "ready"
@@ -24714,7 +26544,20 @@
             "Mutual groups",
             formatEnhancedProfileNumber(
               relationships.data.mutualGroupsCount
-            )
+            ),
+            relationships.data.mutualGroups.items.length > 0
+              ? {
+                  action: "mutual-groups",
+                  ariaLabel: `View ${formatEnhancedProfileNumber(
+                    relationships.data.mutualGroupsCount
+                  )} mutual groups`,
+                  onClick: (trigger) => openEnhancedProfileCollectionDialog(
+                    "mutual-groups",
+                    data,
+                    trigger
+                  )
+                }
+              : {}
           )
         : null,
       makeEnhancedProfileHeaderDetail(
@@ -24724,13 +26567,38 @@
       badgeDetail,
       makeEnhancedProfileHeaderDetail(
         "Games",
-        getEnhancedProfileCollectionCountLabel(data.sections.experiences)
+        getEnhancedProfileCollectionCountLabel(data.sections.experiences),
+        data.sections.experiences.status === "ready" &&
+          data.sections.experiences.data.items.length > 0
+          ? {
+              action: "games",
+              ariaLabel: "View public games",
+              onClick: (trigger) => openEnhancedProfileCollectionDialog(
+                "games",
+                data,
+                trigger
+              )
+            }
+          : {}
       ),
       communities.status === "ready" &&
         communities.data.ownedCount !== null
         ? makeEnhancedProfileHeaderDetail(
             "Owned groups",
-            formatEnhancedProfileNumber(communities.data.ownedCount)
+            formatEnhancedProfileNumber(communities.data.ownedCount),
+            communities.data.ownedGroups.items.length > 0
+              ? {
+                  action: "owned-groups",
+                  ariaLabel: `View ${formatEnhancedProfileNumber(
+                    communities.data.ownedCount
+                  )} owned groups`,
+                  onClick: (trigger) => openEnhancedProfileCollectionDialog(
+                    "owned-groups",
+                    data,
+                    trigger
+                  )
+                }
+              : {}
           )
         : null
     ].filter(Boolean);
@@ -24821,6 +26689,13 @@
 
     const copy = makeEnhancedProfileElement("div", "rtp-experience-slide-copy");
     copy.append(makeEnhancedProfileElement("h3", "", game.name));
+    if (game.creatorType === "group" && game.creatorName) {
+      copy.append(makeEnhancedProfileElement(
+        "div",
+        "rtp-game-source",
+        getEnhancedProfileGameCreatorLabel(game)
+      ));
+    }
     if (game.description) {
       copy.append(makeEnhancedProfileElement(
         "p",
@@ -24998,10 +26873,1099 @@
     return card;
   }
 
+  function findEnhancedProfileNativeHeaderVariant(nativeRoot) {
+    if (
+      !nativeRoot?.isConnected ||
+      normalizeEnhancedProfileId(nativeRoot.dataset?.profileId) !==
+        enhancedProfileRouteUserId
+    ) {
+      return null;
+    }
+    const preferMobile = typeof matchMedia === "function" &&
+      matchMedia("(max-width: 680px)").matches;
+    const candidates = Array.from(
+      nativeRoot.querySelectorAll(".button-container")
+    ).filter((container) => {
+      const hasKnownAction = Boolean(container.querySelector(
+        '[id="user-profile-header-JoinExperience"], ' +
+        '[id="user-profile-header-Chat"], ' +
+        '[id="user-profile-header-EditAvatar"], ' +
+        '[id="user-profile-header-EditProfile"]'
+      ));
+      const actionShell = container.closest(
+        ".buttons-show-on-desktop, .buttons-show-on-mobile"
+      ) || container.parentElement;
+      const hasContextualSibling = Boolean(actionShell?.querySelector?.(
+        '[id="user-profile-header-contextual-menu-button"]' +
+        '[aria-haspopup="dialog"]'
+      ));
+      return Boolean(
+        container.querySelector("button, a[href]") &&
+        (hasKnownAction || hasContextualSibling)
+      );
+    });
+    const ranked = candidates.map((buttonContainer, index) => {
+      const shell = buttonContainer.closest(
+        ".buttons-show-on-desktop, .buttons-show-on-mobile"
+      ) || buttonContainer.parentElement;
+      const isMobile = isEnhancedProfileNativeMobileControl(buttonContainer);
+      const explicitlyDesktop = Boolean(buttonContainer.closest(
+        ".buttons-show-on-desktop, .buttons-hide-on-mobile, " +
+        ".profile-header-desktop, [data-testid*=\"desktop\" i]"
+      ));
+      let score = 0;
+      if (isMobile === preferMobile) score += 100;
+      if (!preferMobile && explicitlyDesktop) score += 20;
+      if (preferMobile && explicitlyDesktop) score -= 20;
+      score -= index / 100;
+      return {
+        nativeRoot,
+        shell,
+        buttonContainer,
+        currentGameCard: shell?.querySelector?.(".currently-playing-card") || null,
+        isMobile,
+        score
+      };
+    });
+    ranked.sort((left, right) => right.score - left.score);
+    return ranked[0] || null;
+  }
+
+  function isEnhancedProfileNativeRootVisible(nativeRoot) {
+    if (
+      !nativeRoot?.isConnected ||
+      nativeRoot.hidden === true ||
+      nativeRoot.getAttribute("aria-hidden") === "true" ||
+      nativeRoot.inert === true
+    ) {
+      return false;
+    }
+    const suppressionSheet = document.getElementById(
+      ENHANCED_PROFILE_STYLE_ID
+    )?.sheet || null;
+    const probeWithoutSuppression = Boolean(
+      suppressionSheet &&
+      !suppressionSheet.disabled &&
+      nativeRoot.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)
+    );
+    const suppressionWasDisabled = suppressionSheet?.disabled === true;
+    try {
+      if (probeWithoutSuppression) suppressionSheet.disabled = true;
+      const style = getComputedStyle(nativeRoot);
+      return style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.visibility !== "collapse" &&
+        style.contentVisibility !== "hidden";
+    } catch {
+      return true;
+    } finally {
+      if (probeWithoutSuppression) {
+        suppressionSheet.disabled = suppressionWasDisabled;
+      }
+    }
+  }
+
+  function isEnhancedProfileNativeRootCandidate(nativeRoot, content) {
+    return Boolean(
+      nativeRoot?.isConnected &&
+      nativeRoot.parentElement === content &&
+      nativeRoot.matches?.(
+        '.profile-platform-container[data-profile-type="User"]'
+      ) &&
+      normalizeEnhancedProfileId(nativeRoot.dataset?.profileId) ===
+        enhancedProfileRouteUserId
+    );
+  }
+
+  function selectEnhancedProfileNativeRoot(roots = null, options = {}) {
+    const content = document.getElementById("content");
+    if (!content || !enhancedProfileRouteUserId) return null;
+    const candidates = Array.from(
+      roots || document.querySelectorAll(
+        '#content > .profile-platform-container[data-profile-type="User"]'
+      )
+    ).filter((root) =>
+      isEnhancedProfileNativeRootCandidate(root, content) &&
+      isEnhancedProfileNativeRootVisible(root) &&
+      (
+        options.requireSuppressed !== true ||
+        root.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)
+      )
+    );
+    const ranked = candidates.map((root, index) => {
+      let score = index / 100;
+      if (root.querySelector(".currently-wearing-avatar-with-background")) {
+        score += 1_000;
+      }
+      if (root.querySelector(".user-profile-header-info")) score += 400;
+      if (findEnhancedProfileNativeHeaderVariant(root)) score += 300;
+      if (root.querySelector(
+        '[id="user-profile-header-contextual-menu-button"]' +
+        '[aria-haspopup="dialog"]'
+      )) {
+        score += 100;
+      }
+      return { root, score };
+    });
+    ranked.sort((left, right) => right.score - left.score);
+    return ranked[0]?.root || null;
+  }
+
+  function findEnhancedProfileCurrentNativeHeaderVariant() {
+    const nativeRoot = selectEnhancedProfileNativeRoot();
+    return findEnhancedProfileNativeHeaderVariant(nativeRoot);
+  }
+
+  function isEnhancedProfileNativeHeaderSourceCurrent(source) {
+    const nativeRoot = source?.closest?.(
+      '.profile-platform-container[data-profile-type="User"]'
+    );
+    return Boolean(
+      source?.isConnected &&
+      nativeRoot?.parentElement === document.getElementById("content") &&
+      normalizeEnhancedProfileId(nativeRoot.dataset?.profileId) ===
+        enhancedProfileRouteUserId &&
+      isEnhancedProfileNativeRootVisible(nativeRoot) &&
+      enhancedProfileHost?.isConnected
+    );
+  }
+
+  function getEnhancedProfileHeaderActionKey(control) {
+    if (!control) return "";
+    const id = String(control.id || "").toLowerCase();
+    if (id.includes("joinexperience")) return "join";
+    if (id.includes("editavatar")) return "edit-avatar";
+    if (id.includes("editprofile")) return "edit-profile";
+    if (id.includes("chat")) return "chat";
+    const href = String(control.getAttribute?.("href") || "").toLowerCase();
+    if (href.includes("/my/avatar")) return "edit-avatar";
+    if (href.includes("/users/profile/edit")) return "edit-profile";
+    const label = String(
+      control.getAttribute?.("aria-label") || control.textContent || ""
+    ).replace(/\s+/g, " ").trim().toLowerCase();
+    if (label === "join") return "join";
+    if (label === "chat") return "chat";
+    if (label === "edit avatar") return "edit-avatar";
+    if (label === "edit profile") return "edit-profile";
+    return "";
+  }
+
+  function getEnhancedProfileHeaderActionOrder(key) {
+    if (key === "join" || key === "edit-avatar") return 0;
+    if (key === "chat" || key === "edit-profile") return 1;
+    return 10;
+  }
+
+  function sanitizeEnhancedProfileNativeHeaderClone(source, clone) {
+    const sourceElements = [source, ...source.querySelectorAll("*")];
+    const cloneElements = [clone, ...clone.querySelectorAll("*")];
+    cloneElements.forEach((element, index) => {
+      element.removeAttribute("id");
+      element.removeAttribute("slot");
+      for (const attribute of Array.from(element.attributes)) {
+        if (/^on/i.test(attribute.name)) element.removeAttribute(attribute.name);
+      }
+      const sourceElement = sourceElements[index];
+      const isButton = element.tagName === "BUTTON" &&
+        sourceElement?.tagName === "BUTTON";
+      const isAnchor = element.tagName === "A" &&
+        sourceElement?.tagName === "A";
+      if (!isButton && !isAnchor) {
+        return;
+      }
+      const actionKey = getEnhancedProfileHeaderActionKey(sourceElement);
+      if (actionKey) {
+        element.dataset.rslEnhancedProfileNativeAction = actionKey;
+        element.style.order = String(
+          getEnhancedProfileHeaderActionOrder(actionKey)
+        );
+      }
+      element.addEventListener("click", (event) => {
+        if (
+          !isEnhancedProfileNativeHeaderSourceCurrent(sourceElement) ||
+          sourceElement.disabled === true ||
+          sourceElement.getAttribute("aria-disabled") === "true"
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          setEnhancedProfileStatus("That Roblox action is unavailable right now.");
+          return;
+        }
+        if (
+          isAnchor &&
+          (
+            event.button !== 0 ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            element.hasAttribute("download") ||
+            element.target === "_blank"
+          )
+        ) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        sourceElement.click();
+      });
+    });
+    return clone;
+  }
+
+  function cleanupEnhancedProfileNativeHeaderClone(record, markerAttribute) {
+    const clone = record?.node;
+    if (!clone) return;
+    clone.removeAttribute(markerAttribute);
+    clone.remove();
+  }
+
+  function reconcileEnhancedProfileNativeHeaderClone(
+    record,
+    candidate,
+    slotName,
+    markerAttribute
+  ) {
+    const sourceMarkup = candidate?.outerHTML || "";
+    if (
+      candidate?.isConnected &&
+      record?.source === candidate &&
+      record.sourceMarkup === sourceMarkup &&
+      isEnhancedProfileAdoptedNodeCurrent(record, slotName)
+    ) {
+      return record;
+    }
+    cleanupEnhancedProfileNativeHeaderClone(record, markerAttribute);
+    if (!candidate?.isConnected || !enhancedProfileHost?.isConnected) {
+      return null;
+    }
+    const clone = sanitizeEnhancedProfileNativeHeaderClone(
+      candidate,
+      candidate.cloneNode(true)
+    );
+    clone.setAttribute(markerAttribute, "");
+    clone.setAttribute("slot", slotName);
+    enhancedProfileHost.append(clone);
+    return { source: candidate, sourceMarkup, node: clone };
+  }
+
+  function makeEnhancedProfileNativeFallbackAction(source, actionKey) {
+    const isAnchor = source?.tagName === "A";
+    const control = source.cloneNode(false);
+    control.removeAttribute("id");
+    control.removeAttribute("slot");
+    for (const attribute of Array.from(control.attributes)) {
+      if (/^on/i.test(attribute.name)) control.removeAttribute(attribute.name);
+    }
+    const primary = actionKey === "join" ||
+      source.classList.contains("rtp-button--primary");
+    control.className =
+      "foundation-web-button relative clip group/interactable " +
+      "focus-visible:outline-focus disabled:outline-none cursor-pointer flex " +
+      "items-center justify-center stroke-none padding-y-none select-none " +
+      "radius-medium text-label-medium height-1000 padding-x-medium " +
+      (primary
+        ? "bg-action-emphasis content-action-emphasis"
+        : "bg-action-standard content-action-standard");
+    control.style.cssText =
+      `text-decoration:none;width:100%;order:${
+        getEnhancedProfileHeaderActionOrder(actionKey)
+      }`;
+    control.setAttribute(
+      ENHANCED_PROFILE_NATIVE_ACTION_FALLBACK_ATTRIBUTE,
+      actionKey
+    );
+    const stateLayer = makeEnhancedProfileElement(
+      "div",
+      "absolute inset-[0] transition-colors " +
+        "group-hover/interactable:bg-[var(--color-state-hover)] " +
+        "group-active/interactable:bg-[var(--color-state-press)] " +
+        "group-disabled/interactable:bg-none"
+    );
+    stateLayer.setAttribute("aria-hidden", "true");
+    stateLayer.dataset.testid = "foundation-web-state-layer";
+    const content = makeEnhancedProfileElement(
+      "span",
+      "flex items-center min-width-0 gap-small"
+    );
+    content.append(makeEnhancedProfileElement(
+      "span",
+      "padding-y-xsmall text-truncate-end text-no-wrap",
+      String(source.textContent || "").replace(/\s+/g, " ").trim()
+    ));
+    control.replaceChildren(stateLayer, content);
+    control.__rslEnhancedProfileFallbackSource = source;
+    if (!isAnchor) {
+      control.type = "button";
+      control.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const fallbackSource = control.__rslEnhancedProfileFallbackSource;
+        if (
+          !fallbackSource?.isConnected ||
+          fallbackSource.disabled === true ||
+          fallbackSource.getAttribute("aria-disabled") === "true"
+        ) {
+          setEnhancedProfileStatus("That Roblox action is unavailable right now.");
+          return;
+        }
+        fallbackSource.click();
+      });
+    }
+    return control;
+  }
+
+  function syncEnhancedProfileNativeActionFallbacks(record) {
+    const clone = record?.node;
+    const source = record?.source;
+    const fallbackSlot = enhancedProfileShadowRoot?.querySelector(
+      ".rtp-native-actions-slot"
+    );
+    if (!clone?.isConnected || !source?.isConnected || !fallbackSlot) return;
+    const nativeActionKeys = new Set(
+      Array.from(source.querySelectorAll("button, a[href]"))
+        .map(getEnhancedProfileHeaderActionKey)
+        .filter(Boolean)
+    );
+    const expectedActions = new Map();
+    Array.from(fallbackSlot.children).forEach((control) => {
+      if (!control.matches?.("button, a[href]")) return;
+      const actionKey = getEnhancedProfileHeaderActionKey(control);
+      if (actionKey && !expectedActions.has(actionKey)) {
+        expectedActions.set(actionKey, control);
+      }
+    });
+    const supplements = new Map();
+    clone.querySelectorAll(
+      `[${ENHANCED_PROFILE_NATIVE_ACTION_FALLBACK_ATTRIBUTE}]`
+    ).forEach((control) => {
+      const actionKey = control.getAttribute(
+        ENHANCED_PROFILE_NATIVE_ACTION_FALLBACK_ATTRIBUTE
+      ) || "";
+      const fallbackSource = expectedActions.get(actionKey);
+      if (
+        !fallbackSource ||
+        nativeActionKeys.has(actionKey) ||
+        supplements.has(actionKey) ||
+        control.__rslEnhancedProfileFallbackSource !== fallbackSource
+      ) {
+        control.remove();
+        return;
+      }
+      supplements.set(actionKey, control);
+    });
+    expectedActions.forEach((fallbackSource, actionKey) => {
+      if (nativeActionKeys.has(actionKey) || supplements.has(actionKey)) return;
+      clone.append(makeEnhancedProfileNativeFallbackAction(
+        fallbackSource,
+        actionKey
+      ));
+    });
+  }
+
+  function makeEnhancedProfileNativeNameIconFallback(kind) {
+    if (kind === "verified") {
+      const wrapper = makeEnhancedProfileElement(
+        "span",
+        "relative flex items-center justify-center"
+      );
+      wrapper.setAttribute(
+        ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE,
+        kind
+      );
+      const backplate = makeEnhancedProfileElement(
+        "span",
+        "grow-0 shrink-0 basis-auto icon icon-filled-verified-backplate " +
+          "size-[var(--icon-size-large)] content-system-emphasis"
+      );
+      backplate.setAttribute("aria-hidden", "true");
+      backplate.dataset.testid = "foundation-web-icon";
+      const check = makeEnhancedProfileElement(
+        "span",
+        "grow-0 shrink-0 basis-auto icon icon-filled-verified-check " +
+          "size-[var(--icon-size-large)] absolute"
+      );
+      check.setAttribute("aria-hidden", "true");
+      check.dataset.testid = "foundation-web-icon";
+      check.style.color = "white";
+      wrapper.append(backplate, check);
+      return wrapper;
+    }
+    const robloxPlus = makeEnhancedProfileElement(
+      "span",
+      "grow-0 shrink-0 basis-auto icon icon-regular-roblox-plus " +
+        "size-[var(--icon-size-large)] content-system-contrast"
+    );
+    robloxPlus.setAttribute("aria-hidden", "true");
+    robloxPlus.setAttribute("aria-label", "Roblox Plus subscriber");
+    robloxPlus.setAttribute(
+      ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE,
+      "roblox-plus"
+    );
+    robloxPlus.dataset.testid = "foundation-web-icon";
+    return robloxPlus;
+  }
+
+  function syncEnhancedProfileNativeNameIconFallbacks(record) {
+    const clone = record?.node;
+    const source = record?.source;
+    const identity = enhancedProfileData?.sections?.identity?.data;
+    if (!clone?.isConnected || !source?.isConnected || !identity) return;
+    const sourceHasVerified = Boolean(
+      source.querySelector(
+        '[data-testid="foundation-web-icon"].icon-filled-verified-backplate'
+      ) &&
+      source.querySelector(
+        '[data-testid="foundation-web-icon"].icon-filled-verified-check'
+      )
+    );
+    const sourceHasRobloxPlus = Boolean(source.querySelector(
+      '[data-testid="foundation-web-icon"].icon-regular-roblox-plus'
+    ));
+    const requiredKinds = new Set();
+    if (identity.isVerified && !sourceHasVerified) requiredKinds.add("verified");
+    if (identity.isRobloxPlus && !sourceHasRobloxPlus) {
+      requiredKinds.add("roblox-plus");
+    }
+    const existingKinds = new Set();
+    clone.querySelectorAll(
+      `[${ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE}]`
+    ).forEach((icon) => {
+      const kind = icon.getAttribute(
+        ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE
+      ) || "";
+      if (!requiredKinds.has(kind) || existingKinds.has(kind)) {
+        icon.remove();
+      } else {
+        existingKinds.add(kind);
+      }
+    });
+    if (requiredKinds.has("verified") && !existingKinds.has("verified")) {
+      clone.prepend(makeEnhancedProfileNativeNameIconFallback("verified"));
+    }
+    if (
+      requiredKinds.has("roblox-plus") &&
+      !existingKinds.has("roblox-plus")
+    ) {
+      clone.append(makeEnhancedProfileNativeNameIconFallback("roblox-plus"));
+    }
+  }
+
   function clearEnhancedProfileNativePresence() {
     enhancedProfileHost
       ?.querySelectorAll?.(`[${ENHANCED_PROFILE_PRESENCE_ATTRIBUTE}]`)
       .forEach((element) => element.remove());
+  }
+
+  function restoreEnhancedProfileAdoptedNode(record, markerAttribute) {
+    if (!record?.node) return;
+    const {
+      node,
+      parent,
+      nextSibling,
+      placeholder,
+      hadSlot,
+      slotValue
+    } = record;
+    node.removeAttribute(markerAttribute);
+    if (hadSlot) node.setAttribute("slot", slotValue ?? "");
+    else node.removeAttribute("slot");
+    if (node.parentNode !== enhancedProfileHost) {
+      placeholder?.remove?.();
+      return;
+    }
+    if (placeholder?.isConnected && placeholder.parentNode) {
+      placeholder.parentNode.insertBefore(node, placeholder);
+    } else if (!placeholder && parent?.isConnected) {
+      const reference = nextSibling?.parentNode === parent ? nextSibling : null;
+      parent.insertBefore(node, reference);
+    } else {
+      node.remove();
+    }
+    placeholder?.remove?.();
+  }
+
+  function discardEnhancedProfileAdoptedNode(record, markerAttribute) {
+    if (!record?.node) return;
+    const { node, placeholder, hadSlot, slotValue } = record;
+    node.removeAttribute(markerAttribute);
+    if (hadSlot) node.setAttribute("slot", slotValue ?? "");
+    else node.removeAttribute("slot");
+    if (node.parentNode === enhancedProfileHost) node.remove();
+    placeholder?.remove?.();
+  }
+
+  function cleanupEnhancedProfileNativeHeaderProjectedNodes() {
+    restoreEnhancedProfileAdoptedNode(
+      enhancedProfileRoProControlsRecord,
+      ENHANCED_PROFILE_ROPRO_CONTROLS_ATTRIBUTE
+    );
+    restoreEnhancedProfileAdoptedNode(
+      enhancedProfileRoProBadgeRecord,
+      ENHANCED_PROFILE_ROPRO_BADGE_ATTRIBUTE
+    );
+    cleanupEnhancedProfileNativeNameIconsClone();
+    cleanupEnhancedProfileNativeHeaderClone(
+      enhancedProfileNativeCurrentGameRecord,
+      ENHANCED_PROFILE_NATIVE_CURRENT_GAME_ATTRIBUTE
+    );
+    cleanupEnhancedProfileNativeHeaderClone(
+      enhancedProfileNativeActionsRecord,
+      ENHANCED_PROFILE_NATIVE_ACTIONS_ATTRIBUTE
+    );
+    enhancedProfileRoProControlsRecord = null;
+    enhancedProfileRoProBadgeRecord = null;
+    enhancedProfileNativeCurrentGameRecord = null;
+    enhancedProfileNativeActionsRecord = null;
+  }
+
+  function cleanupEnhancedProfileNativeHeaderIntegration() {
+    if (enhancedProfileNativeHeaderSyncFrame !== null) {
+      window.cancelAnimationFrame(enhancedProfileNativeHeaderSyncFrame);
+      enhancedProfileNativeHeaderSyncFrame = null;
+    }
+    enhancedProfileNativeHeaderObserver?.disconnect();
+    enhancedProfileNativeHeaderObserver = null;
+    enhancedProfileNativeHeaderController?.abort();
+    enhancedProfileNativeHeaderController = null;
+    enhancedProfileNativeHeaderObservedRoot = null;
+    cleanupEnhancedProfileNativeHeaderProjectedNodes();
+  }
+
+  function adoptEnhancedProfileNativeNode(
+    node,
+    slotName,
+    markerAttribute
+  ) {
+    if (!node || !enhancedProfileHost || enhancedProfileHost.contains(node)) {
+      return null;
+    }
+    const parent = node.parentNode;
+    const placeholder = document.createComment(
+      "RoTool enhanced-profile integration point"
+    );
+    if (parent) parent.insertBefore(placeholder, node);
+    const record = {
+      node,
+      parent,
+      nextSibling: node.nextSibling,
+      placeholder,
+      hadSlot: node.hasAttribute("slot"),
+      slotValue: node.getAttribute("slot")
+    };
+    node.setAttribute(markerAttribute, "");
+    node.setAttribute("slot", slotName);
+    enhancedProfileHost.append(node);
+    return record;
+  }
+
+  function isEnhancedProfileAdoptedNodeCurrent(record, slotName) {
+    return Boolean(
+      record?.node?.isConnected &&
+      record.node.parentNode === enhancedProfileHost &&
+      record.node.getAttribute("slot") === slotName
+    );
+  }
+
+  function retargetEnhancedProfileHostedNode(
+    record,
+    candidate,
+    slotName,
+    markerAttribute
+  ) {
+    const previous = record?.node;
+    if (!record || !candidate || candidate.parentNode !== enhancedProfileHost) {
+      return null;
+    }
+    if (previous && previous !== candidate) {
+      previous.removeAttribute(markerAttribute);
+      if (record.hadSlot) previous.setAttribute("slot", record.slotValue ?? "");
+      else previous.removeAttribute("slot");
+    }
+    const nextRecord = {
+      ...record,
+      node: candidate,
+      hadSlot: candidate.hasAttribute("slot"),
+      slotValue: candidate.getAttribute("slot")
+    };
+    candidate.setAttribute(markerAttribute, "");
+    candidate.setAttribute("slot", slotName);
+    return nextRecord;
+  }
+
+  function registerEnhancedProfileHostedNode(
+    candidate,
+    slotName,
+    markerAttribute
+  ) {
+    if (!candidate || candidate.parentNode !== enhancedProfileHost) return null;
+    const record = {
+      node: candidate,
+      parent: null,
+      nextSibling: null,
+      placeholder: null,
+      hadSlot: candidate.hasAttribute("slot"),
+      slotValue: candidate.getAttribute("slot")
+    };
+    candidate.setAttribute(markerAttribute, "");
+    candidate.setAttribute("slot", slotName);
+    return record;
+  }
+
+  function reconcileEnhancedProfileAdoptedNode(
+    record,
+    candidate,
+    slotName,
+    markerAttribute
+  ) {
+    const current = isEnhancedProfileAdoptedNodeCurrent(record, slotName);
+    if (
+      !current &&
+      record?.placeholder?.isConnected &&
+      candidate &&
+      candidate !== record.node &&
+      candidate.parentNode === enhancedProfileHost
+    ) {
+      return retargetEnhancedProfileHostedNode(
+        record,
+        candidate,
+        slotName,
+        markerAttribute
+      );
+    }
+    if (current && candidate && candidate !== record.node) {
+      discardEnhancedProfileAdoptedNode(record, markerAttribute);
+      record = null;
+    } else if (current && record.placeholder?.isConnected) {
+      return record;
+    } else if (current) {
+      discardEnhancedProfileAdoptedNode(record, markerAttribute);
+      record = null;
+    } else {
+      restoreEnhancedProfileAdoptedNode(record, markerAttribute);
+      record = null;
+    }
+    if (candidate?.parentNode === enhancedProfileHost) {
+      return registerEnhancedProfileHostedNode(
+        candidate,
+        slotName,
+        markerAttribute
+      );
+    }
+    return candidate
+      ? adoptEnhancedProfileNativeNode(candidate, slotName, markerAttribute)
+      : null;
+  }
+
+  function findEnhancedProfileNativeNameIcons(nativeRoot) {
+    const title = nativeRoot?.querySelector?.(
+      "#profile-header-title-container-name"
+    );
+    const row = title?.parentElement;
+    if (!row) return null;
+    return Array.from(row.children).find((candidate) => {
+      if (candidate === title || candidate.tagName !== "SPAN") return false;
+      const hasVerified = Boolean(
+        candidate.querySelector?.(
+          '[data-testid="foundation-web-icon"].icon-filled-verified-backplate'
+        ) &&
+        candidate.querySelector?.(
+          '[data-testid="foundation-web-icon"].icon-filled-verified-check'
+        )
+      );
+      const hasRobloxPlus = Boolean(candidate.querySelector?.(
+        '[data-testid="foundation-web-icon"].icon-regular-roblox-plus'
+      ));
+      return hasVerified || hasRobloxPlus;
+    }) || null;
+  }
+
+  function getEnhancedProfileNativeTrustedLabel(nativeRoot, expectedUsername) {
+    const username = nativeRoot?.querySelector?.(".stylistic-alts-username");
+    const nativeUsername = String(username?.textContent || "")
+      .replace(/^\s*@/, "")
+      .trim();
+    const normalizedExpectedUsername = String(expectedUsername || "")
+      .replace(/^\s*@/, "")
+      .trim();
+    if (
+      !nativeUsername ||
+      !normalizedExpectedUsername ||
+      nativeUsername.toLowerCase() !== normalizedExpectedUsername.toLowerCase()
+    ) {
+      return "";
+    }
+    const candidate = username?.nextElementSibling;
+    const text = String(candidate?.textContent || "").replace(/\s+/g, " ").trim();
+    return /^(?:(?:\u2022|\u00b7|\u00e2\u20ac\u00a2)\s*)?Trusted$/i.test(text)
+      ? "Trusted"
+      : "";
+  }
+
+  function syncEnhancedProfileNativeTrustedLabel(nativeRoot) {
+    const target = enhancedProfileShadowRoot?.querySelector(
+      ".rtp-trusted-label"
+    );
+    if (!target) return;
+    const expectedUsername =
+      enhancedProfileData?.sections?.identity?.data?.username || "";
+    const label = getEnhancedProfileNativeTrustedLabel(
+      nativeRoot,
+      expectedUsername
+    );
+    target.hidden = !label;
+    target.textContent = label ? ` \u2022 ${label}` : "";
+  }
+
+  function cleanupEnhancedProfileNativeNameIconsClone() {
+    const clone = enhancedProfileNativeNameIconsRecord?.node;
+    enhancedProfileNativeNameIconsRecord = null;
+    if (!clone) return;
+    clone.removeAttribute(ENHANCED_PROFILE_NATIVE_NAME_ICONS_ATTRIBUTE);
+    clone.remove();
+  }
+
+  function reconcileEnhancedProfileNativeNameIconsClone(candidate) {
+    const sourceMarkup = candidate?.outerHTML || "";
+    if (
+      candidate?.isConnected &&
+      enhancedProfileNativeNameIconsRecord?.source === candidate &&
+      enhancedProfileNativeNameIconsRecord.sourceMarkup === sourceMarkup &&
+      isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileNativeNameIconsRecord,
+        ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME
+      )
+    ) {
+      return enhancedProfileNativeNameIconsRecord;
+    }
+    cleanupEnhancedProfileNativeNameIconsClone();
+    if (!candidate?.isConnected || !enhancedProfileHost?.isConnected) {
+      return null;
+    }
+    const clone = candidate.cloneNode(true);
+    for (const element of [clone, ...clone.querySelectorAll("*")]) {
+      element.removeAttribute("id");
+      element.removeAttribute("slot");
+      for (const attribute of Array.from(element.attributes)) {
+        if (/^on/i.test(attribute.name)) {
+          element.removeAttribute(attribute.name);
+        }
+      }
+    }
+    clone.setAttribute(ENHANCED_PROFILE_NATIVE_NAME_ICONS_ATTRIBUTE, "");
+    clone.setAttribute("slot", ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME);
+    enhancedProfileHost.append(clone);
+    enhancedProfileNativeNameIconsRecord = {
+      source: candidate,
+      sourceMarkup,
+      node: clone
+    };
+    return enhancedProfileNativeNameIconsRecord;
+  }
+
+  function scheduleEnhancedProfileNativeHeaderSync() {
+    if (enhancedProfileNativeHeaderSyncFrame !== null) return;
+    enhancedProfileNativeHeaderSyncFrame = window.requestAnimationFrame(() => {
+      enhancedProfileNativeHeaderSyncFrame = null;
+      const root = enhancedProfileNativeHeaderObservedRoot;
+      if (!root?.isConnected || !enhancedProfileHost?.isConnected) return;
+      syncEnhancedProfileNativeHeaderIntegration([root]);
+    });
+  }
+
+  const ENHANCED_PROFILE_NATIVE_HEADER_MUTATION_SELECTOR = [
+    ".user-profile-header-info",
+    ".currently-wearing-avatar-with-background",
+    ".currently-playing-card",
+    ".button-container",
+    ".buttons-show-on-desktop",
+    ".buttons-show-on-mobile",
+    "#profile-header-title-container-name",
+    ".stylistic-alts-username",
+    ".stylistic-alts-username + span",
+    "#reputationDiv",
+    ".ropro-profile-header-badge",
+    '[id="user-profile-header-contextual-menu-button"]'
+  ].join(", ");
+
+  function isEnhancedProfileNativeHeaderMutationRelevant(mutation) {
+    const target = mutation?.target?.nodeType === 1
+      ? mutation.target
+      : mutation?.target?.parentElement;
+    if (
+      target === enhancedProfileNativeHeaderObservedRoot &&
+      mutation?.type === "attributes" &&
+      ["hidden", "aria-hidden", "inert", "class", "style"].includes(
+        mutation.attributeName
+      )
+    ) {
+      return true;
+    }
+    const nameIconSource = enhancedProfileNativeNameIconsRecord?.source;
+    if (
+      nameIconSource &&
+      (target === nameIconSource || nameIconSource.contains(target))
+    ) {
+      return true;
+    }
+    if (target?.closest?.(ENHANCED_PROFILE_NATIVE_HEADER_MUTATION_SELECTOR)) {
+      return true;
+    }
+    if (mutation?.type !== "childList") return false;
+    if (target?.querySelector?.(".stylistic-alts-username")) return true;
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) =>
+      node?.nodeType === 1 &&
+      (
+        node.matches?.(ENHANCED_PROFILE_NATIVE_HEADER_MUTATION_SELECTOR) ||
+        node.querySelector?.(ENHANCED_PROFILE_NATIVE_HEADER_MUTATION_SELECTOR)
+      )
+    );
+  }
+
+  function isEnhancedProfileHostedRoProMutationRelevant(mutation) {
+    const target = mutation?.target?.nodeType === 1
+      ? mutation.target
+      : mutation?.target?.parentElement;
+    if (
+      mutation?.type !== "childList" ||
+      !enhancedProfileHost ||
+      !(target === enhancedProfileHost || enhancedProfileHost.contains(target))
+    ) {
+      return false;
+    }
+    const records = [
+      enhancedProfileRoProControlsRecord,
+      enhancedProfileRoProBadgeRecord
+    ].filter(Boolean);
+    const changedNodes = [
+      ...Array.from(mutation.addedNodes || []),
+      ...Array.from(mutation.removedNodes || [])
+    ];
+    return changedNodes.some((node) => {
+      if (records.some((record) => node === record.node)) return true;
+      if (node?.nodeType !== 1) return false;
+      return Boolean(
+        node.matches?.(
+          "#reputationDiv, .ropro-user-info.ropro-profile-header-badge"
+        ) ||
+        node.querySelector?.(
+          "#reputationDiv, .ropro-user-info.ropro-profile-header-badge"
+        )
+      );
+    });
+  }
+
+  function observeEnhancedProfileNativeHeader(nativeRoot) {
+    if (
+      nativeRoot === enhancedProfileNativeHeaderObservedRoot &&
+      enhancedProfileNativeHeaderObserver
+    ) {
+      return;
+    }
+    enhancedProfileNativeHeaderObserver?.disconnect();
+    enhancedProfileNativeHeaderObserver = null;
+    enhancedProfileNativeHeaderController?.abort();
+    enhancedProfileNativeHeaderController = null;
+    enhancedProfileNativeHeaderObservedRoot = nativeRoot || null;
+    if (!nativeRoot?.isConnected) return;
+    enhancedProfileNativeHeaderObserver = new MutationObserver((mutations) => {
+      const nativeRootVisibilityChanged = mutations.some((mutation) =>
+        mutation.type === "attributes" &&
+        mutation.target === nativeRoot &&
+        ["hidden", "aria-hidden", "inert", "class", "style"].includes(
+          mutation.attributeName
+        )
+      );
+      if (
+        mutations.some((mutation) =>
+          isEnhancedProfileNativeHeaderMutationRelevant(mutation) ||
+          isEnhancedProfileHostedRoProMutationRelevant(mutation)
+        ) &&
+        nativeRoot === enhancedProfileNativeHeaderObservedRoot &&
+        nativeRoot.isConnected &&
+        enhancedProfileHost?.isConnected
+      ) {
+        syncEnhancedProfileNativeHeaderIntegration([nativeRoot]);
+        if (nativeRootVisibilityChanged) queueMount();
+      }
+    });
+    enhancedProfileNativeHeaderObserver.observe(nativeRoot, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [
+        "alt",
+        "aria-busy",
+        "aria-disabled",
+        "aria-hidden",
+        "aria-label",
+        "aria-pressed",
+        "class",
+        "data-state",
+        "disabled",
+        "href",
+        "hidden",
+        "inert",
+        "src",
+        "style",
+        "tabindex",
+        "title"
+      ]
+    });
+    if (enhancedProfileHost?.isConnected) {
+      enhancedProfileNativeHeaderObserver.observe(enhancedProfileHost, {
+        childList: true,
+        subtree: true
+      });
+    }
+    const controller = new AbortController();
+    enhancedProfileNativeHeaderController = controller;
+    window.addEventListener("resize", scheduleEnhancedProfileNativeHeaderSync, {
+      passive: true,
+      signal: controller.signal
+    });
+  }
+
+  function syncEnhancedProfileNativeCoverPlacement(nativeRoot) {
+    const content = document.getElementById("content");
+    clearEnhancedProfileNativeCoverMarkers();
+    const nativeCover = nativeRoot?.querySelector?.(
+      ".currently-wearing-avatar-with-background"
+    ) || null;
+    const usesNativeCover = Boolean(
+      nativeRoot &&
+      nativeCover &&
+      markEnhancedProfileNativeCover(nativeRoot, nativeCover)
+    );
+    enhancedProfileHost?.toggleAttribute(
+      ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE,
+      usesNativeCover
+    );
+    if (!enhancedProfileHost?.isConnected || !content) return usesNativeCover;
+    if (usesNativeCover) {
+      if (nativeRoot.nextSibling !== enhancedProfileHost) {
+        content.insertBefore(enhancedProfileHost, nativeRoot.nextSibling);
+      }
+    } else if (content.firstElementChild !== enhancedProfileHost) {
+      content.prepend(enhancedProfileHost);
+    }
+    return usesNativeCover;
+  }
+
+  function syncEnhancedProfileNativeHeaderIntegration(roots = null) {
+    if (!enhancedProfileHost?.isConnected || !enhancedProfileRouteUserId) {
+      cleanupEnhancedProfileNativeHeaderIntegration();
+      return false;
+    }
+    const candidates = Array.isArray(roots)
+      ? roots
+      : Array.from(document.querySelectorAll(
+          '#content > .profile-platform-container[data-profile-type="User"]'
+        ));
+    const nativeRoot = selectEnhancedProfileNativeRoot(candidates);
+    const content = document.getElementById("content");
+    const observationRoot = nativeRoot || candidates.find((candidate) =>
+      isEnhancedProfileNativeRootCandidate(candidate, content)
+    ) || null;
+
+    if (
+      enhancedProfileNativeHeaderObservedRoot &&
+      enhancedProfileNativeHeaderObservedRoot !== observationRoot
+    ) {
+      cleanupEnhancedProfileNativeHeaderIntegration();
+    }
+
+    observeEnhancedProfileNativeHeader(observationRoot);
+    if (!nativeRoot) {
+      syncEnhancedProfileNativeTrustedLabel(null);
+      cleanupEnhancedProfileNativeHeaderProjectedNodes();
+      syncEnhancedProfileNativeCoverPlacement(null);
+      return false;
+    }
+    syncEnhancedProfileNativeCoverPlacement(nativeRoot);
+    syncEnhancedProfileNativeTrustedLabel(nativeRoot);
+
+    const nameIcons = findEnhancedProfileNativeNameIcons(nativeRoot);
+    const nameIconsRecord = reconcileEnhancedProfileNativeNameIconsClone(
+      nameIcons
+    );
+    syncEnhancedProfileNativeNameIconFallbacks(nameIconsRecord);
+
+    const variant = findEnhancedProfileNativeHeaderVariant(nativeRoot);
+    enhancedProfileNativeCurrentGameRecord =
+      reconcileEnhancedProfileNativeHeaderClone(
+        enhancedProfileNativeCurrentGameRecord,
+        variant?.currentGameCard || null,
+        ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME,
+        ENHANCED_PROFILE_NATIVE_CURRENT_GAME_ATTRIBUTE
+      );
+    enhancedProfileNativeActionsRecord =
+      reconcileEnhancedProfileNativeHeaderClone(
+        enhancedProfileNativeActionsRecord,
+        variant?.buttonContainer || null,
+        ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME,
+        ENHANCED_PROFILE_NATIVE_ACTIONS_ATTRIBUTE
+      );
+    syncEnhancedProfileNativeActionFallbacks(enhancedProfileNativeActionsRecord);
+
+    const hostedControls = Array.from(enhancedProfileHost.children).find(
+      (candidate) =>
+        candidate.matches?.("#reputationDiv") &&
+        candidate !== enhancedProfileRoProControlsRecord?.node
+    ) || null;
+    const controlsCandidate = isEnhancedProfileAdoptedNodeCurrent(
+      enhancedProfileRoProControlsRecord,
+      ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME
+    )
+      ? enhancedProfileRoProControlsRecord.node
+      : hostedControls || nativeRoot.querySelector?.("#reputationDiv") || null;
+    const controls = controlsCandidate?.querySelector?.(
+      "#reputationLikeButton, #discordLink"
+    ) ? controlsCandidate : null;
+    enhancedProfileRoProControlsRecord = reconcileEnhancedProfileAdoptedNode(
+      enhancedProfileRoProControlsRecord,
+      controls,
+      ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME,
+      ENHANCED_PROFILE_ROPRO_CONTROLS_ATTRIBUTE
+    );
+
+    const hostedBadge = Array.from(enhancedProfileHost.children).find(
+      (candidate) =>
+        candidate.matches?.(".ropro-user-info.ropro-profile-header-badge") &&
+        candidate !== enhancedProfileRoProBadgeRecord?.node
+    ) || null;
+    const badgeCandidate = isEnhancedProfileAdoptedNodeCurrent(
+      enhancedProfileRoProBadgeRecord,
+      ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME
+    )
+      ? enhancedProfileRoProBadgeRecord.node
+      : hostedBadge || nativeRoot.querySelector?.(
+          ".ropro-user-info.ropro-profile-header-badge"
+        ) || null;
+    const badge = badgeCandidate?.querySelector?.('a[href^="https://ropro.io"]')
+      ? badgeCandidate
+      : null;
+    enhancedProfileRoProBadgeRecord = reconcileEnhancedProfileAdoptedNode(
+      enhancedProfileRoProBadgeRecord,
+      badge,
+      ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME,
+      ENHANCED_PROFILE_ROPRO_BADGE_ATTRIBUTE
+    );
+    return Boolean(
+      enhancedProfileNativeNameIconsRecord ||
+      enhancedProfileNativeCurrentGameRecord ||
+      enhancedProfileNativeActionsRecord ||
+      enhancedProfileRoProControlsRecord ||
+      enhancedProfileRoProBadgeRecord
+    );
+  }
+
+  function makeEnhancedProfileNativeSlot(name, className) {
+    const slot = document.createElement("slot");
+    slot.name = name;
+    slot.className = className;
+    return slot;
   }
 
   function makeEnhancedProfileNativePresenceSlot(presenceSection) {
@@ -25195,9 +28159,13 @@
     const identityBlock = makeEnhancedProfileElement("div", "rtp-identity");
     const nameRow = makeEnhancedProfileElement("div", "rtp-name-row");
     nameRow.append(makeEnhancedProfileElement("h1", "", identity.displayName));
-    const badges = makeEnhancedProfileElement("span", "rtp-badges");
+    const badges = makeEnhancedProfileElement("div", "rtp-badges");
+    const nativeIconFallback = makeEnhancedProfileElement(
+      "span",
+      "rtp-native-name-icon-fallback"
+    );
     if (identity.isVerified) {
-      badges.append(makeEnhancedProfileVerifiedIcon());
+      nativeIconFallback.append(makeEnhancedProfileVerifiedIcon());
     }
     if (identity.isRobloxPlus) {
       const robloxPlus = makeEnhancedProfileElement("span", "rtp-roblox-plus");
@@ -25207,26 +28175,45 @@
         '<svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">' +
         '<path fill-rule="evenodd" d="M6.4 2.5 25.5 7l-4.4 19.1L2 21.6 6.4 2.5Zm5.2 8-1.5 6.2 6.3 1.5 1.5-6.3-6.3-1.4Z"></path>' +
         '<path d="M23 2v3h3v2h-3v3h-2V7h-3V5h3V2h2Z"></path></svg>';
-      badges.append(robloxPlus);
+      nativeIconFallback.append(robloxPlus);
     }
-    if (viewerUserId && !isOwnProfile && isEnhancedProfileLimited(data)) {
-      const limited = makeEnhancedProfileElement(
-        "span",
-        "rtp-status-pill rtp-status-pill--limited",
-        "Profile Limited"
+    const nativeNameIconsSlot = makeEnhancedProfileNativeSlot(
+      ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME,
+      "rtp-native-name-icons-slot"
+    );
+    if (nativeIconFallback.childElementCount) {
+      nativeNameIconsSlot.append(nativeIconFallback);
+    }
+    badges.append(nativeNameIconsSlot);
+    badges.append(makeEnhancedProfileNativeSlot(
+      ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME,
+      "rtp-ropro-badge-slot"
+    ));
+    if (viewerUserId && !isOwnProfile) {
+      const limited = makeEnhancedProfileLimitDisclosure(
+        getEnhancedProfileLimitations(data)
       );
-      limited.title =
-        "Some profile information is limited by privacy or regional settings";
-      badges.append(limited);
+      if (limited) badges.append(limited);
     }
     if (identity.isBanned) {
       const banned = makeEnhancedProfileElement("span", "rtp-status-pill", "Banned");
       badges.append(banned);
     }
     if (badges.childElementCount) nameRow.append(badges);
+    const username = makeEnhancedProfileElement("p", "rtp-username");
+    const trustedLabel = makeEnhancedProfileElement(
+      "span",
+      "rtp-trusted-label"
+    );
+    trustedLabel.hidden = true;
+    username.append(`@${identity.username}`, trustedLabel);
     identityBlock.append(
       nameRow,
-      makeEnhancedProfileElement("p", "rtp-username", `@${identity.username}`)
+      username,
+      makeEnhancedProfileNativeSlot(
+        ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME,
+        "rtp-ropro-controls-slot"
+      )
     );
     const social = makeEnhancedProfileElement("nav", "rtp-social");
     social.setAttribute("aria-label", "Profile connections");
@@ -25255,7 +28242,7 @@
       data.sections.relationships.data.mutualFriendsAvailable
     ) {
       const mutuals = makeEnhancedProfileElement("a");
-      mutuals.href = `/users/${identity.userId}/friends#!/friends`;
+      mutuals.href = `/users/${identity.userId}/friends#!/friends?rotool=mutuals`;
       mutuals.dataset.rtpSocial = "mutuals";
       mutuals.setAttribute("aria-label", "View mutual friends");
       mutuals.append(
@@ -25275,25 +28262,53 @@
       "div",
       `rtp-actions rtp-actions--${isOwnProfile ? "own" : "foreign"}`
     );
+    const nativeCurrentGameSlot = makeEnhancedProfileNativeSlot(
+      ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME,
+      "rtp-native-current-game-slot"
+    );
+    const currentGame = makeEnhancedProfileCurrentGame(presence);
+    if (currentGame) nativeCurrentGameSlot.append(currentGame);
+    actions.append(nativeCurrentGameSlot);
     const actionRow = makeEnhancedProfileElement("div", "rtp-action-row");
+    const nativeActionsSlot = makeEnhancedProfileNativeSlot(
+      ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME,
+      "rtp-native-actions-slot"
+    );
     if (isOwnProfile) {
-      actionRow.append(
+      nativeActionsSlot.append(
         makeEnhancedProfileButton("Edit avatar", { href: "/my/avatar" }),
         makeEnhancedProfileButton("Edit profile", { href: "/users/profile/edit" })
       );
     } else {
       const relationships = data.sections.relationships;
       if (
+        presence.status === "ready" &&
+        presence.data.type === "game" &&
+        presence.data.placeId &&
+        presence.data.gameInstanceId
+      ) {
+        const joinButton = makeEnhancedProfileButton("Join", { primary: true });
+        joinButton.addEventListener("click", () => {
+          void joinEnhancedProfileUser(
+            identity.userId,
+            presence.data,
+            joinButton
+          );
+        });
+        nativeActionsSlot.append(joinButton);
+      }
+      if (
         viewerUserId &&
         relationships.status === "ready" &&
         relationships.data.isFriend &&
         relationships.data.canChat
       ) {
-        actionRow.append(makeEnhancedProfileButton("Chat", {
+        nativeActionsSlot.append(makeEnhancedProfileButton("Chat", {
           onClick: openEnhancedProfileNativeChat
         }));
       }
     }
+    actionRow.append(nativeActionsSlot);
     actionRow.append(makeEnhancedProfileOverflow(identity.userId));
     actions.append(actionRow);
     const support = makeEnhancedProfileElement("div", "rtp-hero-support");
@@ -25431,6 +28446,31 @@
   }
 
   function renderEnhancedProfile() {
+    const openDialog = enhancedProfileCollectionDialog;
+    const openDialogKind = openDialog?.dataset?.rtpCollectionKind || "";
+    const openDetailDialogState =
+      openDialog?.open === true &&
+      openDialog.dataset.rtpCollectionRouteUserId ===
+        enhancedProfileRouteUserId &&
+      ["account-age", "games", "mutual-groups", "owned-groups"].includes(
+        openDialogKind
+      )
+        ? (() => {
+            const list = openDialog.querySelector(".rtp-collection-list");
+            const rows = Array.from(
+              openDialog.querySelectorAll(".rtp-collection-row")
+            );
+            const activeRow = enhancedProfileShadowRoot?.activeElement
+              ?.closest?.(".rtp-collection-row") || null;
+            return {
+              kind: openDialogKind,
+              listScrollTop: list?.scrollTop || 0,
+              focusedRowHref: activeRow?.getAttribute("href") || "",
+              focusedRowIndex: activeRow ? rows.indexOf(activeRow) : -1
+            };
+          })()
+        : null;
+    cleanupEnhancedProfileCollectionDialog(false);
     clearEnhancedProfileNativePresence();
     if (enhancedProfileLoadState === "loading") {
       renderEnhancedProfileLoading();
@@ -25492,6 +28532,44 @@
     shell.append(aboutPanel, creationsPanel);
     app.replaceChildren(shell);
     syncEnhancedProfileTabUi(false);
+    if (openDetailDialogState) {
+      const trigger = enhancedProfileShadowRoot?.querySelector(
+        `[data-rtp-profile-detail-action="${openDetailDialogState.kind}"]`
+      );
+      if (trigger) {
+        const reopened = openDetailDialogState.kind === "account-age"
+          ? openEnhancedProfileAccountAgeDialog(enhancedProfileData, trigger)
+          : openEnhancedProfileCollectionDialog(
+              openDetailDialogState.kind,
+              enhancedProfileData,
+              trigger
+            );
+        if (reopened) {
+          window.requestAnimationFrame(() => {
+            const dialog = enhancedProfileCollectionDialog;
+            if (
+              dialog?.open !== true ||
+              dialog.dataset.rtpCollectionKind !== openDetailDialogState.kind ||
+              dialog.dataset.rtpCollectionRouteUserId !==
+                enhancedProfileRouteUserId
+            ) {
+              return;
+            }
+            const list = dialog.querySelector(".rtp-collection-list");
+            if (list) list.scrollTop = openDetailDialogState.listScrollTop;
+            const rows = Array.from(
+              dialog.querySelectorAll(".rtp-collection-row")
+            );
+            const focusTarget = rows.find((row) =>
+              openDetailDialogState.focusedRowHref &&
+              row.getAttribute("href") ===
+                openDetailDialogState.focusedRowHref
+            ) || rows[openDetailDialogState.focusedRowIndex];
+            focusTarget?.focus({ preventScroll: true });
+          });
+        }
+      }
+    }
   }
 
   function sendEnhancedProfileMessage(
@@ -25951,8 +29029,7 @@
     if (!isEnhancedProfileNativeOverflowRouteCurrent()) return null;
     const content = document.getElementById("content");
     if (!content) return null;
-    const routeUserId = enhancedProfileRouteUserId;
-    const candidateRoots = Array.from(
+    const eligibleRoots = Array.from(
       roots || enhancedProfileSuppressedRoots
     ).filter((root) =>
       root?.isConnected &&
@@ -25960,9 +29037,14 @@
       root.matches?.(
         '.profile-platform-container[data-profile-type="User"]'
       ) &&
-      normalizeEnhancedProfileId(root.dataset.profileId) === routeUserId &&
+      normalizeEnhancedProfileId(root.dataset.profileId) ===
+        enhancedProfileRouteUserId &&
       root.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)
     );
+    const selectedRoot = selectEnhancedProfileNativeRoot(eligibleRoots, {
+      requireSuppressed: true
+    });
+    const candidateRoots = selectedRoot ? [selectedRoot] : [];
     const preferMobile = typeof matchMedia === "function" &&
       matchMedia("(max-width: 680px)").matches;
     const candidates = [];
@@ -26881,16 +29963,14 @@
         '.profile-platform-container[data-profile-type="User"]'
       )
     );
-    const nativeCoverRoot = roots.find((root) =>
-      normalizeEnhancedProfileId(root.dataset.profileId) ===
-        enhancedProfileRouteUserId &&
-      root.querySelector(
-        ".currently-wearing-avatar-with-background"
-      )
-    ) || null;
+    const selectedNativeRoot = selectEnhancedProfileNativeRoot(roots);
+    const nativeCoverRoot = selectedNativeRoot?.querySelector(
+      ".currently-wearing-avatar-with-background"
+    ) ? selectedNativeRoot : null;
     const nativeCover = nativeCoverRoot?.querySelector(
       ".currently-wearing-avatar-with-background"
     ) || null;
+    syncEnhancedProfileNativeHeaderIntegration(roots);
     for (const root of roots) {
       if (!root.hasAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE)) {
         root.setAttribute(ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE, "");
@@ -26918,6 +29998,7 @@
   }
 
   function restoreNativeEnhancedProfileRoots() {
+    cleanupEnhancedProfileNativeHeaderIntegration();
     cleanupEnhancedProfileNativeOverflow(true);
     document
       .querySelectorAll(`[${ENHANCED_PROFILE_SUPPRESSED_ATTRIBUTE}]`)
@@ -26995,6 +30076,7 @@
   }
 
   function createEnhancedProfileHost(content, userId) {
+    cleanupEnhancedProfileNativeHeaderIntegration();
     document.getElementById(ENHANCED_PROFILE_HOST_ID)?.remove();
     const host = document.createElement("div");
     host.id = ENHANCED_PROFILE_HOST_ID;
@@ -27025,6 +30107,7 @@
     clearEnhancedProfilePendingTopReset();
     enhancedProfileOverflowController?.abort();
     enhancedProfileOverflowController = null;
+    cleanupEnhancedProfileCollectionDialog(false);
     cancelEnhancedProfileBadgeCountAnimation();
     window.clearTimeout(enhancedProfileBadgeCountStartTimer);
     window.clearTimeout(enhancedProfileRelationshipsStartTimer);
@@ -27148,6 +30231,7 @@
     if (!isFeatureEnabled("joinScheduler")) {
       cleanupJoinSchedulerFeature();
     }
+    mountMutualFriendsPage();
     mountOnlineFriendsFilter();
     mountBestFriendsCarousel();
     mountHomeFriendsCollapseControl();
@@ -29324,7 +32408,8 @@
       : node?.parentElement;
     return Boolean(
       element?.closest?.(
-        `[data-rsl-best-friends-carousel], [${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}], ` +
+        "#rsl-enhanced-profile-host, " +
+          `[data-rsl-best-friends-carousel], [${NATIVE_EVENT_SCHEDULE_ATTRIBUTE}], ` +
           "[data-rsl-experience-places]"
       )
     );
@@ -30697,6 +33782,105 @@
     contentTestHooks.cleanupQuickSettingsHome = cleanupQuickSettingsHome;
     contentTestHooks.isQuickPlayActionEnabled = isQuickPlayActionEnabled;
     contentTestHooks.makeQuickPlaySurface = makeQuickPlaySurface;
+    contentTestHooks.mutualFriendsPageConstants = Object.freeze({
+      messageType: MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE,
+      tabAttribute: MUTUAL_FRIENDS_TAB_ATTRIBUTE,
+      listAttribute: MUTUAL_FRIENDS_LIST_ATTRIBUTE,
+      viewAttribute: MUTUAL_FRIENDS_VIEW_ATTRIBUTE,
+      competingAttribute: MUTUAL_FRIENDS_COMPETING_ATTRIBUTE
+    });
+    contentTestHooks.getTargetFriendsPageRoute = getTargetFriendsPageRoute;
+    contentTestHooks.getMutualFriendsPageHref = getMutualFriendsPageHref;
+    contentTestHooks.normalizeMutualFriendsPageResponse =
+      normalizeMutualFriendsPageResponse;
+    contentTestHooks.mountMutualFriendsPage = mountMutualFriendsPage;
+    contentTestHooks.loadMutualFriendsPage = loadMutualFriendsPage;
+    contentTestHooks.cleanupMutualFriendsPageFeature =
+      cleanupMutualFriendsPageFeature;
+    contentTestHooks.setMutualFriendsPageRouteUrlForTests = (rawUrl) => {
+      mutualFriendsPageRouteUrlForTests =
+        typeof rawUrl === "string" && rawUrl ? rawUrl : null;
+    };
+    contentTestHooks.setMutualFriendsPageMessageSenderForTests = (sender) => {
+      mutualFriendsPageMessageSenderForTests =
+        typeof sender === "function" ? sender : null;
+    };
+    contentTestHooks.getMutualFriendsPageStateForTests = () => {
+      const mount = document.querySelector(
+        "#friends-web-app, #friends-container"
+      );
+      const tabGroup = mount?.querySelector("[data-rsl-mutual-friends-tabs]");
+      const tab = tabGroup?.querySelector(`[${MUTUAL_FRIENDS_TAB_ATTRIBUTE}]`);
+      const tabControl = getMutualFriendsActionableTabControl(tab);
+      const nativeLists = Array.from(
+        mount?.querySelectorAll(
+          `.friends-content ul.hlist.avatar-cards:not([${MUTUAL_FRIENDS_LIST_ATTRIBUTE}])`
+        ) || []
+      );
+      return {
+        targetUserId: mutualFriendsPageTargetUserId,
+        loadState: mutualFriendsPageLoadState,
+        totalCount: mutualFriendsPageTotal,
+        errorCode: mutualFriendsPageErrorCode,
+        tabCount: tabGroup?.querySelectorAll(
+          `:scope > [${MUTUAL_FRIENDS_TAB_ATTRIBUTE}]`
+        ).length || 0,
+        visibleTabLabels: Array.from(tabGroup?.children || [])
+          .filter((element) => getComputedStyle(element).display !== "none")
+          .map((element) => normalizeVisibleText(element)),
+        tabHref: tabControl?.getAttribute("href") || "",
+        tabAriaSelected: tabControl?.getAttribute("aria-selected") || "",
+        tabWidths: Array.from(tabGroup?.children || [])
+          .filter((element) => getComputedStyle(element).display !== "none")
+          .map((element) => element.getBoundingClientRect().width),
+        activeTabClassCount: Array.from(tabGroup?.children || [])
+          .filter((element) =>
+            getComputedStyle(element).display !== "none" &&
+            element.classList.contains("active")
+          ).length,
+        selectedTabLabels: Array.from(tabGroup?.children || [])
+          .filter((element) => {
+            if (getComputedStyle(element).display === "none") return false;
+            const control = getMutualFriendsActionableTabControl(element);
+            return control?.getAttribute("aria-selected") === "true";
+          })
+          .map((element) => normalizeVisibleText(element)),
+        cardIds: Array.from(
+          mount?.querySelectorAll(
+            `[${MUTUAL_FRIENDS_LIST_ATTRIBUTE}] > [data-rsl-mutual-friend-id]`
+          ) || []
+        ).map((card) => card.dataset.rslMutualFriendId),
+        heading: Array.from(
+          mount?.querySelectorAll(".friends-content h1, .friends-content h2, .friends-content h3") || []
+        ).map((element) => normalizeVisibleText(element)).find((text) =>
+          /^Mutual Friends/.test(text)
+        ) || "",
+        searchPlaceholder: mount?.querySelector(
+          `[${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}]`
+        )?.getAttribute("placeholder") || "",
+        customSearchCount: mount?.querySelectorAll(
+          `[${MUTUAL_FRIENDS_SEARCH_ATTRIBUTE}]`
+        ).length || 0,
+        nativeSearchHidden: Boolean(mount?.querySelector(
+          `[${MUTUAL_FRIENDS_NATIVE_SEARCH_HIDDEN_ATTRIBUTE}]`
+        )),
+        nativePanelVisible: (() => {
+          const panel = mount?.querySelector(
+            `[${MUTUAL_FRIENDS_NATIVE_PANEL_ATTRIBUTE}]`
+          );
+          return Boolean(panel && getComputedStyle(panel).display !== "none");
+        })(),
+        roProPanelVisibleCount: Array.from(
+          mount?.querySelectorAll(`[${MUTUAL_FRIENDS_ROPRO_PANEL_ATTRIBUTE}]`) || []
+        ).filter((element) => getComputedStyle(element).display !== "none").length,
+        nativeListsHidden: nativeLists.length > 0 && nativeLists.every(
+          (list) => getComputedStyle(list).display === "none"
+        ),
+        competingVisibleCount: Array.from(
+          mount?.querySelectorAll(`[${MUTUAL_FRIENDS_COMPETING_ATTRIBUTE}]`) || []
+        ).filter((element) => getComputedStyle(element).display !== "none").length
+      };
+    };
     contentTestHooks.enhancedProfileConstants = Object.freeze({
       hostId: ENHANCED_PROFILE_HOST_ID,
       styleId: ENHANCED_PROFILE_STYLE_ID,
@@ -30716,6 +33900,28 @@
         ENHANCED_PROFILE_NATIVE_STANDARD_ACTION_ATTRIBUTE,
       nativeReturnActionAttribute:
         ENHANCED_PROFILE_NATIVE_RETURN_ACTION_ATTRIBUTE,
+      roproControlsAttribute:
+        ENHANCED_PROFILE_ROPRO_CONTROLS_ATTRIBUTE,
+      roproControlsSlotName:
+        ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME,
+      roproBadgeAttribute:
+        ENHANCED_PROFILE_ROPRO_BADGE_ATTRIBUTE,
+      roproBadgeSlotName:
+        ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME,
+      nativeNameIconsAttribute:
+        ENHANCED_PROFILE_NATIVE_NAME_ICONS_ATTRIBUTE,
+      nativeNameIconsSlotName:
+        ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME,
+      nativeCurrentGameAttribute:
+        ENHANCED_PROFILE_NATIVE_CURRENT_GAME_ATTRIBUTE,
+      nativeCurrentGameSlotName:
+        ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME,
+      nativeActionsAttribute: ENHANCED_PROFILE_NATIVE_ACTIONS_ATTRIBUTE,
+      nativeActionsSlotName: ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME,
+      nativeActionFallbackAttribute:
+        ENHANCED_PROFILE_NATIVE_ACTION_FALLBACK_ATTRIBUTE,
+      nativeNameIconFallbackAttribute:
+        ENHANCED_PROFILE_NATIVE_NAME_ICON_FALLBACK_ATTRIBUTE,
       hostNativeCoverAttribute:
         ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE,
       messageType: ENHANCED_PROFILE_MESSAGE_TYPE,
@@ -30743,6 +33949,10 @@
       getEnhancedProfileCollectionCountLabel;
     contentTestHooks.getEnhancedProfileBadgeCountLabelForTests =
       getEnhancedProfileBadgeCountLabel;
+    contentTestHooks.getEnhancedProfileAccountAgeDetailsForTests =
+      getEnhancedProfileAccountAgeDetails;
+    contentTestHooks.getEnhancedProfileLimitationsForTests =
+      getEnhancedProfileLimitations;
     contentTestHooks.mountEnhancedProfile = mountEnhancedProfile;
     contentTestHooks.switchEnhancedProfileViewForTests =
       setEnhancedProfileViewMode;
@@ -30758,9 +33968,32 @@
       button.click();
       return true;
     };
+    contentTestHooks.clickEnhancedProfileLimitForTests = () => {
+      const trigger = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-profile-limit summary"
+      );
+      if (!trigger) return false;
+      trigger.click();
+      return true;
+    };
+    contentTestHooks.clickEnhancedProfileDetailForTests = (action) => {
+      const trigger = enhancedProfileShadowRoot?.querySelector(
+        `[data-rtp-profile-detail-action="${String(action || "")}"]`
+      );
+      if (!trigger) return false;
+      trigger.focus({ preventScroll: true });
+      trigger.click();
+      return true;
+    };
+    contentTestHooks.closeEnhancedProfileCollectionForTests = () => {
+      if (!enhancedProfileCollectionDialog?.open) return false;
+      closeEnhancedProfileCollectionDialog(true);
+      return true;
+    };
     contentTestHooks.cleanupEnhancedProfileFeature =
       cleanupEnhancedProfileFeature;
     contentTestHooks.loadEnhancedProfileData = loadEnhancedProfileData;
+    contentTestHooks.rerenderEnhancedProfileForTests = renderEnhancedProfile;
     contentTestHooks.setEnhancedProfileActiveTab = setEnhancedProfileActiveTab;
     contentTestHooks.setEnhancedProfileMessageSenderForTests = (sender) => {
       enhancedProfileMessageSenderForTests = sender;
@@ -30802,7 +34035,27 @@
       usesNativeAvatarCover:
         enhancedProfileHost?.hasAttribute(
           ENHANCED_PROFILE_HOST_NATIVE_COVER_ATTRIBUTE
-        ) === true
+        ) === true,
+      roproControlsAdopted: isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileRoProControlsRecord,
+        ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME
+      ),
+      roproBadgeAdopted: isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileRoProBadgeRecord,
+        ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME
+      ),
+      nativeNameIconsAdopted: isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileNativeNameIconsRecord,
+        ENHANCED_PROFILE_NATIVE_NAME_ICONS_SLOT_NAME
+      ),
+      nativeCurrentGameCloned: isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileNativeCurrentGameRecord,
+        ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME
+      ),
+      nativeActionsCloned: isEnhancedProfileAdoptedNodeCurrent(
+        enhancedProfileNativeActionsRecord,
+        ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME
+      )
     });
     contentTestHooks.getEnhancedProfileVisualForTests = () => {
       const shell = enhancedProfileShadowRoot?.querySelector(".rtp-shell");
@@ -30824,9 +34077,40 @@
         ".rtp-header-description"
       );
       const heading = enhancedProfileShadowRoot?.querySelector("h1");
-      const primary = enhancedProfileShadowRoot?.querySelector(
-        ".rtp-button--primary"
+      const username = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-username"
       );
+      const trustedLabel = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-trusted-label"
+      );
+      const robloxPlus = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-roblox-plus"
+      );
+      const robloxPlusPath = robloxPlus?.querySelector("path");
+      const roproControlsSlot = enhancedProfileShadowRoot?.querySelector(
+        '.rtp-ropro-controls-slot'
+      );
+      const roproBadgeSlot = enhancedProfileShadowRoot?.querySelector(
+        '.rtp-ropro-badge-slot'
+      );
+      const nativeNameIconsSlot = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-native-name-icons-slot"
+      );
+      const nativeNameIconFallback = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-native-name-icon-fallback"
+      );
+      const profileLimit = enhancedProfileShadowRoot?.querySelector(
+        ".rtp-profile-limit"
+      );
+      const profileLimitTrigger = profileLimit?.querySelector("summary");
+      const profileLimitPanel = profileLimit?.querySelector(
+        ".rtp-profile-limit-panel"
+      );
+      const primary = Array.from(
+        enhancedProfileShadowRoot?.querySelectorAll(
+          ".rtp-button--primary"
+        ) || []
+      ).find((button) => button.getClientRects().length > 0) || null;
       const cover = enhancedProfileShadowRoot?.querySelector(".rtp-cover");
       const headshot = enhancedProfileShadowRoot?.querySelector(".rtp-headshot");
       const social = enhancedProfileShadowRoot?.querySelector(".rtp-social");
@@ -30890,6 +34174,15 @@
       return {
         headingFontSize: heading ? getComputedStyle(heading).fontSize : "",
         headingFontWeight: heading ? getComputedStyle(heading).fontWeight : "",
+        usernameText:
+          username?.textContent?.replace(/\s+/g, " ").trim() || "",
+        trustedLabelText:
+          trustedLabel?.textContent?.replace(/\s+/g, " ").trim() || "",
+        trustedLabelVisible: Boolean(
+          trustedLabel &&
+          !trustedLabel.hidden &&
+          getComputedStyle(trustedLabel).display !== "none"
+        ),
         primaryBackground: primary
           ? getComputedStyle(primary).backgroundColor
           : "",
@@ -30943,6 +34236,18 @@
         profileDetailLabels: Array.from(
           profileDetails?.querySelectorAll(".rtp-profile-detail dt") || []
         ).map((term) => term.textContent?.trim() || ""),
+        profileDetailActions: Array.from(
+          profileDetails?.querySelectorAll(
+            ".rtp-profile-detail-trigger"
+          ) || []
+        ).map((trigger) => ({
+          action: trigger.dataset.rtpProfileDetailAction || "",
+          tagName: trigger.tagName,
+          ariaHasPopup: trigger.getAttribute("aria-haspopup") || "",
+          ariaControls: trigger.getAttribute("aria-controls") || "",
+          textDecorationLine: getComputedStyle(trigger).textDecorationLine,
+          afterContent: getComputedStyle(trigger, "::after").content
+        })),
         profileDetailsHeight:
           profileDetails?.getBoundingClientRect?.().height || 0,
         profileStatusLabels: Array.from(
@@ -30950,6 +34255,50 @@
             ".rtp-name-row .rtp-status-pill"
           ) || []
         ).map((status) => status.textContent?.trim() || ""),
+        robloxPlusLabel: robloxPlus?.getAttribute("aria-label") || "",
+        robloxPlusColor: robloxPlus ? getComputedStyle(robloxPlus).color : "",
+        robloxPlusFill: robloxPlusPath
+          ? getComputedStyle(robloxPlusPath).fill
+          : "",
+        roproControlsAssigned:
+          roproControlsSlot?.assignedElements?.().includes(
+            enhancedProfileRoProControlsRecord?.node
+          ) === true,
+        roproBadgeAssigned:
+          roproBadgeSlot?.assignedElements?.().includes(
+            enhancedProfileRoProBadgeRecord?.node
+          ) === true,
+        nativeNameIconsAssigned:
+          nativeNameIconsSlot?.assignedElements?.().includes(
+            enhancedProfileNativeNameIconsRecord?.node
+          ) === true,
+        nativeNameIconFallbackDisplay: nativeNameIconFallback
+          ? getComputedStyle(nativeNameIconFallback).display
+          : "",
+        nativeNameIconFallbackRectCount:
+          nativeNameIconFallback?.getClientRects?.().length || 0,
+        nativeNameIconsDisplay: enhancedProfileNativeNameIconsRecord?.node
+          ? getComputedStyle(enhancedProfileNativeNameIconsRecord.node).display
+          : "",
+        roproControlsDisplay: enhancedProfileRoProControlsRecord?.node
+          ? getComputedStyle(enhancedProfileRoProControlsRecord.node).display
+          : "",
+        profileLimitTagName: profileLimit?.tagName || "",
+        profileLimitTriggerTagName: profileLimitTrigger?.tagName || "",
+        profileLimitOpen: profileLimit?.open === true,
+        profileLimitAriaExpanded:
+          profileLimitTrigger?.getAttribute("aria-expanded") || "",
+        profileLimitPanelRole: profileLimitPanel?.getAttribute("role") || "",
+        profileLimitPanelLeft:
+          profileLimitPanel?.getBoundingClientRect?.().left || 0,
+        profileLimitPanelRight:
+          profileLimitPanel?.getBoundingClientRect?.().right || 0,
+        profileLimitItems: Array.from(
+          profileLimit?.querySelectorAll(".rtp-profile-limit-item") || []
+        ).map((item) => ({
+          label: item.dataset.rtpProfileLimitLabel || "",
+          status: item.dataset.rtpProfileLimitStatus || ""
+        })),
         profileDetailsTop: detailsRect?.top || 0,
         profileDetailsPaddingTop: profileDetails
           ? getComputedStyle(profileDetails).paddingTop
@@ -31035,12 +34384,110 @@
           enhancedProfileShadowRoot?.querySelectorAll(
             ".rtp-action-row .rtp-button"
           ) || []
-        ).map((button) => button.textContent?.trim() || ""),
-        actionOrder: Array.from(actionRow?.children || []).map((element) =>
-          element.matches?.(".rtp-overflow")
-            ? "overflow"
-            : element.textContent?.replace(/\s+/g, " ").trim() || ""
+        )
+          .filter((button) => button.getClientRects().length > 0)
+          .map((button) => button.textContent?.trim() || ""),
+        nativeActionLabels: Array.from(
+          enhancedProfileNativeActionsRecord?.node?.querySelectorAll(
+            "button, a[href]"
+          ) || []
+        ).map((control) =>
+          control.textContent?.replace(/\s+/g, " ").trim() || ""
         ),
+        nativeActionButtonIds: Array.from(
+          enhancedProfileNativeActionsRecord?.node?.querySelectorAll(
+            "button, a[href]"
+          ) || []
+        ).map((control) => control.id),
+        nativeCurrentGameText:
+          enhancedProfileNativeCurrentGameRecord?.node?.textContent
+            ?.replace(/\s+/g, " ").trim() || "",
+        collectionDialogOpen: enhancedProfileCollectionDialog?.open === true,
+        collectionDialogKind:
+          enhancedProfileCollectionDialog?.dataset?.rtpCollectionKind || "",
+        collectionDialogTitle:
+          enhancedProfileCollectionDialog?.querySelector(
+            ".rtp-collection-dialog-title"
+          )?.textContent || "",
+        collectionDialogDescription:
+          enhancedProfileCollectionDialog?.querySelector(
+            ".rtp-collection-dialog-description"
+          )?.textContent || "",
+        collectionDialogRows: Array.from(
+          enhancedProfileCollectionDialog?.querySelectorAll(
+            ".rtp-collection-row"
+          ) || []
+        ).map((row) => ({
+          href: row.getAttribute("href") || "",
+          name: row.querySelector(".rtp-collection-name")?.textContent
+            ?.replace(/\s+/g, " ").trim() || "",
+          meta: row.querySelector(".rtp-collection-meta")?.textContent || ""
+        })),
+        accountAgeDialogRows: Array.from(
+          enhancedProfileCollectionDialog?.querySelectorAll(
+            ".rtp-account-age-row"
+          ) || []
+        ).map((row) => ({
+          label: row.querySelector(".rtp-account-age-label")?.textContent || "",
+          value: row.querySelector(".rtp-account-age-value")?.textContent || "",
+          dateTime:
+            row.querySelector(".rtp-account-age-value")?.getAttribute(
+              "datetime"
+            ) || ""
+        })),
+        collectionDialogListItemCount:
+          enhancedProfileCollectionDialog?.querySelectorAll(
+            ".rtp-collection-list > .rtp-collection-list-item"
+          ).length || 0,
+        collectionDialogDirectRowCount:
+          enhancedProfileCollectionDialog?.querySelectorAll(
+            ".rtp-collection-list > .rtp-collection-row"
+          ).length || 0,
+        collectionDialogCount:
+          enhancedProfileShadowRoot?.querySelectorAll(
+            "#rtp-profile-collection-dialog"
+          ).length || 0,
+        collectionDialogLeft:
+          enhancedProfileCollectionDialog?.getBoundingClientRect?.().left || 0,
+        collectionDialogRight:
+          enhancedProfileCollectionDialog?.getBoundingClientRect?.().right || 0,
+        collectionDialogTop:
+          enhancedProfileCollectionDialog?.getBoundingClientRect?.().top || 0,
+        collectionDialogBottom:
+          enhancedProfileCollectionDialog?.getBoundingClientRect?.().bottom || 0,
+        collectionDialogHeaderBottom:
+          enhancedProfileCollectionDialog?.querySelector(
+            ".rtp-collection-dialog-header"
+          )?.getBoundingClientRect?.().bottom || 0,
+        collectionDialogDescriptionBottom:
+          enhancedProfileCollectionDialog?.querySelector(
+            ".rtp-collection-dialog-description"
+          )?.getBoundingClientRect?.().bottom || 0,
+        collectionDialogFirstRowTop:
+          enhancedProfileCollectionDialog?.querySelector(
+            ".rtp-collection-row"
+          )?.getBoundingClientRect?.().top || 0,
+        activeProfileDetailAction:
+          enhancedProfileShadowRoot?.activeElement?.dataset
+            ?.rtpProfileDetailAction || "",
+        actionOrder: Array.from(actionRow?.children || []).flatMap((element) => {
+          if (element.matches?.(".rtp-overflow")) return ["overflow"];
+          if (
+            element.tagName === "SLOT" &&
+            element.assignedElements?.().length > 0
+          ) {
+            return [];
+          }
+          const labels = Array.from(
+            element.querySelectorAll?.(".rtp-button") || []
+          )
+            .filter((button) => button.getClientRects().length > 0)
+            .map((button) => button.textContent?.replace(/\s+/g, " ").trim())
+            .filter(Boolean);
+          if (labels.length > 0) return labels;
+          const text = element.textContent?.replace(/\s+/g, " ").trim();
+          return text ? [text] : [];
+        }),
         actionsTop: actionsRect?.top || 0,
         actionsHeight: actionsRect?.height || 0,
         actionsPosition: actions ? getComputedStyle(actions).position : "",
@@ -31067,11 +34514,32 @@
       };
     };
     contentTestHooks.testEnhancedProfileChatActionForTests = () => {
+      const nativeButton = Array.from(
+        enhancedProfileNativeActionsRecord?.node?.querySelectorAll(
+          "button, a[href]"
+        ) || []
+      ).find((candidate) => candidate.textContent?.trim() === "Chat");
+      if (nativeButton) {
+        nativeButton.click();
+        return true;
+      }
       const button = Array.from(
         enhancedProfileShadowRoot?.querySelectorAll(
           ".rtp-action-row button.rtp-button"
         ) || []
       ).find((candidate) => candidate.textContent?.trim() === "Chat");
+      if (!button) return false;
+      button.click();
+      return true;
+    };
+    contentTestHooks.clickEnhancedProfileNativeActionForTests = (label) => {
+      const button = Array.from(
+        enhancedProfileNativeActionsRecord?.node?.querySelectorAll(
+          "button, a[href]"
+        ) || []
+      ).find((candidate) =>
+        candidate.textContent?.replace(/\s+/g, " ").trim() === label
+      );
       if (!button) return false;
       button.click();
       return true;

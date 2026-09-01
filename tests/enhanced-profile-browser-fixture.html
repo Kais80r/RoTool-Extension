@@ -62,6 +62,54 @@
         font-weight: 700;
         cursor: pointer;
       }
+      [data-test-native-header-actions] { width: 330px; margin-left: auto; }
+      [data-test-native-action-row], .button-container {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+      }
+      .currently-playing-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 52px;
+        margin-bottom: 8px;
+        padding: 6px 10px;
+        border: 1px solid #3c3f48;
+        border-radius: 8px;
+        color: inherit;
+        background: #202127;
+        text-decoration: none;
+      }
+      .currently-playing-card-thumbnail {
+        display: block;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 6px;
+        background: #34363f;
+      }
+      .currently-playing-card [data-test-current-game-copy] {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+      }
+      .button-container > button,
+      .button-container > a {
+        min-height: 40px;
+        flex: 1 1 auto;
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        background: #272930;
+        font-weight: 700;
+      }
+      .button-container > [data-test-native-join] { background: #335fff; }
+      [data-test-native-name-icons] [data-testid="foundation-web-icon"] {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+      }
       [data-test-native-about-dialog] {
         position: fixed;
         inset: 80px auto auto 50%;
@@ -81,6 +129,25 @@
       }
       .profile-tab-content { min-height: 360px; padding: 20px 0; }
       #roproThemeFrame, #roproThemeBackdropFrame { pointer-events: none; z-index: -1; }
+      .fixture-native-root-hidden { display: none !important; }
+      .fixture-friends-tabs { display: flex; width: 100%; margin: 0; padding: 0; list-style: none; }
+      .fixture-friends-tabs > li { width: 33.333%; flex: 1 1 33.333%; }
+      .fixture-friends-tabs a,
+      .fixture-friends-tabs button { display: block; width: 100%; min-height: 40px; color: inherit; background: #272930; text-align: center; }
+      .fixture-friends-tabs .active a { border-bottom: 3px solid #fff; }
+      .fixture-friends-content { padding-top: 18px; }
+      .fixture-friends-content .hlist.avatar-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0; list-style: none; }
+      .fixture-friends-content .avatar-card { min-height: 110px; padding: 8px; background: #272930; }
+      [data-rsl-mutual-friends-native-hidden],
+      [data-rsl-mutual-friends-pager-hidden],
+      [data-rsl-mutual-friends-native-search-hidden],
+      [data-rsl-mutual-search-hidden],
+      [data-rsl-mutual-friends-competing-hidden] { display: none !important; }
+      [data-rsl-mutual-friends-native-panel-active] { display: block !important; visibility: visible !important; }
+      [data-rsl-mutual-friends-ropro-panel-hidden] { display: none !important; }
+      [data-rsl-mutual-friends-tabs] { display: flex !important; }
+      [data-rsl-mutual-friends-tabs] > * { width: 25% !important; min-width: 0; flex: 1 1 25% !important; }
+      [data-rsl-mutual-friends-view-active] .friends-content ul.hlist.avatar-cards:not([data-rsl-mutual-friends-list]) { display: none !important; }
       /* This would destroy a light-DOM replacement, but cannot cross the closed root. */
       #rsl-enhanced-profile-host .rtp-button { height: 3px !important; background: red !important; }
     </style>
@@ -106,15 +173,49 @@
               </div>
             </div>
             <div class="profile-header-overlay" data-test-native-header>
+              <div data-test-native-name-origin>
+                <span class="items-center gap-xsmall flex min-width-0">
+                  <span id="profile-header-title-container-name" class="text-heading-large min-width-0 text-truncate-end text-no-wrap">Kais_80r</span>
+                  <span data-test-native-name-icons class="items-center gap-xxsmall inline-flex shrink-0 [--icon-size-small:1em]">
+                    <span class="relative flex items-center justify-center">
+                      <span aria-hidden="true" data-testid="foundation-web-icon" class="grow-0 shrink-0 basis-auto icon icon-filled-verified-backplate size-[var(--icon-size-large)] content-system-emphasis"></span>
+                      <span aria-hidden="true" data-testid="foundation-web-icon" class="grow-0 shrink-0 basis-auto icon icon-filled-verified-check size-[var(--icon-size-large)] absolute" style="color:white"></span>
+                    </span>
+                    <span aria-hidden="true" data-testid="foundation-web-icon" class="grow-0 shrink-0 basis-auto icon icon-regular-roblox-plus size-[var(--icon-size-large)] content-system-contrast" aria-label="Roblox Plus subscriber"></span>
+                  </span>
+                </span>
+                <div data-test-native-username-origin>
+                  <span class="stylistic-alts-username">@Kais_80r</span><span data-test-native-trusted-label> &bull; Trusted</span>
+                </div>
+              </div>
+              <div data-test-ropro-origin></div>
               <span data-test-native-header-copy>Native Roblox profile header</span>
               <pre class="description-content">Native Roblox profile description that opens the native About dialog.</pre><button type="button" class="more-btn">more</button>
-              <button id="user-profile-header-Chat" class="buttons-show-on-mobile" disabled>Disabled Chat</button>
-              <button id="user-profile-header-Chat" data-test-native-chat>Chat</button>
-              <div class="buttons-show-on-desktop" data-test-native-overflow-shell="desktop">
-                <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-desktop" data-test-native-overflow="desktop"><span aria-hidden="true">•••</span></button>
+              <div class="buttons-show-on-desktop" data-test-native-header-actions="desktop" data-test-native-overflow-shell="desktop">
+                <a href="/games/17720162456?placeId=17720162456&amp;universeId=6069634717&amp;position=1&amp;page=userProfilePage&amp;friendId=123" class="currently-playing-card" data-test-native-current-game="desktop">
+                  <span class="currently-playing-card-thumbnail"></span>
+                  <span data-test-current-game-copy><strong>Sorcerer Tower Defense [NAOYA]</strong><span>Maturity: Minimal</span></span>
+                </a>
+                <div data-test-native-action-row>
+                  <div class="button-container" data-test-native-button-container="desktop">
+                    <button type="button" id="user-profile-header-JoinExperience" data-test-native-join="desktop"><span>Join</span></button>
+                    <a href="/chat/conversations" id="user-profile-header-Chat" data-test-native-chat="desktop"><span>Chat</span></a>
+                  </div>
+                  <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-desktop" data-test-native-overflow="desktop"><span aria-hidden="true">•••</span></button>
+                </div>
               </div>
-              <div class="buttons-show-on-mobile" data-test-native-overflow-shell="mobile">
-                <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-mobile" data-test-native-overflow="mobile"><span aria-hidden="true">•••</span></button>
+              <div class="buttons-show-on-mobile" data-test-native-header-actions="mobile" data-test-native-overflow-shell="mobile">
+                <a href="/games/17720162456?placeId=17720162456&amp;universeId=6069634717&amp;position=1&amp;page=userProfilePage&amp;friendId=123" class="currently-playing-card" data-test-native-current-game="mobile">
+                  <span class="currently-playing-card-thumbnail"></span>
+                  <span data-test-current-game-copy><strong>Mobile Sorcerer Tower Defense</strong><span>Maturity: Minimal</span></span>
+                </a>
+                <div data-test-native-action-row>
+                  <div class="button-container" data-test-native-button-container="mobile">
+                    <button type="button" id="user-profile-header-JoinExperience" data-test-native-join="mobile"><span>Join</span></button>
+                    <button type="button" id="user-profile-header-Chat" data-test-native-chat="mobile"><span>Chat</span></button>
+                  </div>
+                  <button id="user-profile-header-contextual-menu-button" type="button" aria-label="Open contextual menu" aria-haspopup="dialog" aria-expanded="false" aria-controls="fixture-native-profile-menu-mobile" data-test-native-overflow="mobile"><span aria-hidden="true">•••</span></button>
+                </div>
               </div>
             </div>
             <div class="profile-tab-content" data-test-native-body>Native Roblox profile body</div>
@@ -136,6 +237,21 @@
       const nativeCanvas = nativeRoot.querySelector("[data-test-native-avatar-canvas]");
       const native2dToggle = nativeRoot.querySelector("[data-test-native-2d-toggle]");
       const nativeHeader = nativeRoot.querySelector("[data-test-native-header]");
+      const nativeNameOrigin = nativeRoot.querySelector(
+        "[data-test-native-name-origin] > span"
+      );
+      let nativeNameIcons = nativeRoot.querySelector(
+        "[data-test-native-name-icons]"
+      );
+      let originalNativeNameIconsNextSibling = nativeNameIcons.nextSibling;
+      const nativeTrustedLabel = nativeRoot.querySelector(
+        "[data-test-native-trusted-label]"
+      );
+      const nativeTrustedLabelParent = nativeTrustedLabel.parentElement;
+      const nativeUsername = nativeRoot.querySelector(
+        ".stylistic-alts-username"
+      );
+      const roproOrigin = nativeRoot.querySelector("[data-test-ropro-origin]");
       const nativeHeaderCopy = nativeRoot.querySelector(
         "[data-test-native-header-copy]"
       );
@@ -145,11 +261,57 @@
         "pre.description-content + button.more-btn"
       );
       let nativeChatClicks = 0;
+      let nativeJoinClicks = 0;
+      let nativeDesktopChatClicks = 0;
+      let nativeMobileChatClicks = 0;
+      let nativeDesktopJoinClicks = 0;
+      let nativeMobileJoinClicks = 0;
       let nativeDescriptionMoreClicks = 0;
       let native2dToggleClicks = 0;
       let nativeDesktopOverflowClicks = 0;
       let nativeMobileOverflowClicks = 0;
       let nativeOverflowOptionClicks = 0;
+      let roproLikeClicks = 0;
+      let roproDiscordClicks = 0;
+      let roproControls = null;
+      let roproBadge = null;
+      const installRoProFixture = () => {
+        roproBadge = document.createElement("div");
+        roproBadge.className = "ropro-user-info ropro-profile-header-badge";
+        const badgeLink = document.createElement("a");
+        badgeLink.href = "https://ropro.io/";
+        badgeLink.target = "_blank";
+        const badgeImage = document.createElement("img");
+        badgeImage.className = "ropro-profile-icon";
+        badgeImage.alt = "RoPro";
+        badgeLink.append(badgeImage);
+        roproBadge.append(badgeLink);
+
+        roproControls = document.createElement("div");
+        roproControls.id = "reputationDiv";
+        roproControls.style.cssText =
+          "margin-bottom:6px;visibility:initial;text-align:center";
+        const like = document.createElement("a");
+        like.id = "reputationLikeButton";
+        like.setAttribute("liked", "false");
+        like.setAttribute("reputation-value", "1");
+        like.textContent = "👍 1";
+        like.addEventListener("click", (event) => {
+          event.preventDefault();
+          roproLikeClicks += 1;
+        });
+        const discord = document.createElement("a");
+        discord.id = "discordLink";
+        discord.href = "discord://";
+        discord.textContent = "king_froggyfrog";
+        discord.addEventListener("click", (event) => {
+          event.preventDefault();
+          roproDiscordClicks += 1;
+        });
+        roproControls.append(like, discord);
+        roproOrigin.append(roproBadge, roproControls);
+        return { like, discord };
+      };
       const nativeOverflowTriggers = Array.from(
         nativeRoot.querySelectorAll("[data-test-native-overflow]")
       );
@@ -202,10 +364,27 @@
           document.body.append(menu);
         });
       });
-      nativeRoot.querySelector("[data-test-native-chat]").addEventListener(
-        "click",
-        () => { nativeChatClicks += 1; }
-      );
+      nativeRoot.querySelectorAll("[data-test-native-chat]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          nativeChatClicks += 1;
+          if (button.dataset.testNativeChat === "mobile") {
+            nativeMobileChatClicks += 1;
+          } else {
+            nativeDesktopChatClicks += 1;
+          }
+        });
+      });
+      nativeRoot.querySelectorAll("[data-test-native-join]").forEach((button) => {
+        button.addEventListener("click", () => {
+          nativeJoinClicks += 1;
+          if (button.dataset.testNativeJoin === "mobile") {
+            nativeMobileJoinClicks += 1;
+          } else {
+            nativeDesktopJoinClicks += 1;
+          }
+        });
+      });
       nativeDescriptionMore.addEventListener("click", () => {
         nativeDescriptionMoreClicks += 1;
         document.querySelector("[data-test-native-about-dialog]")?.remove();
@@ -297,11 +476,19 @@
                 createdAt: "2020-01-01T00:00:00.000Z",
                 updatedAt: "2026-08-28T10:00:00.000Z",
                 genre: "Adventure",
+                creatorType: index < 4 ? "user" : "group",
+                creatorId: index < 4 ? userId : String(8001 + (index % 2)),
+                creatorName: index < 4
+                  ? (other ? "SecondUser" : "Kais_80r")
+                  : `Owned Studio ${(index % 2) + 1}`,
+                creatorIsVerified: index === 4,
                 iconUrl: null
               })),
               hasMore: false,
               totalCount: 8,
-              countIsExact: true
+              countIsExact: true,
+              coverageIsComplete: true,
+              coverageStatus: "complete"
             }),
             favorites: section({
               items: Array.from({ length: 4 }, (_, index) => ({
@@ -321,7 +508,9 @@
               })),
               hasMore: false,
               totalCount: 4,
-              countIsExact: true
+              countIsExact: true,
+              coverageIsComplete: true,
+              coverageStatus: "complete"
             }),
             friends: section({
               items: Array.from({ length: 10 }, (_, index) => ({
@@ -337,7 +526,18 @@
               mutualFriendsCount: 2,
               mutualFriendsAvailable: true,
               profileLimited: false,
-              mutualGroupsCount: 5,
+              mutualGroupsCount: 15,
+              mutualGroups: {
+                hasMore: false,
+                items: Array.from({ length: 15 }, (_, index) => ({
+                  communityId: String(8101 + index),
+                  name: `Mutual Community ${index + 1}`,
+                  memberCount: 5000 + index * 100,
+                  role: index === 0 ? "Owner" : "Member",
+                  isVerified: index === 1,
+                  iconUrl: null
+                }))
+              },
               isFriend: other,
               canChat: other,
               hasMore: false,
@@ -360,7 +560,18 @@
               })),
               hasMore: true,
               totalCount: 12,
-              ownedCount: 3
+              ownedCount: 3,
+              ownedGroups: {
+                hasMore: false,
+                items: Array.from({ length: 3 }, (_, index) => ({
+                  communityId: String(8201 + index),
+                  name: `Owned Community ${index + 1}`,
+                  memberCount: 7000 + index * 100,
+                  role: "Owner",
+                  isVerified: index === 0,
+                  iconUrl: null
+                }))
+              }
             }),
             badges: section({
               items: Array.from({ length: 8 }, (_, index) => ({
@@ -435,6 +646,15 @@
         if (window.scrollY < 200) {
           throw new Error("The fixture could not establish a carried profile scroll position");
         }
+        const hiddenCompetingRoot = nativeRoot.cloneNode(true);
+        hiddenCompetingRoot.hidden = true;
+        hiddenCompetingRoot.setAttribute("aria-hidden", "true");
+        hiddenCompetingRoot.querySelectorAll(
+          "[data-test-native-current-game], [data-test-native-button-container]"
+        ).forEach((element) => {
+          element.dataset.testHiddenCompetingSource = "true";
+        });
+        document.getElementById("content").append(hiddenCompetingRoot);
         const nativeTopBeforeLoading = nativeRoot.getBoundingClientRect().top;
         hooks.mountEnhancedProfile();
         const loadingHost = document.getElementById("rsl-enhanced-profile-host");
@@ -516,9 +736,17 @@
         let state = hooks.getEnhancedProfileStateForTests();
         if (
           state.internalHeading !== "Kais_80r" ||
+          hooks.getEnhancedProfileVisualForTests().usernameText !==
+            "@Kais_80r \u2022 Trusted" ||
+          hooks.getEnhancedProfileVisualForTests().trustedLabelText !==
+            "\u2022 Trusted" ||
+          hooks.getEnhancedProfileVisualForTests().trustedLabelVisible !== true ||
           state.hostParentId !== "content" ||
           state.closedShadowRoot !== true ||
           state.roproTheme !== true ||
+          state.nativeNameIconsAdopted !== true ||
+          state.nativeCurrentGameCloned !== true ||
+          state.nativeActionsCloned !== true ||
           !state.internalText.includes("Currently Wearing") ||
           !state.internalText.includes("Communities") ||
           !state.internalText.includes("Badges") ||
@@ -532,7 +760,233 @@
           throw new Error(`Initial Enhanced Profile state was wrong: ${JSON.stringify(state)}`);
         }
 
+        nativeTrustedLabel.textContent = "";
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().trustedLabelVisible === false
+        );
+        nativeTrustedLabel.textContent = " \u2022 Trusted 123";
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        if (hooks.getEnhancedProfileVisualForTests().trustedLabelVisible) {
+          throw new Error("A non-exact native Trusted label was copied into RoTool");
+        }
+        nativeTrustedLabel.textContent = " \u2022 Trusted";
+        await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.trustedLabelVisible &&
+            current.usernameText === "@Kais_80r \u2022 Trusted";
+        });
+        nativeTrustedLabel.remove();
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().trustedLabelVisible === false
+        );
+        nativeUsername.after(nativeTrustedLabel);
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().trustedLabelVisible === true
+        );
+
         const initialHost = document.getElementById("rsl-enhanced-profile-host");
+        const nativeNameIconsMarker =
+          hooks.enhancedProfileConstants.nativeNameIconsAttribute;
+        const nativeCurrentGameMarker =
+          hooks.enhancedProfileConstants.nativeCurrentGameAttribute;
+        const nativeActionsMarker =
+          hooks.enhancedProfileConstants.nativeActionsAttribute;
+        const nativeActionFallbackMarker =
+          hooks.enhancedProfileConstants.nativeActionFallbackAttribute;
+        const nativeNameIconFallbackMarker =
+          hooks.enhancedProfileConstants.nativeNameIconFallbackAttribute;
+        const roproFixture = installRoProFixture();
+        hooks.mountEnhancedProfile();
+        const roproVisual = await waitFor(() => {
+          const currentState = hooks.getEnhancedProfileStateForTests();
+          const currentVisual = hooks.getEnhancedProfileVisualForTests();
+          return currentState.roproControlsAdopted &&
+            currentState.roproBadgeAdopted &&
+            currentState.nativeNameIconsAdopted &&
+            currentVisual.roproControlsAssigned &&
+            currentVisual.roproBadgeAssigned &&
+            currentVisual.nativeNameIconsAssigned
+            ? currentVisual
+            : false;
+        });
+        let renderedNativeNameIcons = initialHost.querySelector(
+          `[${nativeNameIconsMarker}]`
+        );
+        if (
+          roproControls.parentElement !== initialHost ||
+          roproBadge.parentElement !== initialHost ||
+          nativeNameIcons.parentElement !== nativeNameOrigin ||
+          nativeNameIcons.hasAttribute("slot") ||
+          nativeNameIcons.hasAttribute(nativeNameIconsMarker) ||
+          !renderedNativeNameIcons ||
+          renderedNativeNameIcons === nativeNameIcons ||
+          renderedNativeNameIcons.parentElement !== initialHost ||
+          roproControls.slot !==
+            hooks.enhancedProfileConstants.roproControlsSlotName ||
+          roproBadge.slot !== hooks.enhancedProfileConstants.roproBadgeSlotName ||
+          renderedNativeNameIcons.slot !==
+            hooks.enhancedProfileConstants.nativeNameIconsSlotName ||
+          !roproControls.hasAttribute(
+            hooks.enhancedProfileConstants.roproControlsAttribute
+          ) ||
+          !roproBadge.hasAttribute(
+            hooks.enhancedProfileConstants.roproBadgeAttribute
+          ) ||
+          !renderedNativeNameIcons.hasAttribute(nativeNameIconsMarker) ||
+          roproVisual.roproControlsDisplay !== "flex" ||
+          !["flex", "inline-flex"].includes(
+            roproVisual.nativeNameIconsDisplay
+          ) ||
+          roproVisual.nativeNameIconFallbackRectCount !== 0 ||
+          renderedNativeNameIcons.querySelectorAll(
+            '.icon-filled-verified-backplate, .icon-filled-verified-check, .icon-regular-roblox-plus'
+          ).length !== 3
+        ) {
+          throw new Error(
+            `The live RoPro controls were not placed in the RoTool header: ${JSON.stringify(roproVisual)}`
+          );
+        }
+        roproFixture.like.click();
+        roproFixture.discord.click();
+        if (roproLikeClicks !== 1 || roproDiscordClicks !== 1) {
+          throw new Error("Moving the RoPro controls broke their original click handlers");
+        }
+        const replacedRoProControls = roproControls;
+        const replacedRoProBadge = roproBadge;
+        const hydratedRoProControls = roproControls.cloneNode(true);
+        hydratedRoProControls.removeAttribute("slot");
+        hydratedRoProControls.removeAttribute(
+          hooks.enhancedProfileConstants.roproControlsAttribute
+        );
+        hydratedRoProControls.dataset.testHydratedRoPro = "true";
+        const hydratedRoProLike = hydratedRoProControls.querySelector(
+          "#reputationLikeButton"
+        );
+        const hydratedRoProDiscord = hydratedRoProControls.querySelector(
+          "#discordLink"
+        );
+        hydratedRoProLike.addEventListener("click", (event) => {
+          event.preventDefault();
+          roproLikeClicks += 1;
+        });
+        hydratedRoProDiscord.addEventListener("click", (event) => {
+          event.preventDefault();
+          roproDiscordClicks += 1;
+        });
+        const hydratedRoProBadge = roproBadge.cloneNode(true);
+        hydratedRoProBadge.removeAttribute("slot");
+        hydratedRoProBadge.removeAttribute(
+          hooks.enhancedProfileConstants.roproBadgeAttribute
+        );
+        hydratedRoProBadge.dataset.testHydratedRoPro = "true";
+        roproControls.replaceWith(hydratedRoProControls);
+        roproBadge.replaceWith(hydratedRoProBadge);
+        roproControls = hydratedRoProControls;
+        roproBadge = hydratedRoProBadge;
+        roproFixture.like = hydratedRoProLike;
+        roproFixture.discord = hydratedRoProDiscord;
+        const hydratedRoProVisual = await waitFor(() => {
+          const currentState = hooks.getEnhancedProfileStateForTests();
+          const currentVisual = hooks.getEnhancedProfileVisualForTests();
+          return currentState.roproControlsAdopted &&
+            currentState.roproBadgeAdopted &&
+            currentVisual.roproControlsAssigned &&
+            currentVisual.roproBadgeAssigned &&
+            roproControls.parentElement === initialHost &&
+            roproBadge.parentElement === initialHost
+            ? currentVisual
+            : false;
+        });
+        if (
+          replacedRoProControls.isConnected ||
+          replacedRoProBadge.isConnected ||
+          roproControls.slot !==
+            hooks.enhancedProfileConstants.roproControlsSlotName ||
+          roproBadge.slot !== hooks.enhancedProfileConstants.roproBadgeSlotName ||
+          !roproControls.hasAttribute(
+            hooks.enhancedProfileConstants.roproControlsAttribute
+          ) ||
+          !roproBadge.hasAttribute(
+            hooks.enhancedProfileConstants.roproBadgeAttribute
+          ) ||
+          !hydratedRoProVisual.roproControlsAssigned ||
+          !hydratedRoProVisual.roproBadgeAssigned
+        ) {
+          throw new Error("A live RoPro replacement was not adopted safely");
+        }
+        const replacedNativeNameIcons = nativeNameIcons;
+        const replacedRenderedNativeNameIcons = renderedNativeNameIcons;
+        const hydratedNativeNameIcons = nativeNameIcons.cloneNode(true);
+        hydratedNativeNameIcons.dataset.testHydrated = "true";
+        nativeNameIcons.replaceWith(hydratedNativeNameIcons);
+        nativeNameIcons = hydratedNativeNameIcons;
+        originalNativeNameIconsNextSibling = hydratedNativeNameIcons.nextSibling;
+        hooks.mountEnhancedProfile();
+        await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          const currentClone = initialHost.querySelector(
+            `[${nativeNameIconsMarker}]`
+          );
+          return current.nativeNameIconsAssigned &&
+            hydratedNativeNameIcons.parentElement === nativeNameOrigin &&
+            currentClone &&
+            currentClone !== replacedRenderedNativeNameIcons &&
+            currentClone.dataset.testHydrated === "true"
+            ? true
+            : false;
+        });
+        renderedNativeNameIcons = initialHost.querySelector(
+          `[${nativeNameIconsMarker}]`
+        );
+        if (
+          replacedNativeNameIcons.isConnected ||
+          replacedRenderedNativeNameIcons.isConnected ||
+          hydratedNativeNameIcons.parentElement !== nativeNameOrigin ||
+          hydratedNativeNameIcons.hasAttribute("slot") ||
+          hydratedNativeNameIcons.hasAttribute(nativeNameIconsMarker) ||
+          !renderedNativeNameIcons ||
+          renderedNativeNameIcons === hydratedNativeNameIcons ||
+          renderedNativeNameIcons.slot !==
+            hooks.enhancedProfileConstants.nativeNameIconsSlotName ||
+          !renderedNativeNameIcons.hasAttribute(nativeNameIconsMarker) ||
+          initialHost.querySelectorAll(
+            `[${nativeNameIconsMarker}]`
+          ).length !== 1
+        ) {
+          throw new Error("A hydrated Roblox name-icon replacement was not mirrored safely");
+        }
+        const nativeRobloxPlusIcon = nativeNameIcons.querySelector(
+          ".icon-regular-roblox-plus"
+        );
+        nativeRobloxPlusIcon.remove();
+        renderedNativeNameIcons = await waitFor(() => {
+          const currentClone = initialHost.querySelector(
+            `[${nativeNameIconsMarker}]`
+          );
+          return currentClone?.querySelector(
+            `[${nativeNameIconFallbackMarker}="roblox-plus"]`
+          ) &&
+            currentClone.querySelectorAll(
+              ".icon-filled-verified-backplate, .icon-filled-verified-check, " +
+                ".icon-regular-roblox-plus"
+            ).length === 3
+            ? currentClone
+            : false;
+        });
+        nativeNameIcons.append(nativeRobloxPlusIcon);
+        renderedNativeNameIcons = await waitFor(() => {
+          const currentClone = initialHost.querySelector(
+            `[${nativeNameIconsMarker}]`
+          );
+          return currentClone &&
+            !currentClone.querySelector(`[${nativeNameIconFallbackMarker}]`) &&
+            currentClone.querySelectorAll(
+              ".icon-filled-verified-backplate, .icon-filled-verified-check, " +
+                ".icon-regular-roblox-plus"
+            ).length === 3
+            ? currentClone
+            : false;
+        });
         const nativePresenceLayer = initialHost.querySelector(
           "[data-rsl-enhanced-profile-presence]"
         );
@@ -611,6 +1065,205 @@
         const visual = hooks.getEnhancedProfileVisualForTests();
         const isCompactMobile = window.innerWidth <= 680;
         const isCompactTablet = window.innerWidth <= 900;
+        const expectedNativeVariant = isCompactMobile ? "mobile" : "desktop";
+        const nativeCurrentGameSource = nativeRoot.querySelector(
+          `[data-test-native-current-game="${expectedNativeVariant}"]`
+        );
+        const nativeActionsSource = nativeRoot.querySelector(
+          `[data-test-native-button-container="${expectedNativeVariant}"]`
+        );
+        const nativeCurrentGameClone = initialHost.querySelector(
+          `[${nativeCurrentGameMarker}]`
+        );
+        const nativeActionsClone = initialHost.querySelector(
+          `[${nativeActionsMarker}]`
+        );
+        if (
+          nativeCurrentGameSource?.closest("[data-test-native-header-actions]")
+            ?.dataset.testNativeHeaderActions !== expectedNativeVariant ||
+          nativeActionsSource?.closest("[data-test-native-header-actions]")
+            ?.dataset.testNativeHeaderActions !== expectedNativeVariant ||
+          nativeCurrentGameSource?.hasAttribute("slot") ||
+          nativeActionsSource?.hasAttribute("slot") ||
+          !nativeCurrentGameClone ||
+          !nativeActionsClone ||
+          nativeCurrentGameClone.dataset.testHiddenCompetingSource === "true" ||
+          nativeActionsClone.dataset.testHiddenCompetingSource === "true" ||
+          nativeCurrentGameClone === nativeCurrentGameSource ||
+          nativeActionsClone === nativeActionsSource ||
+          nativeCurrentGameClone.slot !==
+            hooks.enhancedProfileConstants.nativeCurrentGameSlotName ||
+          nativeActionsClone.slot !==
+            hooks.enhancedProfileConstants.nativeActionsSlotName ||
+          nativeCurrentGameClone.querySelectorAll("[id]").length !== 0 ||
+          nativeActionsClone.querySelectorAll("[id]").length !== 0 ||
+          visual.nativeActionLabels.join("|") !== "Join|Chat" ||
+          !visual.nativeCurrentGameText.includes("Maturity: Minimal") ||
+          (isCompactMobile
+            ? !visual.nativeCurrentGameText.includes("Mobile Sorcerer Tower Defense")
+            : !visual.nativeCurrentGameText.includes("Sorcerer Tower Defense [NAOYA]")) ||
+          !hooks.clickEnhancedProfileNativeActionForTests("Join") ||
+          nativeJoinClicks !== 1 ||
+          (isCompactMobile
+            ? nativeMobileJoinClicks !== 1 || nativeDesktopJoinClicks !== 0
+            : nativeDesktopJoinClicks !== 1 || nativeMobileJoinClicks !== 0)
+        ) {
+          throw new Error(
+            `The native Currently Playing and action controls were not mirrored safely: ${JSON.stringify(visual)}`
+          );
+        }
+        const nativeJoinSource = nativeActionsSource.querySelector(
+          '[id="user-profile-header-JoinExperience"]'
+        );
+        const nativeJoinNextSibling = nativeJoinSource.nextSibling;
+        const completeNativeActionsClone = nativeActionsClone;
+        nativeJoinSource.remove();
+        const partialNativeActionsClone = await waitFor(() => {
+          const currentClone = initialHost.querySelector(
+            `[${nativeActionsMarker}]`
+          );
+          const supplement = currentClone?.querySelector(
+            `[${nativeActionFallbackMarker}="join"]`
+          );
+          return currentClone &&
+            currentClone !== completeNativeActionsClone &&
+            supplement
+            ? currentClone
+            : false;
+        });
+        const partialActionControls = Array.from(
+          partialNativeActionsClone.querySelectorAll("button, a[href]")
+        ).sort((left, right) =>
+          Number(getComputedStyle(left).order) -
+          Number(getComputedStyle(right).order)
+        );
+        if (
+          partialActionControls.map((control) =>
+            control.textContent.replace(/\s+/g, " ").trim()
+          ).join("|") !== "Join|Chat" ||
+          partialNativeActionsClone.querySelectorAll(
+            `[${nativeActionFallbackMarker}="join"]`
+          ).length !== 1
+        ) {
+          throw new Error("A partial native action row did not receive the missing Join action");
+        }
+        nativeActionsSource.insertBefore(nativeJoinSource, nativeJoinNextSibling);
+        await waitFor(() => {
+          const currentClone = initialHost.querySelector(
+            `[${nativeActionsMarker}]`
+          );
+          return currentClone &&
+            currentClone !== partialNativeActionsClone &&
+            !currentClone.querySelector(`[${nativeActionFallbackMarker}]`) &&
+            hooks.getEnhancedProfileVisualForTests().nativeActionLabels
+              .join("|") === "Join|Chat"
+            ? true
+            : false;
+        });
+        const oldNativeCurrentGameClone = nativeCurrentGameClone;
+        nativeCurrentGameSource.querySelector("strong").textContent =
+          "Hydrated Sorcerer Tower Defense";
+        await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          const currentClone = initialHost.querySelector(
+            `[${nativeCurrentGameMarker}]`
+          );
+          return current.nativeCurrentGameText.includes(
+            "Hydrated Sorcerer Tower Defense"
+          ) && currentClone && currentClone !== oldNativeCurrentGameClone
+            ? true
+            : false;
+        }).catch(() => {
+          throw new Error(
+            `Native current-game hydration did not sync: ${JSON.stringify(
+              hooks.getEnhancedProfileVisualForTests()
+            )}`
+          );
+        });
+        if (
+          oldNativeCurrentGameClone.isConnected ||
+          nativeCurrentGameSource.hasAttribute("slot") ||
+          initialHost.querySelectorAll(`[${nativeCurrentGameMarker}]`).length !== 1
+        ) {
+          throw new Error("A hydrated native Currently Playing card was not mirrored safely");
+        }
+        const verifyNativeRootVisibilityGate = async (
+          hideRoot,
+          showRoot,
+          label
+        ) => {
+          const scrollBefore = window.scrollY;
+          hideRoot();
+          const hiddenState = await waitFor(() => {
+            const current = hooks.getEnhancedProfileStateForTests();
+            return !current.usesNativeAvatarCover &&
+              !current.nativeNameIconsAdopted &&
+              !current.nativeCurrentGameCloned &&
+              !current.nativeActionsCloned &&
+              !current.roproControlsAdopted &&
+              !current.roproBadgeAdopted
+              ? current
+              : false;
+          }).catch(() => {
+            throw new Error(
+              `${label} native-root hide did not settle: ${JSON.stringify(
+                hooks.getEnhancedProfileStateForTests()
+              )}`
+            );
+          });
+          const fallbackVisual = hooks.getEnhancedProfileVisualForTests();
+          if (
+            hiddenState.usesNativeAvatarCover ||
+            initialHost.querySelector(`[${nativeCurrentGameMarker}]`) ||
+            initialHost.querySelector(`[${nativeActionsMarker}]`) ||
+            fallbackVisual.actionLabels.join("|") !== "Join" ||
+            roproControls.parentElement !== roproOrigin ||
+            roproBadge.parentElement !== roproOrigin ||
+            Math.abs(window.scrollY - scrollBefore) > 1
+          ) {
+            throw new Error(`${label} native root kept stale projected controls`);
+          }
+          showRoot();
+          await waitFor(() => {
+            const current = hooks.getEnhancedProfileStateForTests();
+            return current.usesNativeAvatarCover &&
+              current.nativeNameIconsAdopted &&
+              current.nativeCurrentGameCloned &&
+              current.nativeActionsCloned &&
+              current.roproControlsAdopted &&
+              current.roproBadgeAdopted
+              ? true
+              : false;
+          }).catch(() => {
+            throw new Error(
+              `${label} native-root restore did not settle: ${JSON.stringify(
+                hooks.getEnhancedProfileStateForTests()
+              )}`
+            );
+          });
+          renderedNativeNameIcons = initialHost.querySelector(
+            `[${nativeNameIconsMarker}]`
+          );
+          if (
+            !renderedNativeNameIcons ||
+            roproControls.parentElement !== initialHost ||
+            roproBadge.parentElement !== initialHost ||
+            Math.abs(window.scrollY - scrollBefore) > 1
+          ) {
+            throw new Error(`${label} native root was not restored safely`);
+          }
+        };
+        await verifyNativeRootVisibilityGate(
+          () => nativeRoot.setAttribute("aria-hidden", "true"),
+          () => nativeRoot.removeAttribute("aria-hidden"),
+          "aria-hidden"
+        );
+        await verifyNativeRootVisibilityGate(
+          () => nativeRoot.classList.add("fixture-native-root-hidden"),
+          () => nativeRoot.classList.remove("fixture-native-root-hidden"),
+          "CSS-hidden"
+        );
+        hiddenCompetingRoot.remove();
         const expectedHeadshotWidth = isCompactMobile ? 88 : 128;
         const expectedProfileDetailLabels = [
           "Account age",
@@ -635,6 +1288,9 @@
         if (
           visual.headingFontSize !== (isCompactMobile ? "20px" : "28px") ||
           Number(visual.headingFontWeight) < 700 ||
+          renderedNativeNameIcons.querySelector(
+            ".icon-regular-roblox-plus"
+          )?.getAttribute("aria-label") !== "Roblox Plus subscriber" ||
           visual.coverHeight !== 0 ||
           visual.headshotWidth !== expectedHeadshotWidth ||
           visual.headerInfoHeight !== expectedHeadshotWidth ||
@@ -705,6 +1361,164 @@
           visual.documentOverflow > 1
         ) {
           throw new Error(`Roblox-style visual metrics were wrong: ${JSON.stringify(visual)}`);
+        }
+
+        const isUnderlinedProfileDetailAction = (profileVisual, action) =>
+          profileVisual.profileDetailActions.some((item) =>
+            item.action === action &&
+            item.textDecorationLine.split(/\s+/).includes("underline") &&
+            !String(item.afterContent || "").includes("›")
+          );
+        const collectionScrollBefore = window.scrollY;
+        if (
+          !visual.profileDetailActions.some((item) =>
+            item.action === "account-age" &&
+            item.tagName === "BUTTON" &&
+            item.ariaHasPopup === "dialog"
+          ) ||
+          !isUnderlinedProfileDetailAction(visual, "account-age") ||
+          hooks.clickEnhancedProfileDetailForTests("account-age") !== true
+        ) {
+          throw new Error("Account age was not exposed as a dialog button");
+        }
+        const accountAgeDialogVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.collectionDialogOpen ? current : false;
+        });
+        if (
+          accountAgeDialogVisual.collectionDialogKind !== "account-age" ||
+          accountAgeDialogVisual.collectionDialogTitle !== "Account age" ||
+          accountAgeDialogVisual.accountAgeDialogRows.map((item) => item.label)
+            .join("|") !== "Created|Calendar age|Total days" ||
+          accountAgeDialogVisual.accountAgeDialogRows[0].dateTime !==
+            "2019-01-16T12:00:00.000Z" ||
+          !/\d{4}/.test(accountAgeDialogVisual.accountAgeDialogRows[0].value) ||
+          !/years, .*months, .*days/.test(
+            accountAgeDialogVisual.accountAgeDialogRows[1].value
+          ) ||
+          !/^\d[\d,.\s]*$/.test(
+            accountAgeDialogVisual.accountAgeDialogRows[2].value
+          ) ||
+          window.scrollY !== collectionScrollBefore ||
+          hooks.closeEnhancedProfileCollectionForTests() !== true
+        ) {
+          throw new Error(
+            `The Account age dialog was wrong: ${JSON.stringify(accountAgeDialogVisual)}`
+          );
+        }
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().activeProfileDetailAction ===
+            "account-age"
+        );
+
+        if (
+          !visual.profileDetailActions.some((item) =>
+            item.action === "owned-groups" &&
+            item.tagName === "BUTTON" &&
+            item.ariaHasPopup === "dialog"
+          ) ||
+          !isUnderlinedProfileDetailAction(visual, "owned-groups") ||
+          hooks.clickEnhancedProfileDetailForTests("owned-groups") !== true
+        ) {
+          throw new Error("Owned groups was not exposed as a dialog button");
+        }
+        const ownedGroupsDialogVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.collectionDialogOpen ? current : false;
+        });
+        if (
+          ownedGroupsDialogVisual.collectionDialogKind !== "owned-groups" ||
+          ownedGroupsDialogVisual.collectionDialogTitle !== "Owned groups" ||
+          ownedGroupsDialogVisual.collectionDialogRows.length !== 3 ||
+          ownedGroupsDialogVisual.collectionDialogListItemCount !== 3 ||
+          ownedGroupsDialogVisual.collectionDialogDirectRowCount !== 0 ||
+          ownedGroupsDialogVisual.collectionDialogRows[0].href !==
+            "/communities/8201" ||
+          !ownedGroupsDialogVisual.collectionDialogRows[0].meta.includes(
+            "Owner"
+          ) ||
+          window.scrollY !== collectionScrollBefore ||
+          hooks.closeEnhancedProfileCollectionForTests() !== true
+        ) {
+          throw new Error(
+            `The Owned groups dialog was wrong: ${JSON.stringify(ownedGroupsDialogVisual)}`
+          );
+        }
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().activeProfileDetailAction ===
+            "owned-groups"
+        );
+
+        if (
+          !visual.profileDetailActions.some((item) =>
+            item.action === "games" &&
+            item.tagName === "BUTTON" &&
+            item.ariaHasPopup === "dialog" &&
+            item.ariaControls === "rtp-profile-collection-dialog"
+          ) ||
+          !isUnderlinedProfileDetailAction(visual, "games") ||
+          hooks.clickEnhancedProfileDetailForTests("games") !== true
+        ) {
+          throw new Error("The Games count was not exposed as a dialog button");
+        }
+        const gamesDialogVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.collectionDialogOpen ? current : false;
+        });
+        if (
+          gamesDialogVisual.collectionDialogKind !== "games" ||
+          gamesDialogVisual.collectionDialogTitle !== "Games" ||
+          gamesDialogVisual.collectionDialogCount !== 1 ||
+          gamesDialogVisual.collectionDialogRows.length !== 8 ||
+          gamesDialogVisual.collectionDialogRows[0].href !== "/games/1001" ||
+          !gamesDialogVisual.collectionDialogRows[4].meta.includes(
+            "Owned group · Owned Studio 1"
+          ) ||
+          gamesDialogVisual.collectionDialogLeft < 15.5 ||
+          gamesDialogVisual.collectionDialogRight > window.innerWidth - 15.5 ||
+          gamesDialogVisual.collectionDialogTop < 15.5 ||
+          gamesDialogVisual.collectionDialogBottom > window.innerHeight - 15.5 ||
+          gamesDialogVisual.collectionDialogListItemCount !== 8 ||
+          gamesDialogVisual.collectionDialogDirectRowCount !== 0 ||
+          window.scrollY !== collectionScrollBefore
+        ) {
+          throw new Error(
+            `The Games collection dialog was wrong: ${JSON.stringify(gamesDialogVisual)}`
+          );
+        }
+        if (typeof hooks.rerenderEnhancedProfileForTests !== "function") {
+          throw new Error("The profile rerender test hook was unavailable");
+        }
+        hooks.rerenderEnhancedProfileForTests();
+        const rerenderedGamesDialogVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.collectionDialogOpen &&
+            current.collectionDialogKind === "games" &&
+            current.collectionDialogRows.length === 8
+            ? current
+            : false;
+        });
+        if (
+          rerenderedGamesDialogVisual.collectionDialogCount !== 1 ||
+          window.scrollY !== collectionScrollBefore ||
+          hooks.closeEnhancedProfileCollectionForTests() !== true
+        ) {
+          throw new Error(
+            `The Games dialog did not survive a data rerender: ${JSON.stringify(rerenderedGamesDialogVisual)}`
+          );
+        }
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().activeProfileDetailAction ===
+            "games"
+        ).catch(() => {
+          throw new Error(
+            `Games dialog did not restore focus: ${JSON.stringify(
+              hooks.getEnhancedProfileVisualForTests()
+            )}`
+          );
+        });
+        if (window.scrollY !== collectionScrollBefore) {
+          throw new Error("Closing the Games dialog changed the page scroll position");
         }
 
         if (
@@ -826,9 +1640,38 @@
           nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-cover-root") ||
           getComputedStyle(nativeRoot).display === "none" ||
           getComputedStyle(nativeHeader).display === "none" ||
-          getComputedStyle(nativeBody).display === "none"
+          getComputedStyle(nativeBody).display === "none" ||
+          roproControls.parentElement !== roproOrigin ||
+          roproBadge.parentElement !== roproOrigin ||
+          nativeNameIcons.parentElement !== nativeNameOrigin ||
+          nativeTrustedLabel.parentElement !== nativeTrustedLabelParent ||
+          nativeTrustedLabel.textContent.trim() !== "\u2022 Trusted" ||
+          roproControls.hasAttribute("slot") ||
+          roproBadge.hasAttribute("slot") ||
+          nativeNameIcons.hasAttribute("slot") ||
+          roproControls.hasAttribute(
+            hooks.enhancedProfileConstants.roproControlsAttribute
+          ) ||
+          roproBadge.hasAttribute(
+            hooks.enhancedProfileConstants.roproBadgeAttribute
+          ) ||
+          nativeNameIcons.hasAttribute(
+            hooks.enhancedProfileConstants.nativeNameIconsAttribute
+          ) ||
+          document.querySelector(`[${nativeNameIconsMarker}]`) ||
+          document.querySelector(`[${nativeCurrentGameMarker}]`) ||
+          document.querySelector(`[${nativeActionsMarker}]`) ||
+          nativeCurrentGameSource.hasAttribute("slot") ||
+          nativeActionsSource.hasAttribute("slot") ||
+          !nativeCurrentGameSource.closest("[data-test-native-header-actions]") ||
+          !nativeActionsSource.closest("[data-test-native-header-actions]")
         ) {
           throw new Error("The standard-profile action did not restore native Roblox in this document");
+        }
+        roproFixture.like.click();
+        roproFixture.discord.click();
+        if (roproLikeClicks !== 2 || roproDiscordClicks !== 2) {
+          throw new Error("Restoring the standard profile broke the RoPro controls");
         }
         selectedNativeOverflow.click();
         const returnActionMarker =
@@ -865,9 +1708,23 @@
             ? current
             : false;
         });
+        renderedNativeNameIcons = document
+          .getElementById("rsl-enhanced-profile-host")
+          ?.querySelector(`[${nativeNameIconsMarker}]`);
         if (
           !nativeRoot.hasAttribute("data-rsl-enhanced-profile-native-hidden") ||
-          document.querySelector(`[${returnActionMarker}]`)
+          document.querySelector(`[${returnActionMarker}]`) ||
+          roproControls.parentElement !==
+            document.getElementById("rsl-enhanced-profile-host") ||
+          roproBadge.parentElement !==
+            document.getElementById("rsl-enhanced-profile-host") ||
+          nativeNameIcons.parentElement !== nativeNameOrigin ||
+          nativeNameIcons.hasAttribute("slot") ||
+          nativeNameIcons.hasAttribute(nativeNameIconsMarker) ||
+          !renderedNativeNameIcons ||
+          renderedNativeNameIcons === nativeNameIcons ||
+          renderedNativeNameIcons.parentElement !==
+            document.getElementById("rsl-enhanced-profile-host")
         ) {
           throw new Error("The native return action did not remount the RoTool profile");
         }
@@ -938,6 +1795,7 @@
         viewerMeta.name = "user-data";
         viewerMeta.dataset.userid = "123";
         document.head.append(viewerMeta);
+        nativeRoot.dataset.profileId = "999";
         await hooks.loadEnhancedProfileData();
         await waitFor(() => hooks.getEnhancedProfileStateForTests().loadState === "ready");
         state = hooks.getEnhancedProfileStateForTests();
@@ -951,8 +1809,11 @@
           ownVisual.actionOrder.join("|") !==
             "Edit avatar|Edit profile|overflow"
         ) {
-          throw new Error("The own-profile action branch rendered the wrong actions");
+          throw new Error(
+            `The own-profile action branch rendered the wrong actions: ${JSON.stringify(ownVisual)}`
+          );
         }
+        nativeRoot.dataset.profileId = "123";
 
         hooks.setEnhancedProfileRouteUrlForTests(
           "https://www.roblox.com/users/456/profile"
@@ -975,20 +1836,31 @@
           "Owned groups"
         ];
         if (
-          state.internalText.includes("Join") ||
+          !state.internalText.includes("Join") ||
           !state.internalText.includes("Inventory") ||
           !state.internalText.includes("Chat") ||
-          foreignVisual.actionLabels.join("|") !== "Chat" ||
-          foreignVisual.actionOrder.join("|") !== "Chat|overflow" ||
+          foreignVisual.actionLabels.join("|") !== "Join|Chat" ||
+          foreignVisual.actionOrder.join("|") !== "Join|Chat|overflow" ||
           foreignVisual.profileDetailCount !== 6 ||
+          foreignVisual.trustedLabelVisible !== false ||
           foreignVisual.profileDetailLabels.join("|") !==
             expectedForeignDetailLabels.join("|") ||
           !foreignVisual.socialPillTexts.some((text) => text.endsWith("Mutuals")) ||
           foreignVisual.mutualFriendsSectionCount !== 0 ||
           foreignVisual.mutualsTagName !== "A" ||
-          foreignVisual.mutualsHref !== "/users/456/friends#!/friends" ||
-          foreignDetails.get("Mutual groups") !== "5" ||
-          foreignDetails.get("Inventory") !== "Limited" ||
+          foreignVisual.mutualsHref !==
+            "/users/456/friends#!/friends?rotool=mutuals" ||
+          foreignVisual.profileStatusLabels.join("|") !== "Profile Limited" ||
+          foreignVisual.profileLimitTagName !== "DETAILS" ||
+          foreignVisual.profileLimitTriggerTagName !== "SUMMARY" ||
+          foreignVisual.profileLimitPanelRole !== "region" ||
+          foreignVisual.profileLimitOpen ||
+          foreignVisual.profileLimitAriaExpanded !== "false" ||
+          foreignVisual.profileLimitItems.map(
+            (item) => `${item.label}:${item.status}`
+          ).join("|") !== "Inventory:Private" ||
+          foreignDetails.get("Mutual groups") !== "15" ||
+          foreignDetails.get("Inventory") !== "Private" ||
           foreignDetails.get("Badges") !== "245" ||
           foreignDetails.get("Games") !== "8" ||
           foreignDetails.get("Owned groups") !== "3"
@@ -997,6 +1869,85 @@
             `The other-profile enhancements were wrong: ${JSON.stringify(foreignVisual)}`
           );
         }
+        if (
+          !foreignVisual.profileDetailActions.some((item) =>
+            item.action === "mutual-groups" &&
+            item.tagName === "BUTTON" &&
+            item.ariaHasPopup === "dialog"
+          ) ||
+          !isUnderlinedProfileDetailAction(foreignVisual, "mutual-groups") ||
+          hooks.clickEnhancedProfileDetailForTests("mutual-groups") !== true
+        ) {
+          throw new Error("The Mutual groups count was not exposed as a dialog button");
+        }
+        const mutualGroupsDialogVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.collectionDialogOpen ? current : false;
+        });
+        if (
+          mutualGroupsDialogVisual.collectionDialogKind !== "mutual-groups" ||
+          mutualGroupsDialogVisual.collectionDialogTitle !== "Mutual groups" ||
+          mutualGroupsDialogVisual.collectionDialogCount !== 1 ||
+          mutualGroupsDialogVisual.collectionDialogRows.length !== 15 ||
+          mutualGroupsDialogVisual.collectionDialogListItemCount !== 15 ||
+          mutualGroupsDialogVisual.collectionDialogDirectRowCount !== 0 ||
+          mutualGroupsDialogVisual.collectionDialogRows[0].href !==
+            "/communities/8101" ||
+          !mutualGroupsDialogVisual.collectionDialogRows[0].meta.startsWith(
+            "Owner"
+          ) ||
+          mutualGroupsDialogVisual.collectionDialogRows[0].meta.includes("@") ||
+          !mutualGroupsDialogVisual.collectionDialogDescription.includes(
+            "Roles shown belong to @SecondUser."
+          ) ||
+          !mutualGroupsDialogVisual.collectionDialogRows[0].meta.includes(
+            "5K+ members"
+          ) ||
+          mutualGroupsDialogVisual.collectionDialogDescriptionBottom >
+            mutualGroupsDialogVisual.collectionDialogHeaderBottom + 0.5 ||
+          mutualGroupsDialogVisual.collectionDialogFirstRowTop <
+            mutualGroupsDialogVisual.collectionDialogHeaderBottom - 0.5 ||
+          hooks.closeEnhancedProfileCollectionForTests() !== true
+        ) {
+          throw new Error(
+            `The Mutual groups collection dialog was wrong: ${JSON.stringify(mutualGroupsDialogVisual)}`
+          );
+        }
+        await waitFor(() =>
+          hooks.getEnhancedProfileVisualForTests().activeProfileDetailAction ===
+            "mutual-groups"
+        );
+        if (
+          typeof hooks.clickEnhancedProfileLimitForTests !== "function" ||
+          hooks.clickEnhancedProfileLimitForTests() !== true
+        ) {
+          throw new Error("The Profile Limited disclosure was not clickable");
+        }
+        const openLimitVisual = await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.profileLimitOpen &&
+            current.profileLimitAriaExpanded === "true" &&
+            current.profileLimitPanelLeft >= 15.5 &&
+            current.profileLimitPanelRight <= window.innerWidth - 15.5
+            ? current
+            : false;
+        });
+        if (
+          openLimitVisual.profileLimitAriaExpanded !== "true" ||
+          openLimitVisual.profileLimitItems.map(
+            (item) => `${item.label}:${item.status}`
+          ).join("|") !== "Inventory:Private"
+        ) {
+          throw new Error(
+            `The Profile Limited disclosure opened with the wrong details: ${JSON.stringify(openLimitVisual)}`
+          );
+        }
+        hooks.clickEnhancedProfileLimitForTests();
+        await waitFor(() => {
+          const current = hooks.getEnhancedProfileVisualForTests();
+          return current.profileLimitOpen === false &&
+            current.profileLimitAriaExpanded === "false";
+        });
         if (
           document.getElementById("rsl-enhanced-profile-host")
             .hasAttribute("data-rsl-native-avatar-cover") ||
@@ -1067,6 +2018,7 @@
             .hasAttribute("data-rsl-native-avatar-cover") ||
           !nativeBanner.hasAttribute("data-rsl-enhanced-profile-native-cover") ||
           getComputedStyle(nativeBanner).display === "none" ||
+          hooks.getEnhancedProfileVisualForTests().trustedLabelVisible !== false ||
           hooks.testEnhancedProfileChatActionForTests() !== true ||
           nativeChatClicks !== 1
         ) {
@@ -1098,6 +2050,40 @@
         }
         hooks.setEnhancedProfileMessageSenderForTests((message) => {
           const response = makeResponse(message.userId, message.requestId);
+          response.sections.badges.data = {
+            items: [],
+            hasMore: false,
+            totalCount: null,
+            countIsExact: false,
+            countStatus: "private"
+          };
+          return Promise.resolve(response);
+        });
+        await hooks.loadEnhancedProfileData();
+        const privateSectionsVisual = hooks.getEnhancedProfileVisualForTests();
+        const privateSectionsDetails = new Map(
+          privateSectionsVisual.profileDetailPairs.map(
+            (pair) => [pair.label, pair.value]
+          )
+        );
+        if (
+          !privateSectionsVisual.socialPillTexts.some(
+            (text) => text.endsWith("Mutuals")
+          ) ||
+          privateSectionsDetails.get("Inventory") !== "Private" ||
+          privateSectionsDetails.get("Badges") !== "Private" ||
+          privateSectionsVisual.profileStatusLabels.join("|") !==
+            "Profile Limited" ||
+          privateSectionsVisual.profileLimitItems.map(
+            (item) => `${item.label}:${item.status}`
+          ).join("|") !== "Inventory:Private|Badges:Private"
+        ) {
+          throw new Error(
+            `Private profile sections were not explained precisely: ${JSON.stringify(privateSectionsVisual)}`
+          );
+        }
+        hooks.setEnhancedProfileMessageSenderForTests((message) => {
+          const response = makeResponse(message.userId, message.requestId);
           response.sections.relationships.data.profileLimited = true;
           return Promise.resolve(response);
         });
@@ -1112,7 +2098,10 @@
           limitedProfileDetails.has("Profile") ||
           limitedProfileVisual.profileStatusLabels.filter(
             (label) => label === "Profile Limited"
-          ).length !== 1
+          ).length !== 1 ||
+          limitedProfileVisual.profileLimitItems.map(
+            (item) => `${item.label}:${item.status}`
+          ).join("|") !== "Mutual friends:Limited|Inventory:Private"
         ) {
           throw new Error(
             "A privacy-limited profile did not show one compact status beside the name"
@@ -1172,7 +2161,8 @@
             "[data-rsl-enhanced-profile-native-overflow-root], " +
             "[data-rsl-enhanced-profile-native-overflow-path], " +
             "[data-rsl-enhanced-profile-native-overflow-trigger], " +
-            "[data-rsl-enhanced-profile-standard-profile-action]"
+            "[data-rsl-enhanced-profile-standard-profile-action], " +
+            `[${nativeNameIconsMarker}]`
           ) ||
           document.querySelector("[data-test-native-context-menu]") ||
           nativeOverflowTriggers.some((trigger) =>
@@ -1188,6 +2178,23 @@
           nativeBanner.parentElement !== originalBannerParent ||
           nativeBanner.nextElementSibling !== originalBannerNextSibling ||
           nativeRoot.querySelector("[data-test-native-avatar-canvas]") !== nativeCanvas ||
+          roproControls.parentElement !== roproOrigin ||
+          roproBadge.parentElement !== roproOrigin ||
+          nativeNameIcons.parentElement !== nativeNameOrigin ||
+          roproControls.hasAttribute("slot") ||
+          roproBadge.hasAttribute("slot") ||
+          nativeNameIcons.hasAttribute("slot") ||
+          roproControls.hasAttribute(
+            hooks.enhancedProfileConstants.roproControlsAttribute
+          ) ||
+          roproBadge.hasAttribute(
+            hooks.enhancedProfileConstants.roproBadgeAttribute
+          ) ||
+          nativeNameIcons.hasAttribute(
+            hooks.enhancedProfileConstants.nativeNameIconsAttribute
+          ) ||
+          nativeNameIcons.nextSibling !== originalNativeNameIconsNextSibling ||
+          nativeNameOrigin.querySelectorAll("[data-test-native-name-icons]").length !== 1 ||
           !nativeCanvas.isConnected ||
           getComputedStyle(nativeRoot).display === "none" ||
           getComputedStyle(nativeBanner).display === "none" ||
@@ -1282,6 +2289,186 @@
           hooks.getEnhancedProfileStateForTests().loadState === "ready" &&
           document.getElementById("rsl-enhanced-profile-host")
         );
+
+        nativeNameIcons.remove();
+        hooks.mountEnhancedProfile();
+        await waitFor(() => {
+          const currentState = hooks.getEnhancedProfileStateForTests();
+          const currentVisual = hooks.getEnhancedProfileVisualForTests();
+          return !currentState.nativeNameIconsAdopted &&
+            currentVisual.nativeNameIconFallbackRectCount > 0;
+        }).catch(() => {
+          throw new Error("The safe name-icon fallback did not appear while Roblox icons were absent");
+        });
+        nativeNameOrigin.append(nativeNameIcons);
+        originalNativeNameIconsNextSibling = nativeNameIcons.nextSibling;
+        hooks.mountEnhancedProfile();
+        await waitFor(() => {
+          const currentState = hooks.getEnhancedProfileStateForTests();
+          const currentVisual = hooks.getEnhancedProfileVisualForTests();
+          return currentState.nativeNameIconsAdopted &&
+            currentVisual.nativeNameIconsAssigned &&
+            currentVisual.nativeNameIconFallbackRectCount === 0 &&
+            nativeNameIcons.parentElement === nativeNameOrigin &&
+            !nativeNameIcons.hasAttribute("slot") &&
+            !nativeNameIcons.hasAttribute(nativeNameIconsMarker) &&
+            document.querySelector(`[${nativeNameIconsMarker}]`) !==
+              nativeNameIcons;
+        }).catch(() => {
+          throw new Error("Late native Roblox name icons were not mirrored safely");
+        });
+
+        hooks.cleanupEnhancedProfileFeature();
+        document.documentElement.dataset.rslMutualFriendsFixture = "true";
+        document.getElementById("content").innerHTML = `
+          <div id="friends-web-app">
+            <ul class="nav nav-tabs fixture-friends-tabs" role="tablist">
+              <li class="active" role="tab"><a role="tab" aria-selected="true" aria-current="page" href="/users/456/friends#!/friends"><span>Friends</span></a></li>
+              <li role="tab"><a role="tab" aria-selected="false" href="/users/456/friends#!/following"><span>Following</span></a></li>
+              <li role="tab"><a role="tab" aria-selected="false" href="/users/456/friends#!/followers"><span>Followers</span></a></li>
+              <li class="ropro-mutual-tab"><button type="button" class="ropro-mutual-control">Mutual Friends</button></li>
+            </ul>
+            <div class="tab-content rbx-tab-content" data-test-ropro-native-panel style="display: none">
+              <section class="friends-content section fixture-friends-content">
+                <header><h2>Friends (99)</h2><input class="friends-filter-searchbar-input" type="search" placeholder="Search Friends"></header>
+                <ul class="hlist avatar-cards" data-test-mutual-native-list>
+                  <li class="list-item avatar-card">
+                    <div class="avatar-card-container"><div class="avatar-card-content">
+                      <div class="avatar avatar-card-fullbody" data-testid="avatar-card-container">
+                        <a class="avatar-card-link" data-testid="avatar-card-link"><span class="thumbnail-2d-container avatar-card-image"><img alt=""></span></a>
+                        <div class="avatar-status"></div>
+                      </div>
+                      <div class="avatar-card-caption"><span><div class="avatar-name-container"><a class="text-overflow avatar-name">Native</a></div><div class="avatar-card-label">@Native</div><div class="avatar-card-label">Offline</div></span></div>
+                    </div></div>
+                  </li>
+                </ul>
+              </section>
+            </div>
+            <div class="mutuals-tab-content" data-test-ropro-mutual-panel style="display: block">
+              <button type="button" role="combobox" data-test-ropro-mutual-dropdown>Mutual Friends</button>
+            </div>
+            <div class="pager-holder" data-test-mutual-native-pager>Native pager</div>
+          </div>`;
+        let nativeMutualSearchInputEvents = 0;
+        document.querySelector(
+          ".friends-filter-searchbar-input"
+        ).addEventListener("input", () => {
+          nativeMutualSearchInputEvents += 1;
+        });
+        hooks.setMutualFriendsPageRouteUrlForTests(
+          "https://www.roblox.com/users/456/friends#!/friends#mutuals"
+        );
+        hooks.setMutualFriendsPageMessageSenderForTests((message) =>
+          Promise.resolve({
+            ok: true,
+            requestId: message.requestId,
+            viewerUserId: "999",
+            targetUserId: message.targetUserId,
+            totalCount: 15,
+            friends: Array.from({ length: 15 }, (_, index) => ({
+              userId: String(7000 + index),
+              username: `Mutual_${index + 1}`,
+              displayName: `Mutual Friend ${index + 1}`,
+              isVerified: index === 0,
+              isVerifiedKnown: true,
+              isRobloxPlus: index === 1,
+              isRobloxPlusKnown: true,
+              presenceType: index === 2 ? "Online" : "Offline",
+              headshotUrl: null
+            }))
+          })
+        );
+        hooks.mountMutualFriendsPage();
+        await hooks.loadMutualFriendsPage();
+        hooks.mountMutualFriendsPage();
+        hooks.mountMutualFriendsPage();
+        const mutualPageVisual = hooks.getMutualFriendsPageStateForTests();
+        if (
+          mutualPageVisual.loadState !== "ready" ||
+          mutualPageVisual.totalCount !== 15 ||
+          mutualPageVisual.tabCount !== 1 ||
+          mutualPageVisual.visibleTabLabels.join("|") !==
+            "Friends|Following|Followers|Mutuals" ||
+          mutualPageVisual.tabHref !==
+            "/users/456/friends#!/friends?rotool=mutuals" ||
+          mutualPageVisual.tabAriaSelected !== "true" ||
+          mutualPageVisual.activeTabClassCount !== 1 ||
+          mutualPageVisual.selectedTabLabels.join("|") !== "Mutuals" ||
+          Math.max(...mutualPageVisual.tabWidths) -
+            Math.min(...mutualPageVisual.tabWidths) > 1 ||
+          mutualPageVisual.cardIds.length !== 15 ||
+          mutualPageVisual.cardIds[0] !== "7000" ||
+          mutualPageVisual.cardIds[14] !== "7014" ||
+          mutualPageVisual.heading !== "Mutual Friends (15)" ||
+          mutualPageVisual.searchPlaceholder !== "Search Mutuals" ||
+          mutualPageVisual.customSearchCount !== 1 ||
+          !mutualPageVisual.nativeSearchHidden ||
+          !mutualPageVisual.nativePanelVisible ||
+          mutualPageVisual.roProPanelVisibleCount !== 0 ||
+          !mutualPageVisual.nativeListsHidden ||
+          mutualPageVisual.competingVisibleCount !== 0
+        ) {
+          throw new Error(
+            `The complete RoTool-priority Mutuals page was wrong: ${JSON.stringify(mutualPageVisual)}`
+          );
+        }
+        const mutualSearch = document.querySelector(
+          "[data-rsl-mutual-friends-search]"
+        );
+        mutualSearch.value = "Mutual_1";
+        mutualSearch.dispatchEvent(new Event("input", { bubbles: true }));
+        if (nativeMutualSearchInputEvents !== 0) {
+          throw new Error("Mutuals search leaked into Roblox's native search handlers");
+        }
+        const nativeTabs = Array.from(
+          document.querySelectorAll(".fixture-friends-tabs > li:not([data-rsl-mutual-friends-tab]):not([data-rsl-mutual-friends-competing-hidden])")
+        );
+        nativeTabs.forEach((tab, index) => {
+          tab.className = index === 2 ? "active" : "";
+          const control = tab.querySelector("[role='tab']");
+          control.setAttribute("aria-selected", index === 2 ? "true" : "false");
+          if (index === 2) control.setAttribute("aria-current", "page");
+          else control.removeAttribute("aria-current");
+        });
+        document.querySelector(".fixture-friends-content h2").textContent =
+          "Followers (42)";
+        document.querySelector("[data-test-ropro-native-panel]").style.display =
+          "block";
+        document.querySelector("[data-test-ropro-mutual-panel]").style.display =
+          "none";
+        hooks.setMutualFriendsPageRouteUrlForTests(
+          "https://www.roblox.com/users/789/friends#!/followers"
+        );
+        hooks.mountMutualFriendsPage();
+        const nativePageVisual = hooks.getMutualFriendsPageStateForTests();
+        if (
+          document.querySelector("[data-rsl-mutual-friends-list]") ||
+          getComputedStyle(document.querySelector("[data-test-mutual-native-list]")).display === "none" ||
+          document.querySelector(".fixture-friends-content h2").textContent !== "Followers (42)" ||
+          document.querySelector(".friends-filter-searchbar-input").placeholder !== "Search Friends" ||
+          nativePageVisual.tabHref !== "/users/789/friends#!/friends?rotool=mutuals" ||
+          nativePageVisual.activeTabClassCount !== 1 ||
+          nativePageVisual.selectedTabLabels.join("|") !== "Followers"
+        ) {
+          throw new Error("Leaving Mutuals did not restore the native Friends page");
+        }
+        const ownFriendsViewerMeta = document.createElement("meta");
+        ownFriendsViewerMeta.name = "user-data";
+        ownFriendsViewerMeta.dataset.userid = "123";
+        document.head.append(ownFriendsViewerMeta);
+        hooks.setMutualFriendsPageRouteUrlForTests(
+          "https://www.roblox.com/users/123/friends#!/friends"
+        );
+        hooks.mountMutualFriendsPage();
+        if (
+          document.querySelector("[data-rsl-mutual-friends-tab]") ||
+          getComputedStyle(document.querySelector(".ropro-mutual-tab")).display === "none"
+        ) {
+          throw new Error("Own Friends pages must omit Mutuals and restore competing UI");
+        }
+        ownFriendsViewerMeta.remove();
+        hooks.setMutualFriendsPageRouteUrlForTests(null);
+        hooks.setMutualFriendsPageMessageSenderForTests(null);
 
         if (
           document.documentElement.getAttribute("class") !== originalHtmlClass ||
