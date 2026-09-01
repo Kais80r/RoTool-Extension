@@ -489,18 +489,26 @@
           });
         }
         releaseInitialBadgeCount?.();
-        await waitFor(() => {
+        const finalBadgeCountStartedAt = performance.now();
+        let previousFinalBadgeCount = 300;
+        while (true) {
           const value = getBadgeDetailValue() || "";
-          const numeric = Number(value.replace(/[^0-9]/g, ""));
-          return value.endsWith("+") && numeric > 300 && numeric <= 350;
-        }).catch(() => {
-          throw new Error(
-            `The final badge animation claimed an intermediate exact value: ${getBadgeDetailValue()}`
-          );
-        });
-        await waitFor(() => getBadgeDetailValue() === "350").catch(() => {
-          throw new Error(`Exact badge count did not finish: ${getBadgeDetailValue()}`);
-        });
+          if (value === "350") break;
+          const pendingMatch = /^(\d+)\+$/.exec(value);
+          const numeric = pendingMatch ? Number(pendingMatch[1]) : NaN;
+          if (
+            !pendingMatch ||
+            numeric < previousFinalBadgeCount ||
+            numeric > 350
+          ) {
+            throw new Error(`Invalid badge-count animation value: ${value}`);
+          }
+          previousFinalBadgeCount = numeric;
+          if (performance.now() - finalBadgeCountStartedAt >= 3000) {
+            throw new Error(`Exact badge count did not finish: ${value}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
         hooks.setEnhancedProfileMessageSenderForTests((message) =>
           Promise.resolve(makeResponse(message.userId, message.requestId))
         );
