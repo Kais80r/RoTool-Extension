@@ -939,7 +939,34 @@
       group: "Interface",
       label: "Enhanced Profiles",
       description:
-        "Replace Roblox profiles with a Roblox-style page containing more public information."
+        "Replace Roblox profiles with a Roblox-style page containing more public information.",
+      children: [
+        Object.freeze({
+          key: "enhancedProfileRelationships",
+          label: "Friends & mutuals",
+          description: "Show Friends, Mutuals, relationship status, and mutual groups."
+        }),
+        Object.freeze({
+          key: "enhancedProfileCollections",
+          label: "Games & groups",
+          description: "Show games, Favorites, Communities, and owned-group details."
+        }),
+        Object.freeze({
+          key: "enhancedProfileBadges",
+          label: "Badges",
+          description: "Show the badges section and exact badge-count loading."
+        }),
+        Object.freeze({
+          key: "enhancedProfileAccountDetails",
+          label: "Profile details",
+          description: "Show account age, inventory visibility, and profile-limited details."
+        }),
+        Object.freeze({
+          key: "enhancedProfilePresence",
+          label: "Presence & current game",
+          description: "Show online status, current game, and the presence icon."
+        })
+      ]
     }),
     Object.freeze({
       key: "updatePopups",
@@ -1911,6 +1938,10 @@
 
   function isFeatureEnabled(key) {
     return featureSettings[key] !== false;
+  }
+
+  function isEnhancedProfileFeatureEnabled(key) {
+    return isFeatureEnabled("enhancedProfiles") && isFeatureEnabled(key);
   }
 
   function isAccountRecoveryEnabled() {
@@ -7325,7 +7356,7 @@
 
   function mountMutualFriendsPage() {
     const route = getTargetFriendsPageRoute();
-    if (!route || !isFeatureEnabled("enhancedProfiles")) {
+    if (!route || !isEnhancedProfileFeatureEnabled("enhancedProfileRelationships")) {
       cleanupMutualFriendsPageFeature();
       return;
     }
@@ -26200,6 +26231,7 @@
   }
 
   function openEnhancedProfileAccountAgeDialog(data, opener) {
+    if (!isEnhancedProfileFeatureEnabled("enhancedProfileAccountDetails")) return false;
     const details = getEnhancedProfileAccountAgeDetails(
       data?.sections?.identity?.data?.createdAt
     );
@@ -26246,6 +26278,10 @@
   }
 
   function openEnhancedProfileCollectionDialog(kind, data, opener) {
+    const featureKey = kind === "mutual-groups"
+      ? "enhancedProfileRelationships"
+      : "enhancedProfileCollections";
+    if (!isEnhancedProfileFeatureEnabled(featureKey)) return false;
     const isGames = kind === "games";
     const isMutualGroups = kind === "mutual-groups";
     const isOwnedGroups = kind === "owned-groups";
@@ -26501,16 +26537,19 @@
     );
     const relationships = data.sections.relationships;
     const communities = data.sections.communities;
-    const accountAgeDetails = getEnhancedProfileAccountAgeDetails(
+    const showRelationships = isEnhancedProfileFeatureEnabled("enhancedProfileRelationships");
+    const showCollections = isEnhancedProfileFeatureEnabled("enhancedProfileCollections");
+    const showBadges = isEnhancedProfileFeatureEnabled("enhancedProfileBadges");
+    const showDetails = isEnhancedProfileFeatureEnabled("enhancedProfileAccountDetails");
+    const accountAgeDetails = showDetails ? getEnhancedProfileAccountAgeDetails(
       identity.createdAt
-    );
+    ) : null;
     const details = makeEnhancedProfileElement("div", "rtp-profile-details");
     details.setAttribute("aria-label", "Profile details");
     const grid = makeEnhancedProfileElement("dl", "rtp-profile-details-grid");
-    const badgeDetail = makeEnhancedProfileHeaderDetail(
-      "Badges",
-      getEnhancedProfileBadgeCountLabel(data.sections.badges)
-    );
+    const badgeDetail = showBadges ? makeEnhancedProfileHeaderDetail(
+      "Badges", getEnhancedProfileBadgeCountLabel(data.sections.badges)
+    ) : null;
     if (badgeDetail) {
       const value = badgeDetail.querySelector("dd");
       value.dataset.rtpProfileBadgeCount = "";
@@ -26539,7 +26578,7 @@
             }
           )
         : null,
-      isForeignProfile && relationships.status === "ready"
+      showRelationships && isForeignProfile && relationships.status === "ready"
         ? makeEnhancedProfileHeaderDetail(
             "Mutual groups",
             formatEnhancedProfileNumber(
@@ -26560,12 +26599,12 @@
               : {}
           )
         : null,
-      makeEnhancedProfileHeaderDetail(
+      showDetails ? makeEnhancedProfileHeaderDetail(
         "Inventory",
         getEnhancedProfileInventoryLabel(data.sections.inventory)
-      ),
+      ) : null,
       badgeDetail,
-      makeEnhancedProfileHeaderDetail(
+      showCollections ? makeEnhancedProfileHeaderDetail(
         "Games",
         getEnhancedProfileCollectionCountLabel(data.sections.experiences),
         data.sections.experiences.status === "ready" &&
@@ -26580,8 +26619,8 @@
               )
             }
           : {}
-      ),
-      communities.status === "ready" &&
+      ) : null,
+      showCollections && communities.status === "ready" &&
         communities.data.ownedCount !== null
         ? makeEnhancedProfileHeaderDetail(
             "Owned groups",
@@ -26615,9 +26654,11 @@
     const layout = makeEnhancedProfileElement("div", "rtp-layout");
     const main = makeEnhancedProfileElement("div", "rtp-column");
 
-    const wearing = makeEnhancedProfileWearingSection(data.sections.wearing);
+    const wearing = isEnhancedProfileFeatureEnabled("enhancedProfilePresence")
+      ? makeEnhancedProfileWearingSection(data.sections.wearing)
+      : null;
     let favorites = null;
-    if (
+    if (isEnhancedProfileFeatureEnabled("enhancedProfileCollections") &&
       data.sections.favorites.status === "ready" &&
       data.sections.favorites.data.items.length > 0
     ) {
@@ -26627,21 +26668,21 @@
       });
       appendEnhancedProfileGames(favorites, data.sections.favorites);
     }
-    const friends = makeEnhancedProfileFriendsSection(
-      data.userId,
-      data.sections.friends,
-      data.sections.counts.status === "ready"
-        ? data.sections.counts.data.friends
-        : null
-    );
-    const communities = makeEnhancedProfileCommunitiesSection(
-      data.userId,
-      data.sections.communities
-    );
-    const badges = makeEnhancedProfileBadgesSection(
-      data.userId,
-      data.sections.badges
-    );
+    const friends = isEnhancedProfileFeatureEnabled("enhancedProfileRelationships")
+      ? makeEnhancedProfileFriendsSection(
+          data.userId,
+          data.sections.friends,
+          data.sections.counts.status === "ready"
+            ? data.sections.counts.data.friends
+            : null
+        )
+      : null;
+    const communities = isEnhancedProfileFeatureEnabled("enhancedProfileCollections")
+      ? makeEnhancedProfileCommunitiesSection(data.userId, data.sections.communities)
+      : null;
+    const badges = isEnhancedProfileFeatureEnabled("enhancedProfileBadges")
+      ? makeEnhancedProfileBadgesSection(data.userId, data.sections.badges)
+      : null;
     main.append(...[
       wearing,
       favorites,
@@ -28153,7 +28194,9 @@
       "rtp-headshot",
       { kind: "profile", id: identity.userId }
     ));
-    const presenceSlot = makeEnhancedProfileNativePresenceSlot(presence);
+    const presenceSlot = isEnhancedProfileFeatureEnabled("enhancedProfilePresence")
+      ? makeEnhancedProfileNativePresenceSlot(presence)
+      : null;
     if (presenceSlot) headshotWrap.append(presenceSlot);
     main.append(headshotWrap);
     const identityBlock = makeEnhancedProfileElement("div", "rtp-identity");
@@ -28189,7 +28232,8 @@
       ENHANCED_PROFILE_ROPRO_BADGE_SLOT_NAME,
       "rtp-ropro-badge-slot"
     ));
-    if (viewerUserId && !isOwnProfile) {
+    if (isEnhancedProfileFeatureEnabled("enhancedProfileAccountDetails") &&
+        viewerUserId && !isOwnProfile) {
       const limited = makeEnhancedProfileLimitDisclosure(
         getEnhancedProfileLimitations(data)
       );
@@ -28236,6 +28280,7 @@
       social.append(link);
     }
     if (
+      isEnhancedProfileFeatureEnabled("enhancedProfileRelationships") &&
       viewerUserId &&
       !isOwnProfile &&
       data.sections.relationships.status === "ready" &&
@@ -28266,7 +28311,9 @@
       ENHANCED_PROFILE_NATIVE_CURRENT_GAME_SLOT_NAME,
       "rtp-native-current-game-slot"
     );
-    const currentGame = makeEnhancedProfileCurrentGame(presence);
+    const currentGame = isEnhancedProfileFeatureEnabled("enhancedProfilePresence")
+      ? makeEnhancedProfileCurrentGame(presence)
+      : null;
     if (currentGame) nativeCurrentGameSlot.append(currentGame);
     actions.append(nativeCurrentGameSlot);
     const actionRow = makeEnhancedProfileElement("div", "rtp-action-row");
@@ -28282,6 +28329,7 @@
     } else {
       const relationships = data.sections.relationships;
       if (
+        isEnhancedProfileFeatureEnabled("enhancedProfilePresence") &&
         presence.status === "ready" &&
         presence.data.type === "game" &&
         presence.data.placeId &&
@@ -28765,6 +28813,9 @@
   }
 
   function loadEnhancedProfileExactBadgeCount(userId, epoch) {
+    if (!isEnhancedProfileFeatureEnabled("enhancedProfileBadges")) {
+      return Promise.resolve(false);
+    }
     const badges = enhancedProfileData?.sections?.badges;
     if (
       !userId ||
@@ -28859,6 +28910,7 @@
   }
 
   async function loadEnhancedProfileRelationships(userId, epoch) {
+    if (!isEnhancedProfileFeatureEnabled("enhancedProfileRelationships")) return false;
     if (
       !userId ||
       epoch !== enhancedProfileLifecycleEpoch ||
@@ -28974,12 +29026,14 @@
       const currentContent = document.getElementById("content");
       if (currentContent) suppressNativeEnhancedProfileRoots(currentContent);
       scheduleEnhancedProfileTopReset(userId, epoch);
-      if (normalized.sections.relationships.status !== "ready") {
+      if (isEnhancedProfileFeatureEnabled("enhancedProfileRelationships") &&
+          normalized.sections.relationships.status !== "ready") {
         enhancedProfileRelationshipsStartTimer = window.setTimeout(() => {
           enhancedProfileRelationshipsStartTimer = null;
           void loadEnhancedProfileRelationships(userId, epoch);
         }, ENHANCED_PROFILE_RELATIONSHIPS_START_DELAY_MS);
       }
+      if (!isEnhancedProfileFeatureEnabled("enhancedProfileBadges")) return;
       enhancedProfileBadgeCountStartTimer = window.setTimeout(() => {
         enhancedProfileBadgeCountStartTimer = null;
         void loadEnhancedProfileExactBadgeCount(userId, epoch);
