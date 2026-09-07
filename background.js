@@ -17318,6 +17318,35 @@ async function collectAccountRecoveryPurchases(viewerUserId) {
   };
 }
 
+const LIFETIME_SPENT_MESSAGE_TYPE = "rsl:get-lifetime-spent";
+const LIFETIME_SPENT_PAGE_LIMIT = 100;
+const LIFETIME_SPENT_MAX_PAGES = 100;
+
+async function collectLifetimeSpent(userId) {
+  if (!isValidId(userId)) throw new Error("INVALID_USER");
+  let cursor = null;
+  let totalSpent = 0;
+  let pages = 0;
+  do {
+    const endpoint = new URL(`/v2/users/${userId}/transactions`, "https://economy.roblox.com");
+    endpoint.searchParams.set("transactionType", "Purchase");
+    endpoint.searchParams.set("limit", String(LIFETIME_SPENT_PAGE_LIMIT));
+    endpoint.searchParams.set("sortOrder", "Asc");
+    if (cursor) endpoint.searchParams.set("cursor", cursor);
+    const payload = await fetchAccountRecoveryJson(endpoint);
+    if (!Array.isArray(payload?.data)) throw new Error("INVALID_RESPONSE");
+    for (const entry of payload.data) {
+      const amount = Number(entry?.currency?.amount);
+      if (Number.isSafeInteger(amount) && amount < 0) totalSpent += Math.abs(amount);
+    }
+    cursor = typeof payload.nextPageCursor === "string" && payload.nextPageCursor
+      ? payload.nextPageCursor
+      : null;
+    pages += 1;
+  } while (cursor && pages < LIFETIME_SPENT_MAX_PAGES);
+  return { totalSpent, complete: !cursor };
+}
+
 function normalizeAccountRecoveryCurrencyPurchase(entry) {
   const purchasedAt = normalizeAccountRecoveryDate(entry?.created);
   const holdId = normalizeAccountRecoveryId(entry?.id);
@@ -20416,6 +20445,18 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === MUTUAL_FRIENDS_PAGE_MESSAGE_TYPE) {
     return handleMutualFriendsPageMessage(message, sender, sendResponse);
+  }
+
+  if (message?.type === LIFETIME_SPENT_MESSAGE_TYPE) {
+    const userId = String(message.userId || "");
+    collectLifetimeSpent(userId)
+      .then((result) => sendResponse({ ok: true, userId, ...result }))
+      .catch((error) => sendResponse({
+        ok: false,
+        userId,
+        code: error?.message === "INVALID_USER" ? "INVALID_USER" : "UNAVAILABLE"
+      }));
+    return true;
   }
 
   if (message?.type === "rsl:get-all-online-friends") {

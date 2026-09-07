@@ -1328,6 +1328,8 @@
   let enhancedProfileBadgeCountAnimationFrame = null;
   let enhancedProfileBadgeCountAnimationTimer = null;
   let enhancedProfileBadgeCountDisplayedValue = null;
+  let lifetimeSpentRequestKey = "";
+  let lifetimeSpentRequest = null;
   let enhancedProfileBadgeCountStartTimer = null;
   let enhancedProfileRelationshipsStartTimer = null;
   let enhancedProfileThumbnailObserver = null;
@@ -30244,6 +30246,65 @@
     }
   }
 
+  function sendLifetimeSpentMessage(userId) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "rsl:get-lifetime-spent", userId },
+          (response) => {
+            const runtimeError = chrome.runtime.lastError;
+            if (runtimeError) reject(new Error(runtimeError.message));
+            else resolve(response);
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  function mountLifetimeSpent() {
+    const heading = document.querySelector("h2.transactions-title-with-input");
+    const balance = heading?.querySelector(".balance-label");
+    const profileHref = heading?.querySelector('a[href*="/users/"]')?.href || "";
+    const userId = profileHref.match(/\/users\/(\d+)/i)?.[1] || "";
+    if (!heading || !balance || !userId) {
+      lifetimeSpentRequestKey = "";
+      lifetimeSpentRequest = null;
+      document.querySelectorAll("[data-rsl-lifetime-spent]").forEach((element) => element.remove());
+      return;
+    }
+    let label = balance.querySelector("[data-rsl-lifetime-spent]");
+    if (!label) {
+      label = document.createElement("span");
+      label.dataset.rslLifetimeSpent = "";
+      label.style.marginLeft = "18px";
+      label.style.whiteSpace = "nowrap";
+      label.textContent = "Lifetime Spent: …";
+      const buyLink = balance.querySelector("a.btn-more");
+      balance.insertBefore(label, buyLink || null);
+    }
+    if (lifetimeSpentRequestKey === userId && lifetimeSpentRequest) return;
+    lifetimeSpentRequestKey = userId;
+    lifetimeSpentRequest = sendLifetimeSpentMessage(userId)
+      .then((response) => {
+        if (lifetimeSpentRequestKey !== userId || !label.isConnected) return;
+        if (response?.ok !== true || !Number.isSafeInteger(response.totalSpent)) {
+          label.textContent = "Lifetime Spent: unavailable";
+          return;
+        }
+        label.textContent = `Lifetime Spent: ${formatEnhancedProfileNumber(response.totalSpent)}`;
+        if (response.complete === false) {
+          label.title = "Partial total: Roblox limited the transaction history returned.";
+        }
+      })
+      .catch(() => {
+        if (lifetimeSpentRequestKey === userId && label.isConnected) {
+          label.textContent = "Lifetime Spent: unavailable";
+        }
+      });
+  }
+
   function mountExtensionFeatures() {
     syncAccountRecoveryModalRouteState();
     syncExtensionUpdateHomeVisitState();
@@ -30252,6 +30313,7 @@
     if (!featureSettingsLoaded) {
       return;
     }
+    mountLifetimeSpent();
     mountEnhancedProfile();
     mountNativeEventScheduleButtons();
     if (isFeatureEnabled("experiencePlaces")) {
