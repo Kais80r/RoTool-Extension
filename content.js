@@ -30326,9 +30326,11 @@
     if (!target) return;
     const note = document.createElement("p");
     note.dataset.rslExperienceAvailabilityReason = "";
-    note.style.maxWidth = "620px";
-    note.style.margin = "12px auto 0";
+    note.style.maxWidth = "440px";
+    note.style.margin = "14px auto 0";
     note.style.textAlign = "center";
+    note.style.fontSize = "14px";
+    note.style.lineHeight = "1.45";
     note.style.color = "var(--color-content-muted, #a3a3ad)";
     note.textContent = "Checking why Roblox restricted this experience…";
     target.append(note);
@@ -30346,7 +30348,7 @@
         if (item?.isPlayable === false) {
           const rawReason = String(item.reasonProhibited || "");
           const friendlyReason = rawReason === "InsufficientPermissionEditorsOnly"
-            ? "This experience is restricted to its owner and editors. It is private or not published for general players."
+            ? "Only the owner and editors can access this experience. It may be private or unpublished."
             : rawReason === "UnderReview"
               ? "This experience is currently under Roblox review."
               : rawReason === "ContentModerated"
