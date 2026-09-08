@@ -30274,7 +30274,9 @@
       document.querySelectorAll("[data-rsl-lifetime-spent]").forEach((element) => element.remove());
       return;
     }
-    const balanceText = balance.querySelector(":scope > span") || balance.querySelector("span");
+    const balanceText = Array.from(balance.children || []).find(
+      (child) => child.tagName === "SPAN"
+    );
     if (!balanceText) return;
     let label = balance.querySelector("[data-rsl-lifetime-spent]");
     if (!label) {
@@ -30282,7 +30284,6 @@
       label.dataset.rslLifetimeSpent = "";
       label.style.marginLeft = "18px";
       label.style.whiteSpace = "nowrap";
-      label.style.display = "inline-block";
       label.textContent = "Lifetime Spent: …";
     }
     if (label.parentElement !== balanceText) balanceText.append(label);
