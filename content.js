@@ -30344,9 +30344,16 @@
         const items = await response.json();
         const item = Array.isArray(items) ? items[0] : null;
         if (item?.isPlayable === false) {
-          reason = item.reasonProhibited
-            ? `Roblox marked this experience as unavailable: ${item.reasonProhibited}.`
-            : "Roblox marked this experience as unavailable, private, or moderated.";
+          const rawReason = String(item.reasonProhibited || "");
+          const friendlyReason = rawReason === "InsufficientPermissionEditorsOnly"
+            ? "This experience is restricted to its owner and editors. It is private or not published for general players."
+            : rawReason === "UnderReview"
+              ? "This experience is currently under Roblox review."
+              : rawReason === "ContentModerated"
+                ? "This experience was restricted by Roblox moderation."
+                : "This experience is unavailable, private, or restricted by Roblox.";
+          reason = friendlyReason;
+          if (rawReason) note.title = `Roblox reason: ${rawReason}`;
         } else if (!item) {
           reason = "Roblox returned no public place details. It may be deleted, private, or moderated.";
         }
