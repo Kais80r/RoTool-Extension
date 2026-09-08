@@ -30274,16 +30274,18 @@
       document.querySelectorAll("[data-rsl-lifetime-spent]").forEach((element) => element.remove());
       return;
     }
+    const balanceText = balance.querySelector(":scope > span") || balance.querySelector("span");
+    if (!balanceText) return;
     let label = balance.querySelector("[data-rsl-lifetime-spent]");
     if (!label) {
       label = document.createElement("span");
       label.dataset.rslLifetimeSpent = "";
       label.style.marginLeft = "18px";
       label.style.whiteSpace = "nowrap";
+      label.style.display = "inline-block";
       label.textContent = "Lifetime Spent: …";
-      const buyLink = balance.querySelector("a.btn-more");
-      balance.insertBefore(label, buyLink || null);
     }
+    if (label.parentElement !== balanceText) balanceText.append(label);
     if (lifetimeSpentRequestKey === userId && lifetimeSpentRequest) return;
     lifetimeSpentRequestKey = userId;
     lifetimeSpentRequest = sendLifetimeSpentMessage(userId)
