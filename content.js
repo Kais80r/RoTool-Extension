@@ -1330,6 +1330,8 @@
   let enhancedProfileBadgeCountDisplayedValue = null;
   let lifetimeSpentRequestKey = "";
   let lifetimeSpentRequest = null;
+  let experienceAvailabilityReasonKey = "";
+  let experienceAvailabilityReasonRequest = null;
   let enhancedProfileBadgeCountStartTimer = null;
   let enhancedProfileRelationshipsStartTimer = null;
   let enhancedProfileThumbnailObserver = null;
@@ -30308,6 +30310,56 @@
       });
   }
 
+  function mountExperienceAvailabilityReason() {
+    const placeId = location.pathname.match(/^\/games\/(\d+)/i)?.[1] || "";
+    const pageText = document.body?.textContent || "";
+    const unavailable = /This experience is currently not available|Content not accessible/i.test(pageText);
+    const existing = document.querySelector("[data-rsl-experience-availability-reason]");
+    if (!placeId || !unavailable) {
+      experienceAvailabilityReasonKey = "";
+      experienceAvailabilityReasonRequest = null;
+      existing?.remove();
+      return;
+    }
+    if (existing || (experienceAvailabilityReasonKey === placeId && experienceAvailabilityReasonRequest)) return;
+    const anchor = Array.from(document.querySelectorAll("h1, h2, p, div, span"))
+      .find((element) => /This experience is currently not available/i.test(element.textContent || ""));
+    if (!anchor?.parentElement) return;
+    const note = document.createElement("p");
+    note.dataset.rslExperienceAvailabilityReason = "";
+    note.style.maxWidth = "620px";
+    note.style.margin = "12px auto 0";
+    note.style.textAlign = "center";
+    note.style.color = "var(--color-content-muted, #a3a3ad)";
+    note.textContent = "Checking why Roblox restricted this experience…";
+    anchor.parentElement.append(note);
+    experienceAvailabilityReasonKey = placeId;
+    experienceAvailabilityReasonRequest = fetch(
+      `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${encodeURIComponent(placeId)}`,
+      { credentials: "include" }
+    ).then(async (response) => {
+      let reason = "Roblox did not provide a specific reason. It may be private, moderated, deleted, or restricted in your region.";
+      if (response.status === 401 || response.status === 403) {
+        reason = "This experience is private or you do not have permission to access it.";
+      } else if (response.ok) {
+        const items = await response.json();
+        const item = Array.isArray(items) ? items[0] : null;
+        if (item?.isPlayable === false) {
+          reason = item.reasonProhibited
+            ? `Roblox marked this experience as unavailable: ${item.reasonProhibited}.`
+            : "Roblox marked this experience as unavailable, private, or moderated.";
+        } else if (!item) {
+          reason = "Roblox returned no public place details. It may be deleted, private, or moderated.";
+        }
+      }
+      if (note.isConnected && experienceAvailabilityReasonKey === placeId) note.textContent = reason;
+    }).catch(() => {
+      if (note.isConnected && experienceAvailabilityReasonKey === placeId) {
+        note.textContent = "Roblox did not reveal the exact reason. It may be private, moderated, deleted, or region-restricted.";
+      }
+    });
+  }
+
   function mountExtensionFeatures() {
     syncAccountRecoveryModalRouteState();
     syncExtensionUpdateHomeVisitState();
@@ -30317,6 +30369,7 @@
       return;
     }
     mountLifetimeSpent();
+    mountExperienceAvailabilityReason();
     mountEnhancedProfile();
     mountNativeEventScheduleButtons();
     if (isFeatureEnabled("experiencePlaces")) {
