@@ -30324,12 +30324,32 @@
     if (existing || (experienceAvailabilityReasonKey === placeId && experienceAvailabilityReasonRequest)) return;
     const target = document.querySelector("#game-details-unavailable-container .flex.flex-col.gap-xsmall") || document.body;
     if (!target) return;
+    const errorCard = document.querySelector("#game-details-unavailable-container .min-height-\\[70vh\\]");
+    const title = target.querySelector("h3");
+    const subtitle = target.querySelector('[data-testid="play-error"]');
+    const returnHome = target.querySelector("a");
+    if (errorCard) {
+      errorCard.style.padding = "32px 24px";
+    }
+    if (title) {
+      title.style.margin = "0";
+      title.style.fontSize = "22px";
+      title.style.lineHeight = "1.25";
+    }
+    if (subtitle) {
+      subtitle.style.margin = "8px auto 0";
+      subtitle.style.fontSize = "15px";
+      subtitle.style.lineHeight = "1.4";
+    }
+    if (returnHome) {
+      returnHome.style.marginTop = "16px";
+    }
     const note = document.createElement("p");
     note.dataset.rslExperienceAvailabilityReason = "";
     note.style.maxWidth = "440px";
-    note.style.margin = "14px auto 0";
+    note.style.margin = "16px auto 0";
     note.style.textAlign = "center";
-    note.style.fontSize = "14px";
+    note.style.fontSize = "15px";
     note.style.lineHeight = "1.45";
     note.style.color = "var(--color-content-muted, #a3a3ad)";
     note.textContent = "Checking why Roblox restricted this experience…";
