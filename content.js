@@ -30322,9 +30322,8 @@
       return;
     }
     if (existing || (experienceAvailabilityReasonKey === placeId && experienceAvailabilityReasonRequest)) return;
-    const anchor = Array.from(document.querySelectorAll("h1, h2, p, div, span"))
-      .find((element) => /This experience is currently not available/i.test(element.textContent || ""));
-    if (!anchor?.parentElement) return;
+    const target = document.querySelector("#game-details-unavailable-container .flex.flex-col.gap-xsmall") || document.body;
+    if (!target) return;
     const note = document.createElement("p");
     note.dataset.rslExperienceAvailabilityReason = "";
     note.style.maxWidth = "620px";
@@ -30332,7 +30331,7 @@
     note.style.textAlign = "center";
     note.style.color = "var(--color-content-muted, #a3a3ad)";
     note.textContent = "Checking why Roblox restricted this experience…";
-    anchor.parentElement.append(note);
+    target.append(note);
     experienceAvailabilityReasonKey = placeId;
     experienceAvailabilityReasonRequest = fetch(
       `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${encodeURIComponent(placeId)}`,
