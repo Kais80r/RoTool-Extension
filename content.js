@@ -18542,21 +18542,28 @@
       button.title = "Random Game";
       button.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<path fill="currentColor" d="M17 3h4v4h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H17V3ZM4 5h3.17l10.42 10.42L16.17 17 5.76 6.59H4V5Zm0 12h3.17l2.42-2.42 1.42 1.42L8 19.41V21H6v-1.59L7.17 18H4v-1Zm12.41-3.41 1.42-1.42L21 15.76V14h2v6h-6v-2h2.76l-3.35-3.41Z"/>' +
+        '<path fill="currentColor" d="M2 5.2 10.5 2l6.2 3v8.8l-8.5 3.2L2 14V5.2Zm2 1.2v6.3l4.2 2.1V8.7L4 6.4Zm6.2 2.3v6.2l4.5-1.7V7L10.2 8.7Zm-4.5-2.7 4 2 4.4-1.7-3.9-1.9-4.5 1.6Zm12.1 1.6L23 10l-5.2 3V8.6Zm0 3.8v5.2l-4.8 2.2v-4.8l4.8-2.6Z"/>' +
+        '<path fill="currentColor" d="m17 8 6 4-6 4V8Z"/>' +
         "</svg>";
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         button.disabled = true;
         button.setAttribute("aria-busy", "true");
+        button.title = "Finding an active game…";
         chrome.runtime.sendMessage(
           { type: "rsl:get-random-game" },
           (response) => {
+            const runtimeError = chrome.runtime.lastError;
             button.disabled = false;
             button.removeAttribute("aria-busy");
             const placeId = String(response?.placeId || "");
             if (response?.ok === true && /^\d+$/.test(placeId)) {
               location.href = `/games/${placeId}`;
             } else {
-              button.title = "No active game available";
+              button.title = runtimeError
+                ? "Random game is not available. Reload RoTool."
+                : "No active game available";
               window.setTimeout(() => { button.title = "Random Game"; }, 2500);
             }
           }

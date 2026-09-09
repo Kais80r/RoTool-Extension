@@ -5612,7 +5612,7 @@ function getRandomServerErrorCode(error) {
 
 async function getRandomActiveGame() {
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
-  endpoint.searchParams.set("sortOrder", "2");
+  endpoint.searchParams.set("sortOrder", "Desc");
   endpoint.searchParams.set("limit", "100");
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
