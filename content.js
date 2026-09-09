@@ -18573,8 +18573,9 @@
       button.title = "Random Game";
       button.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<path fill="currentColor" d="M2 5.2 10.5 2l6.2 3v8.8l-8.5 3.2L2 14V5.2Zm2 1.2v6.3l4.2 2.1V8.7L4 6.4Zm6.2 2.3v6.2l4.5-1.7V7L10.2 8.7Zm-4.5-2.7 4 2 4.4-1.7-3.9-1.9-4.5 1.6Zm12.1 1.6L23 10l-5.2 3V8.6Zm0 3.8v5.2l-4.8 2.2v-4.8l4.8-2.6Z"/>' +
-        '<path fill="currentColor" d="m17 8 6 4-6 4V8Z"/>' +
+        '<rect x="1.75" y="4.25" width="10.5" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+        '<circle cx="4.8" cy="7.3" r="1" fill="currentColor"/><circle cx="9.2" cy="13.2" r="1" fill="currentColor"/>' +
+        '<path fill="currentColor" d="m15 6.5 7.25 5.5L15 17.5v-11Z"/>' +
         "</svg>";
       const icon = button.querySelector("svg");
       if (icon) {
