@@ -1001,6 +1001,12 @@
           key: "quickPlayActionRandom",
           label: "Random Server",
           description: "Show the Random Server button."
+        }),
+        Object.freeze({
+          key: "randomPlayDirect",
+          label: "Direct Random Play",
+          description: "Launch the selected random game directly instead of opening its game page.",
+          defaultEnabled: false
         })
       ]
     }),
@@ -18566,7 +18572,9 @@
         button.removeAttribute("aria-busy");
         const placeId = String(response?.placeId || "");
         if (response?.ok === true && /^\d+$/.test(placeId)) {
-          location.href = `/games/${placeId}`;
+          location.href = isFeatureEnabled("randomPlayDirect")
+            ? `roblox://experiences/start?placeId=${placeId}`
+            : `/games/${placeId}`;
         } else {
           button.title = runtimeError
             ? "Random game is not available. Reload RoTool."
@@ -18626,7 +18634,9 @@
             button.removeAttribute("aria-busy");
             const placeId = String(response?.placeId || "");
             if (response?.ok === true && /^\d+$/.test(placeId)) {
-              location.href = `/games/${placeId}`;
+              location.href = isFeatureEnabled("randomPlayDirect")
+                ? `roblox://experiences/start?placeId=${placeId}`
+                : `/games/${placeId}`;
             } else {
               button.title = runtimeError
                 ? "Random game is not available. Reload RoTool."

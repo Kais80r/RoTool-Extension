@@ -5653,6 +5653,20 @@ async function resolvePlaceUniverseIds(rawPlaceIds) {
   return resolved.filter(Boolean);
 }
 
+async function fetchRobloxDiscoveryGames() {
+  const sortIds = ["top-playing-now", "top-trending", "up-and-coming", "fun-with-friends", "top-revisited"];
+  const sessionId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const payloads = await Promise.all(sortIds.map(async (sortId) => {
+    try {
+      const url = new URL("https://apis.roblox.com/explore-api/v1/get-sort-content");
+      url.searchParams.set("sessionId", sessionId);
+      url.searchParams.set("sortId", sortId);
+      return await fetchJson(url.toString(), { cache: "no-store", credentials: "omit", headers: { Accept: "application/json" } }, { maxAttempts: 1 });
+    } catch { return null; }
+  }));
+  return payloads.flatMap((payload) => Array.isArray(payload?.games) ? payload.games : []);
+}
+
 async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messageMaxAge = null) {
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
   // Roblox does not expose a public "random popular games" list endpoint.
@@ -5682,6 +5696,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   }
   endpoint.searchParams.set("universeIds", universeIds.slice(0, 50).join(","));
   const maxAge = Number(messageMaxAge);
+  const discoveryGames = await fetchRobloxDiscoveryGames();
   const fetchRecommendation = async (universeId) => {
     try {
       return await fetchJson(
@@ -5711,11 +5726,11 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     secondSeedIds.slice(0, 12).map(fetchRecommendation)
   );
   const recommendedGames = [
+    ...discoveryGames,
     ...firstRecommendationPayloads,
     ...secondRecommendationPayloads
-  ].flatMap((payload) =>
-    Array.isArray(payload?.games) ? payload.games : []
-  ).map((game) => ({
+  ].flatMap((payload) => Array.isArray(payload?.games) ? payload.games : [payload])
+  .map((game) => ({
     rootPlaceId: game?.placeId,
     name: game?.name,
     playing: game?.playerCount,
