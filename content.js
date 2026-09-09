@@ -18543,9 +18543,22 @@
           return null;
         }
       }).filter((id) => /^[1-9]\d{0,19}$/.test(String(id || "")));
+      const candidatePlaceIds = Array.from(
+        document.querySelectorAll("a[href*='/games/']")
+      ).map((element) => {
+        const match = String(element.getAttribute("href") || "")
+          .match(/\/games\/(\d+)/i);
+        return match?.[1] || null;
+      }).filter((id) => /^[1-9]\d{0,19}$/.test(String(id || "")));
+      const ageMatch = String(
+        document.querySelector("#age-badge-container")?.textContent || ""
+      ).match(/\b(9|13|16|17|18)\s*\+/);
+      const viewerAge = ageMatch ? Number(ageMatch[1]) : null;
       chrome.runtime.sendMessage({
         type: "rsl:get-random-game",
-        candidateUniverseIds
+        candidateUniverseIds,
+        candidatePlaceIds,
+        maxAge: viewerAge
       }, (response) => {
         const runtimeError = chrome.runtime.lastError;
         button.disabled = false;

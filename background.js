@@ -5610,7 +5610,26 @@ function getRandomServerErrorCode(error) {
   return error instanceof RandomServerError ? error.code : "NETWORK";
 }
 
-async function getRandomActiveGame(rawCandidateIds = []) {
+async function resolvePlaceUniverseIds(rawPlaceIds) {
+  const placeIds = Array.from(new Set((Array.isArray(rawPlaceIds) ? rawPlaceIds : [])
+    .map((value) => String(value)).filter((value) => isValidId(value)))).slice(0, 60);
+  const resolved = await Promise.all(placeIds.map(async (placeId) => {
+    try {
+      const payload = await fetchJson(
+        `https://apis.roblox.com/universes/v1/places/${placeId}/universe`,
+        { cache: "no-store", credentials: "omit", headers: { Accept: "application/json" } },
+        { maxAttempts: 1 }
+      );
+      const universeId = String(payload?.universeId || "");
+      return isValidId(universeId) ? universeId : null;
+    } catch {
+      return null;
+    }
+  }));
+  return resolved.filter(Boolean);
+}
+
+async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messageMaxAge = null) {
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
   // Roblox does not expose a public "random popular games" list endpoint.
   // Query a small, stable set of well-known universes and pick among those
@@ -5619,8 +5638,13 @@ async function getRandomActiveGame(rawCandidateIds = []) {
     ? Array.from(new Set(rawCandidateIds.map((value) => String(value))
         .filter((value) => isValidId(value)))).slice(0, 100)
     : [];
+  const resolvedPlaceIds = candidates.length === 0
+    ? await resolvePlaceUniverseIds(rawPlaceIds)
+    : [];
   const universeIds = candidates.length > 0
     ? candidates
+    : resolvedPlaceIds.length > 0
+      ? resolvedPlaceIds
     : [
         "383310974", "994732206", "703124385", "111958650",
         "66654135", "6284583030", "537413528", "2788229376",
@@ -5632,11 +5656,16 @@ async function getRandomActiveGame(rawCandidateIds = []) {
     credentials: "omit",
     headers: { Accept: "application/json" }
   });
+  const maxAge = Number(messageMaxAge);
   const games = Array.isArray(payload?.data)
     ? payload.data.filter((game) =>
         isValidId(String(game?.rootPlaceId || "")) &&
         Number(game?.playing) > 0 &&
-        game?.isPlayable !== false
+        game?.isPlayable !== false &&
+        !(maxAge > 0 && maxAge < 16 &&
+          /(?:16|17|18)\s*\+|mature|restricted/i.test(
+            String(game?.contentRatingType || game?.ageRecommendation || "")
+          ))
       )
     : [];
   if (!games.length) throw new Error("NO_ACTIVE_GAMES");
@@ -5650,7 +5679,11 @@ async function getRandomActiveGame(rawCandidateIds = []) {
 
 function handleRandomGameMessage(message, sendResponse) {
   if (message?.type !== RANDOM_GAME_MESSAGE_TYPE) return false;
-  getRandomActiveGame(message?.candidateUniverseIds)
+  getRandomActiveGame(
+    message?.candidateUniverseIds,
+    message?.candidatePlaceIds,
+    message?.maxAge
+  )
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => sendResponse({
       ok: false,
