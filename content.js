@@ -2037,6 +2037,7 @@
       ? directControls
       : Array.from(row.querySelectorAll("a[href]"));
     const links = controls.filter((control) => control.matches?.("a[href]"));
+    const allLinks = Array.from(row.querySelectorAll?.("a[href]") || []);
     const directLink = links.length === 1 ? links[0] : null;
     const directButton = controls.length === 1 && controls[0].matches?.("button")
       ? controls[0]
@@ -2149,7 +2150,7 @@
     ) {
       return "robloxPlus";
     }
-    const isGiftCards = links.some((link) => {
+    const isGiftCardLink = (link) => {
       if (link.matches?.("#nav-giftcards")) {
         return true;
       }
@@ -2157,8 +2158,6 @@
         const url = new URL(link.href, location.origin);
         const hostname = url.hostname.toLowerCase();
         return (
-          link === directLink &&
-          isRedesignedStandardLink &&
           (hostname === "roblox.com" || hostname.endsWith(".roblox.com")) &&
           /^\/giftcards(?:-[a-z]{2}(?:-[a-z]{2})?)?$/.test(
             url.pathname.toLowerCase().replace(/\/+$/, "")
@@ -2167,7 +2166,9 @@
       } catch {
         return false;
       }
-    }) || (!hasDomChildren && Boolean(row.querySelector(".icon-regular-gift-card")));
+    };
+    const isGiftCards = [...links, ...allLinks].some(isGiftCardLink) ||
+      Boolean(row.querySelector("#nav-giftcards, .icon-regular-gift-card"));
     if (isGiftCards) {
       return "giftCards";
     }
