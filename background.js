@@ -703,6 +703,8 @@ const invalidQuickSettingsExperienceRestoreViewerIds = new Set();
 const randomServerCandidateCache = new Map();
 const randomServerCandidateRequests = new Map();
 let randomServerRateLimitedUntil = 0;
+const randomGameRecentPlaceIds = [];
+const RANDOM_GAME_RECENT_LIMIT = 8;
 const gameCcuCache = new Map();
 const gameCcuRequestsByUniverseId = new Map();
 const gameRatingCache = new Map();
@@ -5676,8 +5678,23 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     Number(game.playing) > 0 &&
     !(maxAge > 0 && maxAge < 16 && game.minimumAge >= 16)
   );
-  if (recommendedGames.length > 0) {
-    const game = recommendedGames[pickUniformRandomIndex(recommendedGames.length)];
+  const uniqueRecommendedGames = Array.from(
+    new Map(recommendedGames.map((game) => [String(game.rootPlaceId), game])).values()
+  );
+  const freshRecommendedGames = uniqueRecommendedGames.filter(
+    (game) => !randomGameRecentPlaceIds.includes(String(game.rootPlaceId))
+  );
+  const selectableRecommendedGames = freshRecommendedGames.length > 0
+    ? freshRecommendedGames
+    : uniqueRecommendedGames;
+  if (selectableRecommendedGames.length > 0) {
+    const game = selectableRecommendedGames[
+      pickUniformRandomIndex(selectableRecommendedGames.length)
+    ];
+    randomGameRecentPlaceIds.push(String(game.rootPlaceId));
+    while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
+      randomGameRecentPlaceIds.shift();
+    }
     return {
       placeId: String(game.rootPlaceId),
       name: typeof game.name === "string" ? game.name : "Random game",
@@ -5701,7 +5718,15 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
       )
     : [];
   if (!games.length) throw new Error("NO_ACTIVE_GAMES");
-  const game = games[pickUniformRandomIndex(games.length)];
+  const freshGames = games.filter(
+    (game) => !randomGameRecentPlaceIds.includes(String(game.rootPlaceId))
+  );
+  const selectableGames = freshGames.length > 0 ? freshGames : games;
+  const game = selectableGames[pickUniformRandomIndex(selectableGames.length)];
+  randomGameRecentPlaceIds.push(String(game.rootPlaceId));
+  while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
+    randomGameRecentPlaceIds.shift();
+  }
   return {
     placeId: String(game.rootPlaceId),
     name: typeof game.name === "string" ? game.name : "Random game",
