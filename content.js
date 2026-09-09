@@ -27507,6 +27507,11 @@
     } = record;
     if (record.originalStyle === null) node.removeAttribute("style");
     else if (record.originalStyle !== undefined) node.setAttribute("style", record.originalStyle);
+    record.originalControlStyles?.forEach(({ element, style }) => {
+      if (!element?.isConnected) return;
+      if (style === null) element.removeAttribute("style");
+      else element.setAttribute("style", style);
+    });
     node.removeAttribute(markerAttribute);
     if (hadSlot) node.setAttribute("slot", slotValue ?? "");
     else node.removeAttribute("slot");
@@ -27591,6 +27596,8 @@
       nextSibling: node.nextSibling,
       placeholder,
       originalStyle: node.getAttribute("style"),
+      originalControlStyles: Array.from(node.querySelectorAll?.("button, a") || [])
+        .map((element) => ({ element, style: element.getAttribute("style") })),
       hadSlot: node.hasAttribute("slot"),
       slotValue: node.getAttribute("slot")
     };
