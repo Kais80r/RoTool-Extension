@@ -18523,6 +18523,32 @@
     return control?.closest?.("li, [role='listitem']") || null;
   }
 
+  function bindRandomGameButton(button) {
+    if (!button || button.dataset.rslRandomGameBound === "true") return;
+    button.dataset.rslRandomGameBound = "true";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.title = "Finding an active game...";
+      chrome.runtime.sendMessage({ type: "rsl:get-random-game" }, (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        const placeId = String(response?.placeId || "");
+        if (response?.ok === true && /^\d+$/.test(placeId)) {
+          location.href = `/games/${placeId}`;
+        } else {
+          button.title = runtimeError
+            ? "Random game is not available. Reload RoTool."
+            : "No active game available";
+          window.setTimeout(() => { button.title = "Random Game"; }, 2500);
+        }
+      });
+    });
+  }
+
   function mountRandomGameButton() {
     const notificationItem = findNativeHeaderNotificationItem();
     if (!notificationItem?.parentElement) return;
@@ -18555,6 +18581,7 @@
         icon.style.cssText =
           "display:block;width:24px;height:24px;overflow:visible;pointer-events:none;";
       }
+      button.dataset.rslRandomGameBound = "true";
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -18581,6 +18608,7 @@
       });
       item.append(button);
     }
+    bindRandomGameButton(item.querySelector("button"));
     if (item.parentElement !== notificationItem.parentElement ||
         item.nextElementSibling !== notificationItem) {
       notificationItem.insertAdjacentElement("beforebegin", item);
