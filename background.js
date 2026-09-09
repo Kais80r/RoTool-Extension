@@ -5610,19 +5610,23 @@ function getRandomServerErrorCode(error) {
   return error instanceof RandomServerError ? error.code : "NETWORK";
 }
 
-async function getRandomActiveGame() {
+async function getRandomActiveGame(rawCandidateIds = []) {
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
   // Roblox does not expose a public "random popular games" list endpoint.
   // Query a small, stable set of well-known universes and pick among those
   // that currently report active players.
-  endpoint.searchParams.set(
-    "universeIds",
-    [
-      "383310974", "994732206", "703124385", "111958650",
-      "66654135", "6284583030", "537413528", "2788229376",
-      "1537690962", "1962086868", "72238743"
-    ].join(",")
-  );
+  const candidates = Array.isArray(rawCandidateIds)
+    ? Array.from(new Set(rawCandidateIds.map((value) => String(value))
+        .filter((value) => isValidId(value)))).slice(0, 100)
+    : [];
+  const universeIds = candidates.length > 0
+    ? candidates
+    : [
+        "383310974", "994732206", "703124385", "111958650",
+        "66654135", "6284583030", "537413528", "2788229376",
+        "1537690962", "1962086868", "72238743"
+      ];
+  endpoint.searchParams.set("universeIds", universeIds.join(","));
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
     credentials: "omit",
@@ -5646,7 +5650,7 @@ async function getRandomActiveGame() {
 
 function handleRandomGameMessage(message, sendResponse) {
   if (message?.type !== RANDOM_GAME_MESSAGE_TYPE) return false;
-  getRandomActiveGame()
+  getRandomActiveGame(message?.candidateUniverseIds)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => sendResponse({
       ok: false,

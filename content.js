@@ -18532,7 +18532,21 @@
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
       button.title = "Finding an active game...";
-      chrome.runtime.sendMessage({ type: "rsl:get-random-game" }, (response) => {
+      const candidateUniverseIds = Array.from(
+        document.querySelectorAll("[data-universe-id], a[href*='universeId=']")
+      ).map((element) => {
+        const datasetId = element.dataset?.universeId || element.dataset?.universeid;
+        if (datasetId) return datasetId;
+        try {
+          return new URL(element.href, location.href).searchParams.get("universeId");
+        } catch {
+          return null;
+        }
+      }).filter((id) => /^[1-9]\d{0,19}$/.test(String(id || "")));
+      chrome.runtime.sendMessage({
+        type: "rsl:get-random-game",
+        candidateUniverseIds
+      }, (response) => {
         const runtimeError = chrome.runtime.lastError;
         button.disabled = false;
         button.removeAttribute("aria-busy");
