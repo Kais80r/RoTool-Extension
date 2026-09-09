@@ -2077,49 +2077,55 @@
     );
     if (
       directMatches("#nav-home") ||
-      pathname === "/home"
+      (pathname === "/home" && hasRedesignedIcon(".icon-regular-house"))
     ) {
       return "home";
     }
     if (
       directMatches("#nav-profile") ||
-      pathname === "/users/profile"
+      (pathname === "/users/profile" && hasRedesignedIcon(".icon-regular-person"))
     ) {
       return "profile";
     }
     if (
       directMatches("#nav-message") ||
-      pathname === "/my/messages"
+      (pathname === "/my/messages" &&
+        hasRedesignedIcon(".icon-regular-speech-bubble-align-center"))
     ) {
       return "messages";
     }
     if (
       directMatches("#nav-friends") ||
-      pathname === "/users/friends"
+      (pathname === "/users/friends" &&
+        hasRedesignedIcon(".icon-regular-two-people"))
     ) {
       return "friends";
     }
     if (
       directMatches("#nav-avatar, #nav-character") ||
-      pathname === "/my/avatar"
+      (pathname === "/my/avatar" &&
+        hasRedesignedIcon(".icon-regular-person-standing"))
     ) {
       return "avatar";
     }
     if (
       directMatches("#nav-inventory") ||
-      pathname === "/users/inventory"
+      (pathname === "/users/inventory" &&
+        hasRedesignedIcon(".icon-regular-backpack"))
     ) {
       return "inventory";
     }
     if (
       directMatches("#nav-trade") ||
-      pathname === "/trades"
+      (pathname === "/trades" &&
+        hasRedesignedIcon(".icon-regular-hand-two-arrows-horizontal"))
     ) {
       return "trade";
     }
     if (
       directMatches("#nav-group") ||
-      pathname === "/communities"
+      (pathname === "/communities" &&
+        hasRedesignedIcon(".icon-regular-three-people"))
     ) {
       return "communities";
     }
@@ -2129,7 +2135,7 @@
         try {
           return new URL(directLink?.href || "", location.origin).hostname
             .toLowerCase() === "blog.roblox.com" &&
-            true;
+            hasRedesignedIcon(".icon-regular-fountain-pen-nib");
         } catch {
           return false;
         }
