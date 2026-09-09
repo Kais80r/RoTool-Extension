@@ -704,7 +704,7 @@ const randomServerCandidateCache = new Map();
 const randomServerCandidateRequests = new Map();
 let randomServerRateLimitedUntil = 0;
 const randomGameRecentPlaceIds = [];
-const RANDOM_GAME_RECENT_LIMIT = 8;
+const RANDOM_GAME_RECENT_LIMIT = 24;
 const gameCcuCache = new Map();
 const gameCcuRequestsByUniverseId = new Map();
 const gameRatingCache = new Map();
@@ -5589,6 +5589,28 @@ function pickUniformRandomIndex(length) {
   return Math.floor(Math.random() * length);
 }
 
+function pickWeightedRandomGameIndex(games) {
+  if (!Array.isArray(games) || games.length === 0) return -1;
+  const weights = games.map((game) =>
+    1 / Math.sqrt(Math.max(1, Number(game?.playing) || 1))
+  );
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  if (!(total > 0)) return pickUniformRandomIndex(games.length);
+  const random = (globalThis.crypto?.getRandomValues
+    ? (() => {
+        const value = new Uint32Array(1);
+        globalThis.crypto.getRandomValues(value);
+        return value[0] / 0x1_0000_0000;
+      })()
+    : Math.random()) * total;
+  let cursor = 0;
+  for (let index = 0; index < weights.length; index += 1) {
+    cursor += weights[index];
+    if (random < cursor) return index;
+  }
+  return weights.length - 1;
+}
+
 async function getRandomPublicServer(placeId) {
   const normalizedPlaceId = normalizeRandomServerPlaceId(placeId);
   if (!normalizedPlaceId) {
@@ -5660,7 +5682,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   }
   endpoint.searchParams.set("universeIds", universeIds.slice(0, 50).join(","));
   const maxAge = Number(messageMaxAge);
-  const recommendationPayloads = await Promise.all(universeIds.slice(0, 12).map(async (universeId) => {
+  const fetchRecommendation = async (universeId) => {
     try {
       return await fetchJson(
         `https://games.roblox.com/v1/games/recommendations/game/${universeId}`,
@@ -5670,8 +5692,28 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     } catch {
       return null;
     }
-  }));
-  const recommendedGames = recommendationPayloads.flatMap((payload) =>
+  };
+  const firstRecommendationPayloads = await Promise.all(
+    universeIds.slice(0, 16).map(fetchRecommendation)
+  );
+  const secondSeedIds = Array.from(new Set(
+    firstRecommendationPayloads.flatMap((payload) =>
+      Array.isArray(payload?.games) ? payload.games : []
+    ).map((game) => String(game?.universeId || ""))
+      .filter((id) => isValidId(id))
+  ));
+  for (let index = secondSeedIds.length - 1; index > 0; index -= 1) {
+    const swapIndex = pickUniformRandomIndex(index + 1);
+    [secondSeedIds[index], secondSeedIds[swapIndex]] =
+      [secondSeedIds[swapIndex], secondSeedIds[index]];
+  }
+  const secondRecommendationPayloads = await Promise.all(
+    secondSeedIds.slice(0, 12).map(fetchRecommendation)
+  );
+  const recommendedGames = [
+    ...firstRecommendationPayloads,
+    ...secondRecommendationPayloads
+  ].flatMap((payload) =>
     Array.isArray(payload?.games) ? payload.games : []
   ).map((game) => ({
     rootPlaceId: game?.placeId,
@@ -5695,7 +5737,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     : uniqueRecommendedGames;
   if (selectableRecommendedGames.length > 0) {
     const game = selectableRecommendedGames[
-      pickUniformRandomIndex(selectableRecommendedGames.length)
+      pickWeightedRandomGameIndex(selectableRecommendedGames)
     ];
     randomGameRecentPlaceIds.push(String(game.rootPlaceId));
     while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
@@ -5728,7 +5770,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     (game) => !randomGameRecentPlaceIds.includes(String(game.rootPlaceId))
   );
   const selectableGames = freshGames.length > 0 ? freshGames : games;
-  const game = selectableGames[pickUniformRandomIndex(selectableGames.length)];
+  const game = selectableGames[pickWeightedRandomGameIndex(selectableGames)];
   randomGameRecentPlaceIds.push(String(game.rootPlaceId));
   while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
     randomGameRecentPlaceIds.shift();
