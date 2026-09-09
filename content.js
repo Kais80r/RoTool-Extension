@@ -2225,7 +2225,23 @@
           row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
           return;
         }
-        const key = getNativeSidebarSemanticKey(row);
+        let key = getNativeSidebarSemanticKey(row);
+        if (!key && hiddenByKey.giftCards) {
+          const hasGiftCardRoute = Array.from(row.querySelectorAll("a[href]"))
+            .some((link) => {
+              try {
+                const url = new URL(link.href, location.origin);
+                return (
+                  (url.hostname === "roblox.com" ||
+                    url.hostname.endsWith(".roblox.com")) &&
+                  /^\/giftcards(?:[-/]|$)/i.test(url.pathname)
+                );
+              } catch {
+                return false;
+              }
+            });
+          if (hasGiftCardRoute) key = "giftCards";
+        }
         if (key && hiddenByKey[key]) {
           row.setAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE, key);
         } else {
