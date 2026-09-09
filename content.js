@@ -2058,7 +2058,7 @@
     };
     const rawPathname = getRobloxPathname(directLink);
     const pathname = rawPathname.replace(
-      /^\/(?!my(?:\/|$))[a-z]{2}(?=\/)/,
+      /^\/(?!my(?:\/|$))[a-z]{2,3}(?:-[a-z0-9]{2,8})*(?=\/)/,
       ""
     ) || "/";
     const directMatches = (selector) => Boolean(
@@ -5342,7 +5342,9 @@
       ).find((carousel) => {
         const heading = carousel.querySelector(":scope > .container-header h2, h2");
         const label = (heading?.childNodes?.[0]?.textContent || "").trim();
-        return label === "Friends";
+        if (label === "Friends") return true;
+        return Array.from(carousel.querySelectorAll("a[href]"))
+          .some((link) => /\/users\/friends(?:[/?#]|$)/i.test(link.getAttribute("href") || ""));
       }) || null
     );
   }
