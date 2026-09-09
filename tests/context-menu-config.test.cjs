@@ -8,7 +8,7 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 assert.equal(manifest.name, "RoTool");
-assert.equal(manifest.version, "0.19.10");
+assert.equal(manifest.version, "0.19.11");
 assert.ok(manifest.permissions.includes("contextMenus"));
 assert.ok(manifest.permissions.includes("clipboardWrite"));
 assert.ok(manifest.permissions.includes("scripting"));

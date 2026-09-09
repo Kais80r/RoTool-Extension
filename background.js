@@ -704,7 +704,7 @@ const randomServerCandidateCache = new Map();
 const randomServerCandidateRequests = new Map();
 let randomServerRateLimitedUntil = 0;
 const randomGameRecentPlaceIds = [];
-const RANDOM_GAME_RECENT_LIMIT = 120;
+const RANDOM_GAME_RECENT_LIMIT = 2000;
 let randomGameRecentLoaded = false;
 let randomGameRecentLoadPromise = null;
 async function loadRandomGameRecentHistory() {
@@ -5736,9 +5736,9 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     universeIds.slice(0, 16).map(fetchRecommendation)
   );
   const secondSeedIds = Array.from(new Set(
-    firstRecommendationPayloads.flatMap((payload) =>
+    [...discoveryGames, ...firstRecommendationPayloads.flatMap((payload) =>
       Array.isArray(payload?.games) ? payload.games : []
-    ).map((game) => String(game?.universeId || ""))
+    )].map((game) => String(game?.universeId || ""))
       .filter((id) => isValidId(id))
   ));
   for (let index = secondSeedIds.length - 1; index > 0; index -= 1) {
@@ -5755,7 +5755,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     ...secondRecommendationPayloads
   ].flatMap((payload) => Array.isArray(payload?.games) ? payload.games : [payload])
   .map((game) => ({
-    rootPlaceId: game?.placeId,
+    rootPlaceId: game?.rootPlaceId || game?.placeId,
     name: game?.name,
     playing: game?.playerCount,
     isPlayable: true,
@@ -5771,12 +5771,10 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   const freshRecommendedGames = uniqueRecommendedGames.filter(
     (game) => !randomGameRecentPlaceIds.includes(String(game.rootPlaceId))
   );
-  const selectableRecommendedGames = freshRecommendedGames.length > 0
-    ? freshRecommendedGames
-    : uniqueRecommendedGames;
+  const selectableRecommendedGames = freshRecommendedGames;
   if (selectableRecommendedGames.length > 0) {
     const game = selectableRecommendedGames[
-      pickWeightedRandomGameIndex(selectableRecommendedGames)
+      pickUniformRandomIndex(selectableRecommendedGames.length)
     ];
     rememberRandomGame(game.rootPlaceId);
     return {
@@ -5805,8 +5803,9 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   const freshGames = games.filter(
     (game) => !randomGameRecentPlaceIds.includes(String(game.rootPlaceId))
   );
-  const selectableGames = freshGames.length > 0 ? freshGames : games;
-  const game = selectableGames[pickWeightedRandomGameIndex(selectableGames)];
+  if (!freshGames.length) throw new Error("NO_NEW_GAMES");
+  const selectableGames = freshGames;
+  const game = selectableGames[pickUniformRandomIndex(selectableGames.length)];
   rememberRandomGame(game.rootPlaceId);
   return {
     placeId: String(game.rootPlaceId),
@@ -5825,7 +5824,7 @@ function handleRandomGameMessage(message, sendResponse) {
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => sendResponse({
       ok: false,
-      code: error?.message === "NO_ACTIVE_GAMES" ? "NO_ACTIVE_GAMES" : "UNAVAILABLE"
+      code: ["NO_ACTIVE_GAMES", "NO_NEW_GAMES"].includes(error?.message) ? error.message : "UNAVAILABLE"
     }));
   return true;
 }

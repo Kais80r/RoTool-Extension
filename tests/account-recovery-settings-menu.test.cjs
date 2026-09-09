@@ -866,7 +866,7 @@ const mountSource = contentSource.slice(
 );
 assert.match(
   mountSource,
-  /mountFeatureSettingsButton\(\);\s*mountAccountRecoverySettingsMenuItem\(\);\s*if \(!featureSettingsLoaded\)/,
+  /mountFeatureSettingsButton\(\);\s*mountRandomGameButton\(\);\s*mountAccountRecoverySettingsMenuItem\(\);\s*if \(!featureSettingsLoaded\)/,
   "the native dropdown launcher must remount before feature settings finish loading"
 );
 const recoveryModalSource = contentSource.slice(

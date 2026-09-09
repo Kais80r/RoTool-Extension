@@ -215,7 +215,7 @@ const nativeVisibilitySource = contentSource.slice(
   contentSource.indexOf("function getNativeSidebarSemanticKey("),
   contentSource.indexOf("function normalizeBestFriendIds(")
 );
-assert.match(nativeVisibilitySource, /link === directLink/);
+assert.match(nativeVisibilitySource, /getRobloxPathname\(directLink\)/);
 assert.match(nativeVisibilitySource, /isRedesignedStandardLink/);
 assert.match(nativeVisibilitySource, /hostname === "roblox\.com" \|\| hostname\.endsWith\("\.roblox\.com"\)/);
 assert.match(nativeVisibilitySource, /giftcards[\s\S]*?\[a-z\]\{2\}[\s\S]*?icon-regular-gift-card/);

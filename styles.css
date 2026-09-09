@@ -5626,8 +5626,6 @@
     flex: 1 0 calc(100% - 40px);
   }
 }
-.rsl-navbar-play-icon > .icon-common-play { width: 24px; height: 24px; display:block; }
-.rsl-navbar-dice { position:absolute; width:11px; height:11px; right:1px; bottom:1px; color:currentColor; }
 
 @media (forced-colors: active) {
   .rsl-shortcut-tab-option > input,
@@ -5791,6 +5789,7 @@
   width: var(--rsl-navbar-item-width, 44px);
   height: var(--rsl-navbar-item-height, 44px);
   margin: 0 !important;
+  margin-inline-start: var(--rsl-random-game-leading-gap, 0px) !important;
   padding: 0;
 }
 
@@ -5814,10 +5813,15 @@
 }
 
 #rsl-random-game-nav > .rsl-navbar-settings-button:hover,
-#rsl-random-game-nav > .rsl-navbar-settings-button:active,
 #rsl-random-game-nav > .rsl-navbar-settings-button:focus-visible {
-  background: transparent !important;
+  background: var(--color-state-hover, rgba(255, 255, 255, 0.12)) !important;
+  border-radius: 8px !important;
   box-shadow: none !important;
+}
+
+#rsl-random-game-nav > .rsl-navbar-settings-button:active {
+  background: var(--color-state-press, rgba(255, 255, 255, 0.2)) !important;
+  border-radius: 8px !important;
 }
 
 #rsl-random-game-nav > .rsl-navbar-settings-button svg {

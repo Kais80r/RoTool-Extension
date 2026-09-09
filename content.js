@@ -18578,7 +18578,9 @@
         } else {
           button.title = runtimeError
             ? "Random game is not available. Reload RoTool."
-            : "No active game available";
+            : response?.code === "NO_NEW_GAMES"
+              ? "No new active game found. Try again later."
+              : "No active game available";
           window.setTimeout(() => { button.title = "Random Game"; }, 2500);
         }
       });
@@ -18602,48 +18604,23 @@
       button.className = "rsl-navbar-settings-button";
       button.style.cssText =
         "appearance:none;display:flex;align-items:center;justify-content:center;" +
-        "box-sizing:border-box;width:40px;height:40px;margin:0;padding:0;" +
+        "box-sizing:border-box;width:var(--rsl-navbar-button-width,36px);height:var(--rsl-navbar-button-height,36px);margin:0;padding:0;" +
         "color:#fff !important;background:transparent;border:0;border-radius:0;" +
         "cursor:pointer;line-height:0;";
       button.setAttribute("aria-label", "Random Game");
       button.title = "Random Game";
       button.innerHTML =
-        '<span class="rsl-navbar-play-icon" aria-hidden="true"><span class="icon-common-play"></span>' +
-        '<svg class="rsl-navbar-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
-        '<rect x="2" y="2" width="12" height="12" rx="2" fill="#18181b" stroke="currentColor" stroke-width="1.4"/>' +
-        '<circle cx="5" cy="5" r="1" fill="currentColor"/><circle cx="11" cy="11" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg></span>';
+        '<svg class="rsl-navbar-play-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">' +
+        '<defs><mask id="rsl-random-play-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">' +
+        '<rect width="32" height="32" fill="white"/><rect x="9" y="10" width="14" height="14" rx="2.8" fill="black" stroke="black" stroke-width="3"/></mask></defs>' +
+        '<path d="M5 5.6Q5 3 7.3 4.25L27 14.85Q29 16 27 17.15L7.3 27.75Q5 29 5 26.4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" mask="url(#rsl-random-play-cutout)"/>' +
+        '<rect x="9" y="10" width="14" height="14" rx="2.8" stroke="currentColor" stroke-width="2.2"/>' +
+        '<g fill="currentColor"><circle cx="12.5" cy="13.5" r="1.1"/><circle cx="16" cy="17" r="1.1"/><circle cx="19.5" cy="20.5" r="1.1"/></g></svg>';
       const icon = button.querySelector(".rsl-navbar-play-icon");
       if (icon) {
         icon.style.cssText =
           "display:grid;place-items:center;position:relative;width:30px;height:30px;margin:auto;pointer-events:none;";
       }
-      button.dataset.rslRandomGameBound = "true";
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        button.disabled = true;
-        button.setAttribute("aria-busy", "true");
-        button.title = "Finding an active game…";
-        chrome.runtime.sendMessage(
-          { type: "rsl:get-random-game" },
-          (response) => {
-            const runtimeError = chrome.runtime.lastError;
-            button.disabled = false;
-            button.removeAttribute("aria-busy");
-            const placeId = String(response?.placeId || "");
-            if (response?.ok === true && /^\d+$/.test(placeId)) {
-              location.href = isFeatureEnabled("randomPlayDirect")
-                ? `roblox://experiences/start?placeId=${placeId}`
-                : `/games/${placeId}`;
-            } else {
-              button.title = runtimeError
-                ? "Random game is not available. Reload RoTool."
-                : "No active game available";
-              window.setTimeout(() => { button.title = "Random Game"; }, 2500);
-            }
-          }
-        );
-      });
       item.append(button);
     }
     bindRandomGameButton(item.querySelector("button"));
@@ -18654,6 +18631,11 @@
     syncFeatureSettingsButtonGeometry(
       item,
       findNativeHeaderSettingsItem() || notificationItem
+    );
+    const notificationStyle = getComputedStyle(notificationItem);
+    item.style.setProperty(
+      "--rsl-random-game-leading-gap",
+      notificationStyle.marginInlineStart || "0px"
     );
   }
 
