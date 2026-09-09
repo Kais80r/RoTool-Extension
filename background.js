@@ -5643,16 +5643,22 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   const resolvedPlaceIds = candidates.length === 0
     ? await resolvePlaceUniverseIds(rawPlaceIds)
     : [];
-  const universeIds = candidates.length > 0
-    ? candidates
-    : resolvedPlaceIds.length > 0
-      ? resolvedPlaceIds
-    : [
-        "383310974", "994732206", "703124385", "111958650",
-        "66654135", "6284583030", "537413528", "2788229376",
-        "1537690962", "1962086868", "72238743"
-      ];
-  endpoint.searchParams.set("universeIds", universeIds.join(","));
+  const fallbackSeeds = [
+    "383310974", "994732206", "703124385", "111958650",
+    "66654135", "6284583030", "537413528", "2788229376",
+    "1537690962", "1962086868", "72238743"
+  ];
+  const universeIds = Array.from(new Set([
+    ...candidates,
+    ...resolvedPlaceIds,
+    ...fallbackSeeds
+  ]));
+  for (let index = universeIds.length - 1; index > 0; index -= 1) {
+    const swapIndex = pickUniformRandomIndex(index + 1);
+    [universeIds[index], universeIds[swapIndex]] =
+      [universeIds[swapIndex], universeIds[index]];
+  }
+  endpoint.searchParams.set("universeIds", universeIds.slice(0, 50).join(","));
   const maxAge = Number(messageMaxAge);
   const recommendationPayloads = await Promise.all(universeIds.slice(0, 12).map(async (universeId) => {
     try {
