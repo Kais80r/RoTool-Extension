@@ -18600,7 +18600,7 @@
       button.setAttribute("aria-label", "Random Game");
       button.title = "Random Game";
       button.innerHTML =
-        '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<svg class="rsl-navbar-settings-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
         '<rect x="1.75" y="4.25" width="10.5" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
         '<circle cx="4.8" cy="7.3" r="1" fill="currentColor"/><circle cx="9.2" cy="13.2" r="1" fill="currentColor"/>' +
         '<path fill="currentColor" d="m15 6.5 7.25 5.5L15 17.5v-11Z"/>' +
@@ -18642,7 +18642,10 @@
         item.nextElementSibling !== notificationItem) {
       notificationItem.parentElement.insertBefore(item, notificationItem);
     }
-    syncFeatureSettingsButtonGeometry(item, notificationItem);
+    syncFeatureSettingsButtonGeometry(
+      item,
+      findNativeHeaderSettingsItem() || notificationItem
+    );
   }
 
   function isNativeAccountSettingsLink(anchor) {
