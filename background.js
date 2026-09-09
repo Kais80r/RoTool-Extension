@@ -414,6 +414,7 @@ const DIRECT_QUICK_SETTING_ALIASES = Object.freeze([
   "inventory"
 ]);
 const RANDOM_SERVER_MESSAGE_TYPE = "rsl:get-random-public-server";
+const RANDOM_GAME_MESSAGE_TYPE = "rsl:get-random-game";
 const EXTENSION_UPDATE_STATUS_MESSAGE_TYPE =
   "rsl:get-extension-update-status";
 const EXTENSION_UPDATE_PREFERENCES_GET_MESSAGE_TYPE =
@@ -5607,6 +5608,42 @@ async function getRandomPublicServer(placeId) {
 
 function getRandomServerErrorCode(error) {
   return error instanceof RandomServerError ? error.code : "NETWORK";
+}
+
+async function getRandomActiveGame() {
+  const endpoint = new URL("/v1/games", "https://games.roblox.com");
+  endpoint.searchParams.set("sortOrder", "2");
+  endpoint.searchParams.set("limit", "100");
+  const payload = await fetchJson(endpoint, {
+    cache: "no-store",
+    credentials: "omit",
+    headers: { Accept: "application/json" }
+  });
+  const games = Array.isArray(payload?.data)
+    ? payload.data.filter((game) =>
+        isValidId(game?.rootPlaceId) &&
+        Number(game?.playing) > 0 &&
+        game?.isPlayable !== false
+      )
+    : [];
+  if (!games.length) throw new Error("NO_ACTIVE_GAMES");
+  const game = games[pickUniformRandomIndex(games.length)];
+  return {
+    placeId: String(game.rootPlaceId),
+    name: typeof game.name === "string" ? game.name : "Random game",
+    playing: Number(game.playing) || 0
+  };
+}
+
+function handleRandomGameMessage(message, sendResponse) {
+  if (message?.type !== RANDOM_GAME_MESSAGE_TYPE) return false;
+  getRandomActiveGame()
+    .then((result) => sendResponse({ ok: true, ...result }))
+    .catch((error) => sendResponse({
+      ok: false,
+      code: error?.message === "NO_ACTIVE_GAMES" ? "NO_ACTIVE_GAMES" : "UNAVAILABLE"
+    }));
+  return true;
 }
 
 function handleRandomServerMessage(message, sendResponse) {
@@ -20391,6 +20428,10 @@ function handleRuntimeMessage(message, sender, sendResponse) {
 
   if (message?.type === RANDOM_SERVER_MESSAGE_TYPE) {
     return handleRandomServerMessage(message, sendResponse);
+  }
+
+  if (message?.type === RANDOM_GAME_MESSAGE_TYPE) {
+    return handleRandomGameMessage(message, sendResponse);
   }
 
   if (message?.type === GAME_CCU_MESSAGE_TYPE) {

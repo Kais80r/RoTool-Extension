@@ -18509,6 +18509,68 @@
     return nativeItem?.parentElement ? nativeItem : null;
   }
 
+  function findNativeHeaderNotificationItem() {
+    const header = document.querySelector(
+      "#header, header[role='navigation'], [role='navigation'].rbx-header"
+    );
+    if (!header) return null;
+    const control = header.querySelector(
+      "#notifications, #notification-bell, " +
+      "#nav-notifications, .icon-nav-notifications, " +
+      "[aria-label*='Notification'], [aria-label*='Benachrichtigung'], " +
+      "[data-testid*='notification']"
+    );
+    return control?.closest?.("li, [role='listitem']") || null;
+  }
+
+  function mountRandomGameButton() {
+    const notificationItem = findNativeHeaderNotificationItem();
+    if (!notificationItem?.parentElement) return;
+    const id = "rsl-random-game-nav";
+    const duplicates = Array.from(document.querySelectorAll(`#${id}`));
+    let item = duplicates.shift() || null;
+    duplicates.forEach((duplicate) => duplicate.remove());
+    if (!item) {
+      item = document.createElement("li");
+      item.id = id;
+      item.className = "navbar-icon-item";
+      item.setAttribute("data-rsl-control", "random-game");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "rsl-navbar-settings-button";
+      button.setAttribute("aria-label", "Random Game");
+      button.title = "Random Game";
+      button.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path fill="currentColor" d="M17 3h4v4h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H17V3ZM4 5h3.17l10.42 10.42L16.17 17 5.76 6.59H4V5Zm0 12h3.17l2.42-2.42 1.42 1.42L8 19.41V21H6v-1.59L7.17 18H4v-1Zm12.41-3.41 1.42-1.42L21 15.76V14h2v6h-6v-2h2.76l-3.35-3.41Z"/>' +
+        "</svg>";
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        chrome.runtime.sendMessage(
+          { type: "rsl:get-random-game" },
+          (response) => {
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+            const placeId = String(response?.placeId || "");
+            if (response?.ok === true && /^\d+$/.test(placeId)) {
+              location.href = `/games/${placeId}`;
+            } else {
+              button.title = "No active game available";
+              window.setTimeout(() => { button.title = "Random Game"; }, 2500);
+            }
+          }
+        );
+      });
+      item.append(button);
+    }
+    if (item.parentElement !== notificationItem.parentElement ||
+        item.nextElementSibling !== notificationItem) {
+      notificationItem.insertAdjacentElement("beforebegin", item);
+    }
+    syncFeatureSettingsButtonGeometry(item, notificationItem);
+  }
+
   function isNativeAccountSettingsLink(anchor) {
     const rawHref = anchor?.getAttribute?.("href");
     if (!rawHref) {
@@ -30551,6 +30613,7 @@
     syncAccountRecoveryModalRouteState();
     syncExtensionUpdateHomeVisitState();
     mountFeatureSettingsButton();
+    mountRandomGameButton();
     mountAccountRecoverySettingsMenuItem();
     if (!featureSettingsLoaded) {
       return;
