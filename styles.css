@@ -5780,6 +5780,8 @@
 }
 
 #rsl-random-game-nav {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex: 0 0 var(--rsl-navbar-item-width, 40px);
   align-items: center;
@@ -5801,7 +5803,7 @@
   height: var(--rsl-navbar-button-height, 36px);
   margin: 0;
   padding: 0;
-  color: inherit;
+  color: #fff !important;
   background: transparent !important;
   border: 0;
   border-radius: 0;
@@ -5822,6 +5824,7 @@
   height: var(--rsl-navbar-logo-size, 24px);
   overflow: visible;
   pointer-events: none;
+  color: #fff;
 }
 
 .rsl-feature-settings__update-copy {

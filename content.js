@@ -18515,6 +18515,7 @@
     );
     if (!header) return null;
     const control = header.querySelector(
+      "#navbar-stream, " +
       "#notifications, #notification-bell, " +
       "#nav-notifications, .icon-nav-notifications, " +
       "[aria-label*='Notification'], [aria-label*='Benachrichtigung'], " +
@@ -18594,7 +18595,7 @@
       button.style.cssText =
         "appearance:none;display:flex;align-items:center;justify-content:center;" +
         "box-sizing:border-box;width:36px;height:36px;margin:0;padding:0;" +
-        "color:inherit;background:transparent;border:0;border-radius:0;" +
+        "color:#fff !important;background:transparent;border:0;border-radius:0;" +
         "cursor:pointer;line-height:0;";
       button.setAttribute("aria-label", "Random Game");
       button.title = "Random Game";
@@ -18639,7 +18640,7 @@
     bindRandomGameButton(item.querySelector("button"));
     if (item.parentElement !== notificationItem.parentElement ||
         item.nextElementSibling !== notificationItem) {
-      notificationItem.insertAdjacentElement("beforebegin", item);
+      notificationItem.parentElement.insertBefore(item, notificationItem);
     }
     syncFeatureSettingsButtonGeometry(item, notificationItem);
   }
