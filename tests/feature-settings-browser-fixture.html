@@ -258,7 +258,7 @@
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 5 ||
+            advancedButtons.length !== 6 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
@@ -274,6 +274,7 @@
               !disclosureNames.includes("Advanced settings for Quick Settings") ||
               !disclosureNames.includes("Advanced settings for RoTool Update Popups") ||
               !disclosureNames.includes("Advanced settings for Quick Play & Servers") ||
+              !disclosureNames.includes("Advanced settings for Enhanced Profiles") ||
               !disclosureNames.includes("Advanced settings for Recovery Snapshots") ||
             new Set(disclosureNames).size !== disclosureNames.length
           ) {

@@ -17347,6 +17347,24 @@ async function collectLifetimeSpent(userId) {
   return { totalSpent, complete: !cursor };
 }
 
+const EXPERIENCE_AVAILABILITY_MESSAGE_TYPE = "rsl:get-experience-availability";
+
+async function getExperienceAvailability(placeId) {
+  if (!isValidId(placeId)) throw new Error("INVALID_PLACE");
+  const endpoint = new URL(
+    "/v1/games/multiget-place-details",
+    "https://games.roblox.com"
+  );
+  endpoint.searchParams.set("placeIds", placeId);
+  const response = await fetchJson(endpoint, { credentials: "include" });
+  const item = Array.isArray(response) ? response[0] : null;
+  if (!item) return { reason: "NO_PUBLIC_DETAILS" };
+  return {
+    reason: typeof item.reasonProhibited === "string" ? item.reasonProhibited : "UNAVAILABLE",
+    playable: item.isPlayable !== false
+  };
+}
+
 function normalizeAccountRecoveryCurrencyPurchase(entry) {
   const purchasedAt = normalizeAccountRecoveryDate(entry?.created);
   const holdId = normalizeAccountRecoveryId(entry?.id);
@@ -20455,6 +20473,18 @@ function handleRuntimeMessage(message, sender, sendResponse) {
         ok: false,
         userId,
         code: error?.message === "INVALID_USER" ? "INVALID_USER" : "UNAVAILABLE"
+      }));
+    return true;
+  }
+
+  if (message?.type === EXPERIENCE_AVAILABILITY_MESSAGE_TYPE) {
+    const placeId = String(message.placeId || "");
+    getExperienceAvailability(placeId)
+      .then((result) => sendResponse({ ok: true, placeId, ...result }))
+      .catch((error) => sendResponse({
+        ok: false,
+        placeId,
+        code: error?.message === "INVALID_PLACE" ? "INVALID_PLACE" : "UNAVAILABLE"
       }));
     return true;
   }

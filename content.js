@@ -30355,18 +30355,28 @@
     note.textContent = "Checking why Roblox restricted this experience…";
     target.append(note);
     experienceAvailabilityReasonKey = placeId;
-    experienceAvailabilityReasonRequest = fetch(
-      `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${encodeURIComponent(placeId)}`,
-      { credentials: "include" }
-    ).then(async (response) => {
+    experienceAvailabilityReasonRequest = new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "rsl:get-experience-availability", placeId },
+          (response) => {
+            const runtimeError = chrome.runtime.lastError;
+            if (runtimeError) reject(new Error(runtimeError.message));
+            else resolve(response);
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    }).then(async (response) => {
       let reason = "Roblox did not provide a specific reason. It may be private, moderated, deleted, or restricted in your region.";
-      if (response.status === 401 || response.status === 403) {
+      if (response?.ok !== true) {
         reason = "This experience is private or you do not have permission to access it.";
-      } else if (response.ok) {
-        const items = await response.json();
-        const item = Array.isArray(items) ? items[0] : null;
-        if (item?.isPlayable === false) {
-          const rawReason = String(item.reasonProhibited || "");
+      } else {
+        const rawReason = String(response.reason || "");
+        if (rawReason === "NO_PUBLIC_DETAILS") {
+          reason = "Roblox returned no public place details. It may be deleted, private, or moderated.";
+        } else if (response.playable === false) {
           const friendlyReason = rawReason === "InsufficientPermissionEditorsOnly"
             ? "Only the owner and editors can access this experience. It may be private or unpublished."
             : rawReason === "UnderReview"
@@ -30376,8 +30386,6 @@
                 : "This experience is unavailable, private, or restricted by Roblox.";
           reason = friendlyReason;
           if (rawReason) note.title = `Roblox reason: ${rawReason}`;
-        } else if (!item) {
-          reason = "Roblox returned no public place details. It may be deleted, private, or moderated.";
         }
       }
       if (note.isConnected && experienceAvailabilityReasonKey === placeId) note.textContent = reason;
