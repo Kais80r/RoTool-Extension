@@ -27382,6 +27382,25 @@
     });
   }
 
+  function syncEnhancedProfileRoProControlSizing(record) {
+    const node = record?.node;
+    if (!node?.isConnected) return;
+    node.style.setProperty("width", "auto", "important");
+    node.style.setProperty("max-width", "none", "important");
+    node.style.setProperty("display", "flex", "important");
+    node.style.setProperty("flex-wrap", "wrap", "important");
+    node.style.setProperty("gap", "8px", "important");
+    node.querySelectorAll?.("button, a").forEach((control) => {
+      control.style.setProperty("width", "auto", "important");
+      control.style.setProperty("min-width", "max-content", "important");
+      control.style.setProperty("max-width", "none", "important");
+      control.style.setProperty("flex", "0 1 auto", "important");
+      control.style.setProperty("white-space", "nowrap", "important");
+      control.style.setProperty("overflow", "visible", "important");
+      control.style.setProperty("text-overflow", "clip", "important");
+    });
+  }
+
   function makeEnhancedProfileNativeNameIconFallback(kind) {
     if (kind === "verified") {
       const wrapper = makeEnhancedProfileElement(
@@ -27486,6 +27505,8 @@
       hadSlot,
       slotValue
     } = record;
+    if (record.originalStyle === null) node.removeAttribute("style");
+    else if (record.originalStyle !== undefined) node.setAttribute("style", record.originalStyle);
     node.removeAttribute(markerAttribute);
     if (hadSlot) node.setAttribute("slot", slotValue ?? "");
     else node.removeAttribute("slot");
@@ -27569,6 +27590,7 @@
       parent,
       nextSibling: node.nextSibling,
       placeholder,
+      originalStyle: node.getAttribute("style"),
       hadSlot: node.hasAttribute("slot"),
       slotValue: node.getAttribute("slot")
     };
@@ -28048,6 +28070,7 @@
       ENHANCED_PROFILE_ROPRO_CONTROLS_SLOT_NAME,
       ENHANCED_PROFILE_ROPRO_CONTROLS_ATTRIBUTE
     );
+    syncEnhancedProfileRoProControlSizing(enhancedProfileRoProControlsRecord);
 
     const hostedBadge = Array.from(enhancedProfileHost.children).find(
       (candidate) =>
