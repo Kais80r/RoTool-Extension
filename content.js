@@ -18609,10 +18609,10 @@
       button.title = "Random Game";
       button.innerHTML =
         '<svg class="rsl-navbar-settings-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<rect x="2.5" y="3.5" width="27" height="25" rx="5" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-        '<path fill="currentColor" d="m7 10 10 6-10 6v-12Z"/>' +
-        '<rect x="11" y="11" width="12" height="12" rx="2.8" fill="var(--rsl-random-server-cutout, #335fff)" stroke="currentColor" stroke-width="2"/>' +
-        '<circle cx="14.3" cy="14.3" r=".9" fill="currentColor"/><circle cx="19.7" cy="19.7" r=".9" fill="currentColor"/><circle cx="17" cy="17" r=".9" fill="currentColor"/>' +
+        '<rect x="3" y="5" width="26" height="22" rx="5" fill="currentColor"/>' +
+        '<path fill="var(--rsl-random-server-cutout, #335fff)" d="m10 9 10 7-10 7V9Z"/>' +
+        '<rect x="12" y="13" width="8" height="8" rx="1.8" fill="var(--rsl-random-server-cutout, #335fff)" stroke="currentColor" stroke-width="1.7"/>' +
+        '<circle cx="14.2" cy="15.2" r=".65" fill="currentColor"/><circle cx="17.8" cy="18.8" r=".65" fill="currentColor"/><circle cx="16" cy="17" r=".65" fill="currentColor"/>' +
         "</svg>";
       const icon = button.querySelector("svg");
       if (icon) {
