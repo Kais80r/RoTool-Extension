@@ -18609,10 +18609,10 @@
       button.title = "Random Game";
       button.innerHTML =
         '<svg class="rsl-navbar-settings-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<rect x="2" y="4" width="20" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-        '<path fill="currentColor" d="m5.5 8 5 4-5 4V8Z"/>' +
-        '<rect x="12" y="8" width="6" height="8" rx="1.2" fill="currentColor" stroke="#18181b" stroke-width="1"/>' +
-        '<circle cx="13.8" cy="10.2" r=".7" fill="#fff"/><circle cx="16.2" cy="13.8" r=".7" fill="#fff"/>' +
+        '<rect x="2" y="3" width="20" height="18" rx="5" fill="currentColor"/>' +
+        '<path fill="#18181b" d="m8 7 7 5-7 5V7Z"/>' +
+        '<rect x="15.2" y="13.2" width="5.2" height="5.2" rx="1" fill="currentColor" stroke="#18181b" stroke-width="1.2"/>' +
+        '<circle cx="16.8" cy="14.8" r=".55" fill="#18181b"/><circle cx="18.8" cy="16.8" r=".55" fill="#18181b"/>' +
         "</svg>";
       const icon = button.querySelector("svg");
       if (icon) {
