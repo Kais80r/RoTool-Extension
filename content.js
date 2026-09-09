@@ -2077,55 +2077,49 @@
     );
     if (
       directMatches("#nav-home") ||
-      (pathname === "/home" && hasRedesignedIcon(".icon-regular-house"))
+      pathname === "/home"
     ) {
       return "home";
     }
     if (
       directMatches("#nav-profile") ||
-      (pathname === "/users/profile" && hasRedesignedIcon(".icon-regular-person"))
+      pathname === "/users/profile"
     ) {
       return "profile";
     }
     if (
       directMatches("#nav-message") ||
-      (pathname === "/my/messages" &&
-        hasRedesignedIcon(".icon-regular-speech-bubble-align-center"))
+      pathname === "/my/messages"
     ) {
       return "messages";
     }
     if (
       directMatches("#nav-friends") ||
-      (pathname === "/users/friends" &&
-        hasRedesignedIcon(".icon-regular-two-people"))
+      pathname === "/users/friends"
     ) {
       return "friends";
     }
     if (
       directMatches("#nav-avatar, #nav-character") ||
-      (pathname === "/my/avatar" &&
-        hasRedesignedIcon(".icon-regular-person-standing"))
+      pathname === "/my/avatar"
     ) {
       return "avatar";
     }
     if (
       directMatches("#nav-inventory") ||
-      (pathname === "/users/inventory" &&
-        hasRedesignedIcon(".icon-regular-backpack"))
+      pathname === "/users/inventory"
     ) {
       return "inventory";
     }
     if (
       directMatches("#nav-trade") ||
-      (pathname === "/trades" &&
-        hasRedesignedIcon(".icon-regular-hand-two-arrows-horizontal"))
+      pathname === "/trades"
     ) {
       return "trade";
     }
     if (
       directMatches("#nav-group") ||
-      (pathname === "/communities" &&
-        hasRedesignedIcon(".icon-regular-three-people"))
+      pathname === "/communities"
     ) {
       return "communities";
     }
@@ -2135,7 +2129,7 @@
         try {
           return new URL(directLink?.href || "", location.origin).hostname
             .toLowerCase() === "blog.roblox.com" &&
-            hasRedesignedIcon(".icon-regular-fountain-pen-nib");
+            true;
         } catch {
           return false;
         }
@@ -2162,8 +2156,7 @@
           (hostname === "roblox.com" || hostname.endsWith(".roblox.com")) &&
           /^\/giftcards(?:-[a-z]{2}(?:-[a-z]{2})?)?$/.test(
             url.pathname.toLowerCase().replace(/\/+$/, "")
-          ) &&
-          hasRedesignedIcon(".icon-regular-gift-card")
+          )
         );
       } catch {
         return false;
