@@ -22896,6 +22896,60 @@
     if (dialog && !dialog.open) dialog.remove();
   }
 
+  // Enhanced Profile is rendered by RoTool, so its labels must follow the
+  // language selected on the Roblox page instead of staying English.
+  function getEnhancedProfileUiText(key, fallback = key) {
+    const locale = String(getRobloxPageLocale() || "en").toLowerCase();
+    const language = locale.split("-")[0];
+    const dictionaries = {
+      de: {
+        about: "Über", creations: "Erstellungen", currentlyWearing: "Derzeit getragen",
+        favorites: "Favoriten", friends: "Freunde", followers: "Follower", following: "Folge ich",
+        mutuals: "Gemeinsame Freunde", accountAge: "Kontolaufzeit", inventory: "Inventar",
+        public: "Öffentlich", private: "Privat", badges: "Abzeichen", games: "Spiele",
+        ownedGroups: "Eigene Gruppen", mutualGroups: "Gemeinsame Gruppen", communities: "Communitys",
+        experiences: "Erlebnisse", noBio: "Noch keine Biografie", more: "mehr", less: "weniger",
+        editAvatar: "Avatar bearbeiten", editProfile: "Profil bearbeiten", join: "Beitreten", chat: "Chat",
+        seeAll: "Alle anzeigen", profileSections: "Profilbereiche", view: "Anzeigen"
+      },
+      es: {
+        about: "Acerca de", creations: "Creaciones", currentlyWearing: "Llevas puesto",
+        favorites: "Favoritos", friends: "Amigos", followers: "Seguidores", following: "Siguiendo",
+        mutuals: "Amigos en común", accountAge: "Antigüedad de la cuenta", inventory: "Inventario",
+        public: "Público", private: "Privado", badges: "Insignias", games: "Juegos",
+        ownedGroups: "Grupos propios", mutualGroups: "Grupos en común", communities: "Comunidades",
+        experiences: "Experiencias", noBio: "Aún no hay biografía", more: "más", less: "menos",
+        editAvatar: "Editar avatar", editProfile: "Editar perfil", join: "Unirse", chat: "Chat",
+        seeAll: "Ver todo", profileSections: "Secciones del perfil", view: "Ver"
+      },
+      fr: {
+        about: "À propos", creations: "Créations", currentlyWearing: "Porté actuellement",
+        favorites: "Favoris", friends: "Amis", followers: "Abonnés", following: "Abonnements",
+        mutuals: "Amis en commun", accountAge: "Ancienneté du compte", inventory: "Inventaire",
+        public: "Public", private: "Privé", badges: "Badges", games: "Jeux",
+        ownedGroups: "Groupes possédés", mutualGroups: "Groupes en commun", communities: "Communautés",
+        experiences: "Expériences", noBio: "Aucune bio", more: "plus", less: "moins",
+        editAvatar: "Modifier l’avatar", editProfile: "Modifier le profil", join: "Rejoindre", chat: "Chat",
+        seeAll: "Tout voir", profileSections: "Sections du profil", view: "Voir"
+      },
+      pt: {
+        about: "Sobre", creations: "Criações", currentlyWearing: "Usando atualmente",
+        favorites: "Favoritos", friends: "Amigos", followers: "Seguidores", following: "Seguindo",
+        mutuals: "Amigos em comum", accountAge: "Idade da conta", inventory: "Inventário",
+        public: "Público", private: "Privado", badges: "Emblemas", games: "Jogos",
+        ownedGroups: "Grupos próprios", mutualGroups: "Grupos em comum", communities: "Comunidades",
+        experiences: "Experiências", noBio: "Nenhuma biografia", more: "mais", less: "menos",
+        editAvatar: "Editar avatar", editProfile: "Editar perfil", join: "Entrar", chat: "Chat",
+        seeAll: "Ver tudo", profileSections: "Seções do perfil", view: "Ver"
+      },
+      ja: { about: "概要", creations: "作品", currentlyWearing: "着用中", favorites: "お気に入り", friends: "フレンド", followers: "フォロワー", following: "フォロー中", mutuals: "共通のフレンド", accountAge: "アカウント年齢", inventory: "インベントリ", public: "公開", private: "非公開", badges: "バッジ", games: "ゲーム", ownedGroups: "所有グループ", mutualGroups: "共通のグループ", communities: "コミュニティ", experiences: "ゲーム", noBio: "プロフィール未設定", more: "もっと見る", less: "閉じる", editAvatar: "アバターを編集", editProfile: "プロフィールを編集", join: "参加", chat: "チャット", seeAll: "すべて見る", profileSections: "プロフィールセクション", view: "表示" },
+      ko: { about: "정보", creations: "창작물", currentlyWearing: "현재 착용 중", favorites: "즐겨찾기", friends: "친구", followers: "팔로워", following: "팔로잉", mutuals: "공통 친구", accountAge: "계정 기간", inventory: "인벤토리", public: "공개", private: "비공개", badges: "배지", games: "게임", ownedGroups: "소유 그룹", mutualGroups: "공통 그룹", communities: "커뮤니티", experiences: "게임", noBio: "소개가 없습니다", more: "더 보기", less: "간략히", editAvatar: "아바타 편집", editProfile: "프로필 편집", join: "참가", chat: "채팅", seeAll: "모두 보기", profileSections: "프로필 섹션", view: "보기" },
+      zh: { about: "关于", creations: "创作", currentlyWearing: "当前穿戴", favorites: "收藏", friends: "好友", followers: "粉丝", following: "正在关注", mutuals: "共同好友", accountAge: "账号年龄", inventory: "背包", public: "公开", private: "私密", badges: "徽章", games: "游戏", ownedGroups: "拥有的群组", mutualGroups: "共同群组", communities: "社区", experiences: "体验", noBio: "暂无简介", more: "更多", less: "收起", editAvatar: "编辑头像", editProfile: "编辑个人资料", join: "加入", chat: "聊天", seeAll: "查看全部", profileSections: "个人资料分区", view: "查看" },
+      ru: { about: "О себе", creations: "Творчество", currentlyWearing: "Сейчас надето", favorites: "Избранное", friends: "Друзья", followers: "Подписчики", following: "Подписки", mutuals: "Общие друзья", accountAge: "Возраст аккаунта", inventory: "Инвентарь", public: "Открытый", private: "Приватный", badges: "Значки", games: "Игры", ownedGroups: "Собственные группы", mutualGroups: "Общие группы", communities: "Сообщества", experiences: "Игры", noBio: "Нет описания", more: "ещё", less: "свернуть", editAvatar: "Изменить аватар", editProfile: "Изменить профиль", join: "Присоединиться", chat: "Чат", seeAll: "Показать все", profileSections: "Разделы профиля", view: "Просмотр" }
+    };
+    return dictionaries[language]?.[key] || fallback;
+  }
+
   const ENHANCED_PROFILE_CSS = `
     :host {
       --rtp-page-text: var(--color-content-emphasis, #202227);
@@ -25836,11 +25890,11 @@
     friendCount = null
   ) {
     const title = friendCount !== null
-      ? `Friends (${formatEnhancedProfileNumber(friendCount)})`
-      : "Friends";
+      ? `${getEnhancedProfileUiText("friends", "Friends")} (${formatEnhancedProfileNumber(friendCount)})`
+      : getEnhancedProfileUiText("friends", "Friends");
     const section = makeEnhancedProfileSection(title, {
       href: `/users/${userId}/friends#!/friends`,
-      label: "See All"
+      label: getEnhancedProfileUiText("seeAll", "See All")
     });
     if (friendSection.status !== "ready") {
       return null;
@@ -25853,7 +25907,9 @@
   }
 
   function makeEnhancedProfileWearingSection(wearingSection) {
-    const section = makeEnhancedProfileSection("Currently Wearing");
+    const section = makeEnhancedProfileSection(
+      getEnhancedProfileUiText("currentlyWearing", "Currently Wearing")
+    );
     if (wearingSection.status !== "ready") {
       return null;
     }
@@ -25894,7 +25950,7 @@
   }
 
   function makeEnhancedProfileCommunitiesSection(userId, communitySection) {
-    const section = makeEnhancedProfileSection("Communities", {
+    const section = makeEnhancedProfileSection(getEnhancedProfileUiText("communities", "Communities"), {
       href: `/users/${userId}/groups`,
       placement: "title"
     });
@@ -25932,7 +25988,7 @@
   }
 
   function makeEnhancedProfileBadgesSection(userId, badgeSection) {
-    const section = makeEnhancedProfileSection("Badges", {
+    const section = makeEnhancedProfileSection(getEnhancedProfileUiText("badges", "Badges"), {
       href: `/users/${userId}/inventory/#!/badges`,
       placement: "title"
     });
@@ -25995,7 +26051,7 @@
     }
     const hasVerifiedCount = Number.isSafeInteger(section.data.totalCount) &&
       section.data.totalCount >= 0;
-    if (section.data.countStatus === "private") return "Private";
+    if (section.data.countStatus === "private") return getEnhancedProfileUiText("private", "Private");
     if (section.data.countStatus === "unavailable") {
       return hasVerifiedCount
         ? `${formatEnhancedProfileNumber(section.data.totalCount)}+`
@@ -26016,8 +26072,8 @@
 
   function getEnhancedProfileInventoryLabel(inventorySection) {
     if (inventorySection?.status !== "ready") return null;
-    if (inventorySection.data.visibility === "public") return "Public";
-    if (inventorySection.data.visibility === "limited") return "Private";
+    if (inventorySection.data.visibility === "public") return getEnhancedProfileUiText("public", "Public");
+    if (inventorySection.data.visibility === "limited") return getEnhancedProfileUiText("private", "Private");
     return null;
   }
 
@@ -26570,7 +26626,7 @@
     details.setAttribute("aria-label", "Profile details");
     const grid = makeEnhancedProfileElement("dl", "rtp-profile-details-grid");
     const badgeDetail = showBadges ? makeEnhancedProfileHeaderDetail(
-      "Badges", getEnhancedProfileBadgeCountLabel(data.sections.badges)
+      getEnhancedProfileUiText("badges", "Badges"), getEnhancedProfileBadgeCountLabel(data.sections.badges)
     ) : null;
     if (badgeDetail) {
       const value = badgeDetail.querySelector("dd");
@@ -26588,7 +26644,7 @@
     const rows = [
       accountAgeDetails
         ? makeEnhancedProfileHeaderDetail(
-            "Account age",
+            getEnhancedProfileUiText("accountAge", "Account age"),
             formatEnhancedProfileAccountAge(identity.createdAt),
             {
               action: "account-age",
@@ -26602,7 +26658,7 @@
         : null,
       showRelationships && isForeignProfile && relationships.status === "ready"
         ? makeEnhancedProfileHeaderDetail(
-            "Mutual groups",
+            getEnhancedProfileUiText("mutualGroups", "Mutual groups"),
             formatEnhancedProfileNumber(
               relationships.data.mutualGroupsCount
             ),
@@ -26622,12 +26678,12 @@
           )
         : null,
       showDetails ? makeEnhancedProfileHeaderDetail(
-        "Inventory",
+        getEnhancedProfileUiText("inventory", "Inventory"),
         getEnhancedProfileInventoryLabel(data.sections.inventory)
       ) : null,
       badgeDetail,
       showCollections ? makeEnhancedProfileHeaderDetail(
-        "Games",
+        getEnhancedProfileUiText("games", "Games"),
         getEnhancedProfileCollectionCountLabel(data.sections.experiences),
         data.sections.experiences.status === "ready" &&
           data.sections.experiences.data.items.length > 0
@@ -26645,7 +26701,7 @@
       showCollections && communities.status === "ready" &&
         communities.data.ownedCount !== null
         ? makeEnhancedProfileHeaderDetail(
-            "Owned groups",
+            getEnhancedProfileUiText("ownedGroups", "Owned groups"),
             formatEnhancedProfileNumber(communities.data.ownedCount),
             communities.data.ownedGroups.items.length > 0
               ? {
@@ -26684,7 +26740,7 @@
       data.sections.favorites.status === "ready" &&
       data.sections.favorites.data.items.length > 0
     ) {
-      favorites = makeEnhancedProfileSection("Favorites", {
+      favorites = makeEnhancedProfileSection(getEnhancedProfileUiText("favorites", "Favorites"), {
         href: `/users/${data.userId}/favorites#!/places`,
         placement: "title"
       });
@@ -26821,16 +26877,16 @@
     panel.id = "rtp-creations-panel";
     panel.setAttribute("role", "tabpanel");
     panel.setAttribute("aria-labelledby", "rtp-creations-tab");
-    const experiences = makeEnhancedProfileSection("Experiences");
+    const experiences = makeEnhancedProfileSection(getEnhancedProfileUiText("experiences", "Experiences"));
     const gameSection = data.sections.experiences;
     if (gameSection.status !== "ready") {
-      appendEnhancedProfileEmpty(experiences, "Experiences are unavailable right now.");
+      appendEnhancedProfileEmpty(experiences, `${getEnhancedProfileUiText("experiences", "Experiences")} are unavailable right now.`);
       panel.append(experiences);
       return panel;
     }
     const games = gameSection.data.items;
     if (games.length === 0) {
-      appendEnhancedProfileEmpty(experiences, "No public experiences to show.");
+      appendEnhancedProfileEmpty(experiences, `No public ${getEnhancedProfileUiText("experiences", "experiences").toLowerCase()} to show.`);
       panel.append(experiences);
       return panel;
     }
@@ -28284,9 +28340,9 @@
     const social = makeEnhancedProfileElement("nav", "rtp-social");
     social.setAttribute("aria-label", "Profile connections");
     for (const [key, label, hash] of [
-      ["friends", "Friends", "friends"],
-      ["followers", "Followers", "followers"],
-      ["following", "Following", "following"]
+      ["friends", getEnhancedProfileUiText("friends", "Friends"), "friends"],
+      ["followers", getEnhancedProfileUiText("followers", "Followers"), "followers"],
+      ["following", getEnhancedProfileUiText("following", "Following"), "following"]
     ]) {
       if (counts[key] === null) continue;
       const link = makeEnhancedProfileElement("a");
@@ -28311,7 +28367,7 @@
       const mutuals = makeEnhancedProfileElement("a");
       mutuals.href = `/users/${identity.userId}/friends#!/friends?rotool=mutuals`;
       mutuals.dataset.rtpSocial = "mutuals";
-      mutuals.setAttribute("aria-label", "View mutual friends");
+      mutuals.setAttribute("aria-label", `${getEnhancedProfileUiText("view", "View")} ${getEnhancedProfileUiText("mutuals", "mutual friends")}`);
       mutuals.append(
         makeEnhancedProfileElement(
           "strong",
@@ -28320,7 +28376,7 @@
             data.sections.relationships.data.mutualFriendsCount
           )
         ),
-        makeEnhancedProfileElement("span", "", "Mutuals")
+        makeEnhancedProfileElement("span", "", getEnhancedProfileUiText("mutuals", "Mutuals"))
       );
       social.append(mutuals);
     }
@@ -28345,8 +28401,8 @@
     );
     if (isOwnProfile) {
       nativeActionsSlot.append(
-        makeEnhancedProfileButton("Edit avatar", { href: "/my/avatar" }),
-        makeEnhancedProfileButton("Edit profile", { href: "/users/profile/edit" })
+        makeEnhancedProfileButton(getEnhancedProfileUiText("editAvatar", "Edit avatar"), { href: "/my/avatar" }),
+        makeEnhancedProfileButton(getEnhancedProfileUiText("editProfile", "Edit profile"), { href: "/users/profile/edit" })
       );
     } else {
       const relationships = data.sections.relationships;
@@ -28357,7 +28413,7 @@
         presence.data.placeId &&
         presence.data.gameInstanceId
       ) {
-        const joinButton = makeEnhancedProfileButton("Join", { primary: true });
+        const joinButton = makeEnhancedProfileButton(getEnhancedProfileUiText("join", "Join"), { primary: true });
         joinButton.addEventListener("click", () => {
           void joinEnhancedProfileUser(
             identity.userId,
@@ -28373,7 +28429,7 @@
         relationships.data.isFriend &&
         relationships.data.canChat
       ) {
-        nativeActionsSlot.append(makeEnhancedProfileButton("Chat", {
+        nativeActionsSlot.append(makeEnhancedProfileButton(getEnhancedProfileUiText("chat", "Chat"), {
           onClick: openEnhancedProfileNativeChat
         }));
       }
@@ -28389,9 +28445,9 @@
     const copy = makeEnhancedProfileElement(
       "pre",
       "rtp-profile-description",
-      identity.description || "No bio yet"
+      identity.description || getEnhancedProfileUiText("noBio", "No bio yet")
     );
-    const more = makeEnhancedProfileElement("button", "rtp-more-button", "more");
+    const more = makeEnhancedProfileElement("button", "rtp-more-button", getEnhancedProfileUiText("more", "more"));
     more.type = "button";
     more.setAttribute("aria-haspopup", "dialog");
     more.setAttribute("aria-label", `More about @${identity.username}`);
@@ -28402,7 +28458,9 @@
         () => {
           if (!copy.isConnected || !more.isConnected) return;
           const expanded = copy.toggleAttribute("data-expanded");
-          more.textContent = expanded ? "less" : "more";
+          more.textContent = expanded
+            ? getEnhancedProfileUiText("less", "less")
+            : getEnhancedProfileUiText("more", "more");
         }
       );
     });
@@ -28566,7 +28624,10 @@
     const tabs = makeEnhancedProfileElement("div", "rtp-tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Profile sections");
-    const tabOptions = [["about", "About"], ["creations", "Creations"]];
+    const tabOptions = [
+      ["about", getEnhancedProfileUiText("about", "About")],
+      ["creations", getEnhancedProfileUiText("creations", "Creations")]
+    ];
     for (const [tab, label] of tabOptions) {
       const button = makeEnhancedProfileElement("button", "rtp-tab", label);
       button.type = "button";
