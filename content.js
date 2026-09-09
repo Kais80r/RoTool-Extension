@@ -18601,14 +18601,15 @@
       button.title = "Random Game";
       button.innerHTML =
         '<svg class="rsl-navbar-settings-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<rect x="1.75" y="4.25" width="10.5" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-        '<circle cx="4.8" cy="7.3" r="1" fill="currentColor"/><circle cx="9.2" cy="13.2" r="1" fill="currentColor"/>' +
-        '<path fill="currentColor" d="m15 6.5 7.25 5.5L15 17.5v-11Z"/>' +
+        '<circle cx="12" cy="12" r="10" fill="currentColor" opacity=".22"/>' +
+        '<path fill="currentColor" d="m10 7 8 5-8 5V7Z"/>' +
+        '<rect x="7.25" y="8.25" width="7.5" height="7.5" rx="1.4" fill="currentColor" stroke="#18181b" stroke-width="1.15"/>' +
+        '<circle cx="9.4" cy="10.4" r=".8" fill="#fff"/><circle cx="12.6" cy="13.6" r=".8" fill="#fff"/>' +
         "</svg>";
       const icon = button.querySelector("svg");
       if (icon) {
         icon.style.cssText =
-          "display:block;width:28px;height:28px;overflow:visible;pointer-events:none;";
+          "display:block;width:30px;height:30px;margin:auto;overflow:visible;pointer-events:none;";
       }
       button.dataset.rslRandomGameBound = "true";
       button.addEventListener("click", (event) => {
