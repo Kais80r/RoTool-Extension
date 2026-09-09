@@ -5651,12 +5651,44 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
         "1537690962", "1962086868", "72238743"
       ];
   endpoint.searchParams.set("universeIds", universeIds.join(","));
+  const maxAge = Number(messageMaxAge);
+  const recommendationPayloads = await Promise.all(universeIds.slice(0, 12).map(async (universeId) => {
+    try {
+      return await fetchJson(
+        `https://games.roblox.com/v1/games/recommendations/game/${universeId}`,
+        { cache: "no-store", credentials: "omit", headers: { Accept: "application/json" } },
+        { maxAttempts: 1 }
+      );
+    } catch {
+      return null;
+    }
+  }));
+  const recommendedGames = recommendationPayloads.flatMap((payload) =>
+    Array.isArray(payload?.games) ? payload.games : []
+  ).map((game) => ({
+    rootPlaceId: game?.placeId,
+    name: game?.name,
+    playing: game?.playerCount,
+    isPlayable: true,
+    minimumAge: Number(game?.minimumAge) || 0
+  })).filter((game) =>
+    isValidId(String(game.rootPlaceId || "")) &&
+    Number(game.playing) > 0 &&
+    !(maxAge > 0 && maxAge < 16 && game.minimumAge >= 16)
+  );
+  if (recommendedGames.length > 0) {
+    const game = recommendedGames[pickUniformRandomIndex(recommendedGames.length)];
+    return {
+      placeId: String(game.rootPlaceId),
+      name: typeof game.name === "string" ? game.name : "Random game",
+      playing: Number(game.playing) || 0
+    };
+  }
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
     credentials: "omit",
     headers: { Accept: "application/json" }
   });
-  const maxAge = Number(messageMaxAge);
   const games = Array.isArray(payload?.data)
     ? payload.data.filter((game) =>
         isValidId(String(game?.rootPlaceId || "")) &&
