@@ -5783,12 +5783,12 @@
   position: relative;
   z-index: 2;
   display: flex;
-  flex: 0 0 var(--rsl-navbar-item-width, 40px);
+  flex: 0 0 var(--rsl-navbar-item-width, 44px);
   align-items: center;
   justify-content: center;
-  width: var(--rsl-navbar-item-width, 40px);
-  height: var(--rsl-navbar-item-height, 40px);
-  margin: 0;
+  width: var(--rsl-navbar-item-width, 44px);
+  height: var(--rsl-navbar-item-height, 44px);
+  margin: 0 !important;
   padding: 0;
 }
 
@@ -5799,9 +5799,9 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: var(--rsl-navbar-button-width, 36px);
-  height: var(--rsl-navbar-button-height, 36px);
-  margin: 0;
+  width: var(--rsl-navbar-button-width, 40px);
+  height: var(--rsl-navbar-button-height, 40px);
+  margin: 0 !important;
   padding: 0;
   color: #fff !important;
   background: transparent !important;
@@ -5820,8 +5820,8 @@
 
 #rsl-random-game-nav > .rsl-navbar-settings-button svg {
   display: block;
-  width: var(--rsl-navbar-logo-size, 24px);
-  height: var(--rsl-navbar-logo-size, 24px);
+  width: var(--rsl-navbar-logo-size, 28px);
+  height: var(--rsl-navbar-logo-size, 28px);
   overflow: visible;
   pointer-events: none;
   color: #fff;

@@ -18594,7 +18594,7 @@
       button.className = "rsl-navbar-settings-button";
       button.style.cssText =
         "appearance:none;display:flex;align-items:center;justify-content:center;" +
-        "box-sizing:border-box;width:36px;height:36px;margin:0;padding:0;" +
+        "box-sizing:border-box;width:40px;height:40px;margin:0;padding:0;" +
         "color:#fff !important;background:transparent;border:0;border-radius:0;" +
         "cursor:pointer;line-height:0;";
       button.setAttribute("aria-label", "Random Game");
@@ -18608,7 +18608,7 @@
       const icon = button.querySelector("svg");
       if (icon) {
         icon.style.cssText =
-          "display:block;width:24px;height:24px;overflow:visible;pointer-events:none;";
+          "display:block;width:28px;height:28px;overflow:visible;pointer-events:none;";
       }
       button.dataset.rslRandomGameBound = "true";
       button.addEventListener("click", (event) => {
