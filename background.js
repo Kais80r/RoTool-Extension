@@ -5612,8 +5612,17 @@ function getRandomServerErrorCode(error) {
 
 async function getRandomActiveGame() {
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
-  endpoint.searchParams.set("sortOrder", "Desc");
-  endpoint.searchParams.set("limit", "100");
+  // Roblox does not expose a public "random popular games" list endpoint.
+  // Query a small, stable set of well-known universes and pick among those
+  // that currently report active players.
+  endpoint.searchParams.set(
+    "universeIds",
+    [
+      "383310974", "994732206", "703124385", "111958650",
+      "66654135", "6284583030", "537413528", "2788229376",
+      "1537690962", "1962086868", "72238743"
+    ].join(",")
+  );
   const payload = await fetchJson(endpoint, {
     cache: "no-store",
     credentials: "omit",
