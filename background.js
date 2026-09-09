@@ -704,7 +704,30 @@ const randomServerCandidateCache = new Map();
 const randomServerCandidateRequests = new Map();
 let randomServerRateLimitedUntil = 0;
 const randomGameRecentPlaceIds = [];
-const RANDOM_GAME_RECENT_LIMIT = 24;
+const RANDOM_GAME_RECENT_LIMIT = 120;
+let randomGameRecentLoaded = false;
+let randomGameRecentLoadPromise = null;
+async function loadRandomGameRecentHistory() {
+  if (randomGameRecentLoaded) return;
+  if (!randomGameRecentLoadPromise) {
+    randomGameRecentLoadPromise = new Promise((resolve) => {
+      try {
+        chrome.storage.local.get("rslRandomGameRecentPlaceIds", (result) => {
+          const values = Array.isArray(result?.rslRandomGameRecentPlaceIds) ? result.rslRandomGameRecentPlaceIds : [];
+          randomGameRecentPlaceIds.push(...values.map(String).filter((id) => /^\d+$/.test(id)).slice(-RANDOM_GAME_RECENT_LIMIT));
+          randomGameRecentLoaded = true;
+          resolve();
+        });
+      } catch { randomGameRecentLoaded = true; resolve(); }
+    });
+  }
+  await randomGameRecentLoadPromise;
+}
+function rememberRandomGame(placeId) {
+  randomGameRecentPlaceIds.push(String(placeId));
+  while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) randomGameRecentPlaceIds.shift();
+  try { chrome.storage.local.set({ rslRandomGameRecentPlaceIds: randomGameRecentPlaceIds }); } catch { /* storage optional */ }
+}
 const gameCcuCache = new Map();
 const gameCcuRequestsByUniverseId = new Map();
 const gameRatingCache = new Map();
@@ -5668,6 +5691,7 @@ async function fetchRobloxDiscoveryGames() {
 }
 
 async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messageMaxAge = null) {
+  await loadRandomGameRecentHistory();
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
   // Roblox does not expose a public "random popular games" list endpoint.
   // Query a small, stable set of well-known universes and pick among those
@@ -5754,10 +5778,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     const game = selectableRecommendedGames[
       pickWeightedRandomGameIndex(selectableRecommendedGames)
     ];
-    randomGameRecentPlaceIds.push(String(game.rootPlaceId));
-    while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
-      randomGameRecentPlaceIds.shift();
-    }
+    rememberRandomGame(game.rootPlaceId);
     return {
       placeId: String(game.rootPlaceId),
       name: typeof game.name === "string" ? game.name : "Random game",
@@ -5786,10 +5807,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   );
   const selectableGames = freshGames.length > 0 ? freshGames : games;
   const game = selectableGames[pickWeightedRandomGameIndex(selectableGames)];
-  randomGameRecentPlaceIds.push(String(game.rootPlaceId));
-  while (randomGameRecentPlaceIds.length > RANDOM_GAME_RECENT_LIMIT) {
-    randomGameRecentPlaceIds.shift();
-  }
+  rememberRandomGame(game.rootPlaceId);
   return {
     placeId: String(game.rootPlaceId),
     name: typeof game.name === "string" ? game.name : "Random game",
