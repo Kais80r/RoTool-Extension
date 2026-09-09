@@ -27382,6 +27382,26 @@
     });
   }
 
+  function syncEnhancedProfileNativeActionSizing(record) {
+    const node = record?.node;
+    if (!node?.isConnected) return;
+    node.style.setProperty("width", "auto", "important");
+    node.style.setProperty("max-width", "none", "important");
+    node.style.setProperty("min-width", "0", "important");
+    node.style.setProperty("display", "flex", "important");
+    node.style.setProperty("flex-wrap", "wrap", "important");
+    node.style.setProperty("gap", "8px", "important");
+    node.querySelectorAll?.("button, a").forEach((control) => {
+      control.style.setProperty("width", "auto", "important");
+      control.style.setProperty("min-width", "max-content", "important");
+      control.style.setProperty("max-width", "none", "important");
+      control.style.setProperty("flex", "0 1 auto", "important");
+      control.style.setProperty("white-space", "nowrap", "important");
+      control.style.setProperty("overflow", "visible", "important");
+      control.style.setProperty("text-overflow", "clip", "important");
+    });
+  }
+
   function syncEnhancedProfileRoProControlSizing(record) {
     const node = record?.node;
     if (!node?.isConnected) return;
@@ -28055,6 +28075,7 @@
         ENHANCED_PROFILE_NATIVE_ACTIONS_SLOT_NAME,
         ENHANCED_PROFILE_NATIVE_ACTIONS_ATTRIBUTE
       );
+    syncEnhancedProfileNativeActionSizing(enhancedProfileNativeActionsRecord);
     syncEnhancedProfileNativeActionFallbacks(enhancedProfileNativeActionsRecord);
 
     const hostedControls = Array.from(enhancedProfileHost.children).find(
