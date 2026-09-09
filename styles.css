@@ -5626,6 +5626,8 @@
     flex: 1 0 calc(100% - 40px);
   }
 }
+.rsl-navbar-play-icon > .icon-common-play { width: 24px; height: 24px; display:block; }
+.rsl-navbar-dice { position:absolute; width:11px; height:11px; right:1px; bottom:1px; color:currentColor; }
 
 @media (forced-colors: active) {
   .rsl-shortcut-tab-option > input,

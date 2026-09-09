@@ -18608,15 +18608,14 @@
       button.setAttribute("aria-label", "Random Game");
       button.title = "Random Game";
       button.innerHTML =
-        '<svg class="rsl-navbar-settings-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-        '<path d="M4 3 28 16 4 29Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
-        '<rect x="9" y="9" width="14" height="14" rx="1" fill="var(--rsl-random-server-cutout, #18181b)" stroke="currentColor" stroke-width="1.8"/>' +
-        '<circle cx="12.8" cy="12.8" r="1.15" fill="currentColor"/><circle cx="19.2" cy="19.2" r="1.15" fill="currentColor"/><circle cx="16" cy="16" r="1.15" fill="currentColor"/>' +
-        "</svg>";
-      const icon = button.querySelector("svg");
+        '<span class="rsl-navbar-play-icon" aria-hidden="true"><span class="icon-common-play"></span>' +
+        '<svg class="rsl-navbar-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+        '<rect x="2" y="2" width="12" height="12" rx="2" fill="#18181b" stroke="currentColor" stroke-width="1.4"/>' +
+        '<circle cx="5" cy="5" r="1" fill="currentColor"/><circle cx="11" cy="11" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg></span>';
+      const icon = button.querySelector(".rsl-navbar-play-icon");
       if (icon) {
         icon.style.cssText =
-          "display:block;width:30px;height:30px;margin:auto;overflow:visible;pointer-events:none;";
+          "display:grid;place-items:center;position:relative;width:30px;height:30px;margin:auto;pointer-events:none;";
       }
       button.dataset.rslRandomGameBound = "true";
       button.addEventListener("click", (event) => {
