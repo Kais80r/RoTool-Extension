@@ -22,7 +22,7 @@ const releaseBuilderSource = fs.readFileSync(
   "utf8"
 );
 
-assert.equal(manifest.version, "0.19.9", "the current release ships as RoTool 0.19.9");
+assert.equal(manifest.version, "0.19.10", "the current release ships as RoTool 0.19.10");
 assert.equal(
   manifest.minimum_chrome_version,
   "102",
