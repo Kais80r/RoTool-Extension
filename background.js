@@ -5621,7 +5621,7 @@ async function getRandomActiveGame() {
   });
   const games = Array.isArray(payload?.data)
     ? payload.data.filter((game) =>
-        isValidId(game?.rootPlaceId) &&
+        isValidId(String(game?.rootPlaceId || "")) &&
         Number(game?.playing) > 0 &&
         game?.isPlayable !== false
       )

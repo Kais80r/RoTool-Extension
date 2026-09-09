@@ -18538,6 +18538,11 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "rsl-navbar-settings-button";
+      button.style.cssText =
+        "appearance:none;display:flex;align-items:center;justify-content:center;" +
+        "box-sizing:border-box;width:36px;height:36px;margin:0;padding:0;" +
+        "color:inherit;background:transparent;border:0;border-radius:0;" +
+        "cursor:pointer;line-height:0;";
       button.setAttribute("aria-label", "Random Game");
       button.title = "Random Game";
       button.innerHTML =
@@ -18545,6 +18550,11 @@
         '<path fill="currentColor" d="M2 5.2 10.5 2l6.2 3v8.8l-8.5 3.2L2 14V5.2Zm2 1.2v6.3l4.2 2.1V8.7L4 6.4Zm6.2 2.3v6.2l4.5-1.7V7L10.2 8.7Zm-4.5-2.7 4 2 4.4-1.7-3.9-1.9-4.5 1.6Zm12.1 1.6L23 10l-5.2 3V8.6Zm0 3.8v5.2l-4.8 2.2v-4.8l4.8-2.6Z"/>' +
         '<path fill="currentColor" d="m17 8 6 4-6 4V8Z"/>' +
         "</svg>";
+      const icon = button.querySelector("svg");
+      if (icon) {
+        icon.style.cssText =
+          "display:block;width:24px;height:24px;overflow:visible;pointer-events:none;";
+      }
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
