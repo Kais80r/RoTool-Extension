@@ -22899,6 +22899,27 @@
   // Enhanced Profile is rendered by RoTool, so its labels must follow the
   // language selected on the Roblox page instead of staying English.
   function getEnhancedProfileUiText(key, fallback = key) {
+    const nativeSelectors = {
+      editAvatar: "#user-profile-header-EditAvatar",
+      editProfile: "#user-profile-header-EditProfile",
+      noBio: ".description-content",
+      more: ".more-btn",
+      friends: 'a[href*="friends#!/friends"]',
+      followers: 'a[href*="friends#!/followers"]',
+      following: 'a[href*="friends#!/following"]'
+    };
+    const nativeNode = nativeSelectors[key]
+      ? document.querySelector(nativeSelectors[key])
+      : null;
+    const nativeText = nativeNode?.querySelector?.(".text-no-wrap")?.textContent
+      || nativeNode?.getAttribute?.("aria-label")
+      || nativeNode?.textContent;
+    if (typeof nativeText === "string" && nativeText.trim()) {
+      const cleaned = nativeText.replace(/\s+/g, " ").trim();
+      return ["friends", "followers", "following"].includes(key)
+        ? cleaned.replace(/^[\d.,+\s]+/, "").trim()
+        : cleaned;
+    }
     const locale = String(getRobloxPageLocale() || "en").toLowerCase();
     const language = locale.split("-")[0];
     const dictionaries = {
