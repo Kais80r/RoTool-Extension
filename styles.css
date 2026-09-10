@@ -6453,9 +6453,10 @@
   }
 }
 .rsl-random-blacklist-editor { display: block; }
-.rsl-random-blacklist-controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.rsl-random-blacklist-controls { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; width: 100%; min-width: 0; }
 .rsl-random-blacklist-input { width: 100%; min-width: 260px; padding: 9px 12px; border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; background: var(--color-surface-100, #18181b); color: var(--color-content-emphasis, #fff); font-size: 15px; }
-.rsl-random-blacklist-search { position: relative; }
+.rsl-random-blacklist-controls > button { flex: 0 0 auto; min-width: 52px; white-space: nowrap; }
+.rsl-random-blacklist-search { position: relative; flex: 1 1 auto; min-width: 0; }
 .rsl-random-blacklist-suggestions { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; background: var(--color-surface-100, #18181b); border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; overflow: hidden; }
 .rsl-random-blacklist-suggestion { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; background: transparent; color: #fff; text-align: left; cursor: pointer; }
 .rsl-random-blacklist-suggestion img { width: 40px; height: 40px; border-radius: 5px; object-fit: cover; background: #343740; }

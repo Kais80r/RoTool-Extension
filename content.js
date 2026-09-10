@@ -19587,7 +19587,7 @@
           suggestions.replaceChildren();
           if (query.length < 2 || /^\d+$/.test(query)) return;
           try {
-            const response = await sendGameEventsRuntimeMessage({ type: GAME_EVENTS_SEARCH_MESSAGE_TYPE, query, locale: getRobloxPageLocale() });
+            const response = await sendGameEventsRuntimeMessage({ type: GAME_EVENTS_SEARCH_MESSAGE_TYPE, requestId: Date.now(), query, locale: getRobloxPageLocale() });
             (response?.results || []).slice(0, 8).forEach((result) => { const option = document.createElement("button"); option.type = "button"; option.className = "rsl-random-blacklist-suggestion"; const image = document.createElement("img"); image.src = result.thumbnailUrl || result.imageUrl || ""; image.alt = ""; const copy = document.createElement("span"); copy.className = "rsl-random-blacklist-suggestion-copy"; const name = document.createElement("strong"); name.textContent = result.name || "Roblox experience"; const detail = document.createElement("small"); detail.textContent = "Universe " + String(result.universeId || result.placeId || ""); copy.append(name, detail); option.append(image, copy); option.addEventListener("click", () => { const id = String(result.universeId || result.placeId || ""); if (/^\d+$/.test(id)) { randomPlayBlacklistIds = Array.from(new Set([...randomPlayBlacklistIds, id])); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } }); suggestions.append(option); });
           } catch {}
         });
