@@ -1016,6 +1016,12 @@
       ]
     }),
     Object.freeze({
+      key: "randomGameButton",
+      group: "Experiences",
+      label: "Random Game button",
+      description: "Show the Random Game button in the Roblox top navigation."
+    }),
+    Object.freeze({
       key: "experiencePlaces",
       group: "Experiences",
       label: "Experience Places",
@@ -30687,7 +30693,11 @@
     syncAccountRecoveryModalRouteState();
     syncExtensionUpdateHomeVisitState();
     mountFeatureSettingsButton();
-    mountRandomGameButton();
+    if (isFeatureEnabled("randomGameButton")) {
+      mountRandomGameButton();
+    } else {
+      document.getElementById("rsl-random-game-nav")?.remove();
+    }
     mountAccountRecoverySettingsMenuItem();
     if (!featureSettingsLoaded) {
       return;
@@ -31031,6 +31041,9 @@
     }
     if (previousSettings.quickPlay !== nextSettings.quickPlay) {
       cleanupQuickPlayFeature();
+    }
+    if (previousSettings.randomGameButton !== nextSettings.randomGameButton) {
+      document.getElementById("rsl-random-game-nav")?.remove();
     }
     if (previousSettings.gameCcu !== nextSettings.gameCcu) {
       cleanupGameTileCcuFeature();
