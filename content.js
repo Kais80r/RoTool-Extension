@@ -1001,7 +1001,15 @@
           key: "quickPlayActionRandom",
           label: "Random Server",
           description: "Show the Random Server button."
-        }),
+        })
+      ]
+    }),
+    Object.freeze({
+      key: "randomGameButton",
+      group: "Experiences",
+      label: "Random Game button",
+      description: "Show the Random Game button in the Roblox top navigation.",
+      children: [
         Object.freeze({
           key: "randomPlayDirect",
           label: "Direct Random Play",
@@ -1014,12 +1022,6 @@
           description: "Avoid games known to be inaccessible or risky to join."
         })
       ]
-    }),
-    Object.freeze({
-      key: "randomGameButton",
-      group: "Experiences",
-      label: "Random Game button",
-      description: "Show the Random Game button in the Roblox top navigation."
     }),
     Object.freeze({
       key: "experiencePlaces",
