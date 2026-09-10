@@ -19571,13 +19571,19 @@
     const createSettingRow = (definition) => {
       if (definition.controlType === "randomBlacklist") {
         const row = document.createElement("div");
-        row.className = "rsl-feature-settings__row rsl-feature-settings__row--child";
+        row.className = "rsl-feature-settings__row rsl-feature-settings__row--child rsl-random-blacklist-editor";
         const copy = document.createElement("span"); copy.className = "rsl-feature-settings__copy";
         const label = document.createElement("strong"); label.className = "content-emphasis text-label-large"; label.textContent = definition.label;
-        const description = document.createElement("span"); description.className = "content-default text-body-medium"; description.textContent = definition.description + (randomPlayBlacklistIds.length ? " (" + randomPlayBlacklistIds.length + " added)" : "");
+        const description = document.createElement("span"); description.className = "content-default text-body-medium"; description.textContent = definition.description;
         copy.append(label, description);
-        const button = document.createElement("button"); button.type = "button"; button.className = "rsl-feature-settings__bulk-action"; button.textContent = "Edit"; button.addEventListener("click", editRandomPlayBlacklist);
-        row.append(copy, button); return row;
+        const controls = document.createElement("div"); controls.className = "rsl-random-blacklist-controls";
+        const input = document.createElement("input"); input.type = "text"; input.placeholder = "Place or Universe ID"; input.className = "rsl-random-blacklist-input";
+        const add = document.createElement("button"); add.type = "button"; add.className = "rsl-feature-settings__bulk-action"; add.textContent = "Add";
+        add.addEventListener("click", () => { const id = input.value.trim(); if (/^\d+$/.test(id) && !randomPlayBlacklistIds.includes(id)) { randomPlayBlacklistIds.push(id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } });
+        controls.append(input, add);
+        const list = document.createElement("div"); list.className = "rsl-random-blacklist-list";
+        randomPlayBlacklistIds.forEach((id) => { const chip = document.createElement("span"); chip.className = "rsl-random-blacklist-chip"; chip.textContent = id; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.title = "Remove"; remove.addEventListener("click", () => { randomPlayBlacklistIds = randomPlayBlacklistIds.filter((value) => value !== id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); }); chip.append(remove); list.append(chip); });
+        row.append(copy, controls, list); return row;
       }
       const declaredParentKey = definition.parentKey || "";
       const parentKey = definition.independentOfParent === true
