@@ -6454,10 +6454,13 @@
 }
 .rsl-random-blacklist-editor { display: block; }
 .rsl-random-blacklist-controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.rsl-random-blacklist-input { min-width: 180px; padding: 7px 9px; border: 1px solid var(--color-stroke-default, #555); border-radius: 6px; background: var(--color-surface-100, #18181b); color: var(--color-content-emphasis, #fff); }
+.rsl-random-blacklist-input { width: 100%; min-width: 260px; padding: 9px 12px; border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; background: var(--color-surface-100, #18181b); color: var(--color-content-emphasis, #fff); font-size: 15px; }
 .rsl-random-blacklist-search { position: relative; }
-.rsl-random-blacklist-suggestions { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 260px; background: var(--color-surface-100, #18181b); border: 1px solid var(--color-stroke-default, #555); border-radius: 6px; overflow: hidden; }
-.rsl-random-blacklist-suggestion { display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent; color: #fff; text-align: left; cursor: pointer; }
+.rsl-random-blacklist-suggestions { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; background: var(--color-surface-100, #18181b); border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; overflow: hidden; }
+.rsl-random-blacklist-suggestion { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; background: transparent; color: #fff; text-align: left; cursor: pointer; }
+.rsl-random-blacklist-suggestion img { width: 40px; height: 40px; border-radius: 5px; object-fit: cover; background: #343740; }
+.rsl-random-blacklist-suggestion-copy { display: flex; flex-direction: column; gap: 2px; }
+.rsl-random-blacklist-suggestion-copy small { color: #b7bac4; }
 .rsl-random-blacklist-suggestion:hover { background: var(--color-state-hover, rgba(255,255,255,.1)); }
 .rsl-random-blacklist-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .rsl-random-blacklist-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 6px; background: var(--color-surface-300, #454a55); color: #fff; font-size: 12px; }
