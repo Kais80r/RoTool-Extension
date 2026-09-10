@@ -5690,7 +5690,7 @@ async function fetchRobloxDiscoveryGames() {
   return payloads.flatMap((payload) => Array.isArray(payload?.games) ? payload.games : []);
 }
 
-async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messageMaxAge = null, skipBlockedGames = true) {
+async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messageMaxAge = null, skipBlockedGames = true, rawBlacklistIds = []) {
   await loadRandomGameRecentHistory();
   const endpoint = new URL("/v1/games", "https://games.roblox.com");
   // Roblox does not expose a public "random popular games" list endpoint.
@@ -5721,6 +5721,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   endpoint.searchParams.set("universeIds", universeIds.slice(0, 50).join(","));
   const maxAge = Number(messageMaxAge);
   const blockedGameName = /^(?:steal a brainrot|steal an egg)$/i;
+  const blacklistIds = new Set((Array.isArray(rawBlacklistIds) ? rawBlacklistIds : []).map(String));
   const discoveryGames = await fetchRobloxDiscoveryGames();
   const fetchRecommendation = async (universeId) => {
     try {
@@ -5765,7 +5766,9 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     isValidId(String(game.rootPlaceId || "")) &&
     Number(game.playing) > 0 &&
     !(maxAge > 0 && maxAge < 16 && game.minimumAge >= 16) &&
-    !(skipBlockedGames && blockedGameName.test(String(game.name || "")))
+    !(skipBlockedGames && blockedGameName.test(String(game.name || ""))) &&
+    !blacklistIds.has(String(game.rootPlaceId || game.placeId || game.universeId || "")) &&
+    !blacklistIds.has(String(game.universeId || ""))
   );
   const uniqueRecommendedGames = Array.from(
     new Map(recommendedGames.map((game) => [String(game.rootPlaceId), game])).values()
@@ -5799,7 +5802,9 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
           /(?:16|17|18)\s*\+|mature|restricted/i.test(
             String(game?.contentRatingType || game?.ageRecommendation || "")
           )) &&
-        !(skipBlockedGames && blockedGameName.test(String(game?.name || "")))
+        !(skipBlockedGames && blockedGameName.test(String(game?.name || ""))) &&
+        !blacklistIds.has(String(game?.rootPlaceId || "")) &&
+        !blacklistIds.has(String(game?.universeId || ""))
       )
     : [];
   if (!games.length) throw new Error("NO_ACTIVE_GAMES");
@@ -5823,7 +5828,8 @@ function handleRandomGameMessage(message, sendResponse) {
     message?.candidateUniverseIds,
     message?.candidatePlaceIds,
     message?.maxAge,
-    message?.skipBlockedGames !== false
+    message?.skipBlockedGames !== false,
+    message?.blacklistIds
   )
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => sendResponse({

@@ -1020,6 +1020,12 @@
           key: "randomPlaySafeMode",
           label: "Skip blacklisted games",
           description: "Avoid games known to be inaccessible or risky to join."
+        }),
+        Object.freeze({
+          key: "randomPlayBlacklistEditor",
+          label: "Blacklisted games",
+          description: "Add games that Random Play must never suggest.",
+          controlType: "randomBlacklist"
         })
       ]
     }),
@@ -1212,6 +1218,18 @@
 
   let shortcuts = [];
   let featureSettings = { ...DEFAULT_FEATURE_SETTINGS };
+  let randomPlayBlacklistIds = [];
+  const RANDOM_PLAY_BLACKLIST_KEY = "rslRandomPlayBlacklistIds";
+  function loadRandomPlayBlacklist() {
+    try { chrome.storage.local.get({ [RANDOM_PLAY_BLACKLIST_KEY]: [] }, (r) => { randomPlayBlacklistIds = Array.isArray(r?.[RANDOM_PLAY_BLACKLIST_KEY]) ? r[RANDOM_PLAY_BLACKLIST_KEY].map(String).filter((id) => /^\d+$/.test(id)) : []; }); } catch { randomPlayBlacklistIds = []; }
+  }
+  function editRandomPlayBlacklist() {
+    const entered = globalThis.prompt("Enter Place or Universe IDs separated by commas. Leave empty to clear the blacklist.", randomPlayBlacklistIds.join(", "));
+    if (entered === null) return;
+    randomPlayBlacklistIds = Array.from(new Set(entered.split(/[,\s]+/).map((id) => id.trim()).filter((id) => /^\d+$/.test(id))));
+    try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {}
+    renderFeatureSettingsDialog();
+  }
   let featureSettingsConfirmed = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsApplied = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsLoaded = false;
@@ -18579,7 +18597,8 @@
         candidateUniverseIds,
         candidatePlaceIds,
         maxAge: viewerAge,
-        skipBlockedGames: isFeatureEnabled("randomPlaySafeMode")
+        skipBlockedGames: isFeatureEnabled("randomPlaySafeMode"),
+        blacklistIds: randomPlayBlacklistIds
       }, (response) => {
         const runtimeError = chrome.runtime.lastError;
         button.disabled = false;
@@ -18602,6 +18621,7 @@
   }
 
   function mountRandomGameButton() {
+    loadRandomPlayBlacklist();
     const notificationItem = findNativeHeaderNotificationItem();
     if (!notificationItem?.parentElement) return;
     const id = "rsl-random-game-nav";
@@ -19549,6 +19569,16 @@
     const groups = dialog.querySelector(".rsl-feature-settings__groups");
     const groupsByName = new Map();
     const createSettingRow = (definition) => {
+      if (definition.controlType === "randomBlacklist") {
+        const row = document.createElement("div");
+        row.className = "rsl-feature-settings__row rsl-feature-settings__row--child";
+        const copy = document.createElement("span"); copy.className = "rsl-feature-settings__copy";
+        const label = document.createElement("strong"); label.className = "content-emphasis text-label-large"; label.textContent = definition.label;
+        const description = document.createElement("span"); description.className = "content-default text-body-medium"; description.textContent = definition.description + (randomPlayBlacklistIds.length ? " (" + randomPlayBlacklistIds.length + " added)" : "");
+        copy.append(label, description);
+        const button = document.createElement("button"); button.type = "button"; button.className = "rsl-feature-settings__bulk-action"; button.textContent = "Edit"; button.addEventListener("click", editRandomPlayBlacklist);
+        row.append(copy, button); return row;
+      }
       const declaredParentKey = definition.parentKey || "";
       const parentKey = definition.independentOfParent === true
         ? ""
