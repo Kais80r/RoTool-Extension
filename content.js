@@ -1007,6 +1007,11 @@
           label: "Direct Random Play",
           description: "Launch the selected random game directly instead of opening its game page.",
           defaultEnabled: false
+        }),
+        Object.freeze({
+          key: "randomPlaySafeMode",
+          label: "Skip blacklisted games",
+          description: "Avoid games known to be inaccessible or risky to join."
         })
       ]
     }),
@@ -18565,7 +18570,8 @@
         type: "rsl:get-random-game",
         candidateUniverseIds,
         candidatePlaceIds,
-        maxAge: viewerAge
+        maxAge: viewerAge,
+        skipBlockedGames: isFeatureEnabled("randomPlaySafeMode")
       }, (response) => {
         const runtimeError = chrome.runtime.lastError;
         button.disabled = false;
