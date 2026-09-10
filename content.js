@@ -19580,7 +19580,7 @@
         const searchWrap = document.createElement("div"); searchWrap.className = "rsl-random-blacklist-search";
         const input = document.createElement("input"); input.type = "search"; input.placeholder = "Search games or paste a URL or ID"; input.className = "rsl-input rsl-random-blacklist-input"; input.autocomplete = "off";
         const suggestions = document.createElement("div"); suggestions.className = "rsl-random-blacklist-suggestions";
-        const add = document.createElement("button"); add.type = "button"; add.className = "rsl-feature-settings__bulk-action"; add.textContent = "Add";
+        const add = document.createElement("button"); add.type = "button"; add.className = "rsl-button rsl-button--primary foundation-web-button"; add.textContent = "Add";
         add.addEventListener("click", () => { const id = input.value.trim(); if (/^\d+$/.test(id) && !randomPlayBlacklistIds.includes(id)) { randomPlayBlacklistIds.push(id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } });
         input.addEventListener("input", async () => {
           const query = input.value.trim();
