@@ -19577,10 +19577,22 @@
         const description = document.createElement("span"); description.className = "content-default text-body-medium"; description.textContent = definition.description;
         copy.append(label, description);
         const controls = document.createElement("div"); controls.className = "rsl-random-blacklist-controls";
-        const input = document.createElement("input"); input.type = "text"; input.placeholder = "Place or Universe ID"; input.className = "rsl-random-blacklist-input";
+        const searchWrap = document.createElement("div"); searchWrap.className = "rsl-random-blacklist-search";
+        const input = document.createElement("input"); input.type = "search"; input.placeholder = "Search games or paste a URL or ID"; input.className = "rsl-input rsl-random-blacklist-input"; input.autocomplete = "off";
+        const suggestions = document.createElement("div"); suggestions.className = "rsl-random-blacklist-suggestions";
         const add = document.createElement("button"); add.type = "button"; add.className = "rsl-feature-settings__bulk-action"; add.textContent = "Add";
         add.addEventListener("click", () => { const id = input.value.trim(); if (/^\d+$/.test(id) && !randomPlayBlacklistIds.includes(id)) { randomPlayBlacklistIds.push(id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } });
-        controls.append(input, add);
+        input.addEventListener("input", async () => {
+          const query = input.value.trim();
+          suggestions.replaceChildren();
+          if (query.length < 2 || /^\d+$/.test(query)) return;
+          try {
+            const response = await sendGameEventsRuntimeMessage({ type: GAME_EVENTS_SEARCH_MESSAGE_TYPE, query, locale: getRobloxPageLocale() });
+            (response?.results || []).slice(0, 6).forEach((result) => { const option = document.createElement("button"); option.type = "button"; option.className = "rsl-random-blacklist-suggestion"; option.textContent = result.name || "Roblox experience"; option.addEventListener("click", () => { const id = String(result.universeId || result.placeId || ""); if (/^\d+$/.test(id)) { randomPlayBlacklistIds = Array.from(new Set([...randomPlayBlacklistIds, id])); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } }); suggestions.append(option); });
+          } catch {}
+        });
+        searchWrap.append(input, suggestions);
+        controls.append(searchWrap, add);
         const list = document.createElement("div"); list.className = "rsl-random-blacklist-list";
         randomPlayBlacklistIds.forEach((id) => { const chip = document.createElement("span"); chip.className = "rsl-random-blacklist-chip"; chip.textContent = id; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.title = "Remove"; remove.addEventListener("click", () => { randomPlayBlacklistIds = randomPlayBlacklistIds.filter((value) => value !== id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); }); chip.append(remove); list.append(chip); });
         row.append(copy, controls, list); return row;
