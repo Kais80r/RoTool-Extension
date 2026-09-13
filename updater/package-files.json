@@ -1,6 +1,8 @@
 [
   "manifest.json",
   "background.js",
+  "account-value-background.js",
+  "account-value.js",
   "content.js",
   "styles.css",
   "context-copy.css",

@@ -1,5 +1,7 @@
 "use strict";
 
+if (typeof importScripts === "function") importScripts("account-value-background.js");
+
 const THUMBNAIL_SPECS = Object.freeze({
   profile: { path: "/v1/users/avatar-headshot", idParameter: "userIds", circular: true },
   avatar: { path: "/v1/users/avatar", idParameter: "userIds", circular: false, size: "420x420" },
@@ -2852,7 +2854,7 @@ function fetchAllFriendIds(viewerUserId, forceRefresh = false) {
   return request;
 }
 
-async function fetchFriendPresences(userIds) {
+async function fetchFriendPresences(userIds, retryPolicy = {}) {
   const presences = new Map();
   const batches = [];
 
@@ -2870,7 +2872,7 @@ async function fetchFriendPresences(userIds) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ userIds: batch.map(Number) })
-    });
+    }, retryPolicy);
 
     if (!Array.isArray(payload?.userPresences)) {
       throw new RobloxApiError(502);
@@ -3147,13 +3149,14 @@ function startOfflineFriendsEnrichment(
         return null;
       }
 
-      onlineFriendsCache.offlineFriends = offlineUserIds.map((userId) =>
-        makeOfflineFriend(
+      onlineFriendsCache.offlineFriends = offlineUserIds.map((userId) => ({
+        ...makeOfflineFriend(
           userId,
           profiles.get(userId) || seedProfiles.get(userId),
           headshots.get(userId)
-        )
-      );
+        ),
+        presenceType: onlineFriendsCache.response.presenceComplete === false ? "Unknown" : "Offline"
+      }));
       onlineFriendsCache.offlineDetailsComplete = true;
       onlineFriendsCache.offlineDetailsReusable = offlineUserIds.every(
         (userId) =>
@@ -4109,7 +4112,16 @@ async function fetchAllOnlineFriends(forceRefresh = false) {
     friendIdsCache?.viewerUserId === viewerUserId
       ? friendIdsCache.profilesByUserId || new Map()
       : new Map();
-  const presences = await fetchFriendPresences(friendIds);
+  let presences;
+  let presenceComplete = true;
+  try {
+    presences = await fetchFriendPresences(friendIds, { timeoutMs: 3000, maxAttempts: 1 });
+  } catch (error) {
+    // Authentication failure is not a status outage: never retain a previous account's data.
+    if (error?.status === 401) throw error;
+    presences = new Map();
+    presenceComplete = false;
+  }
   const onlineUserIds = friendIds.filter((userId) => presences.has(userId));
   const offlineUserIds = friendIds.filter((userId) => !presences.has(userId));
   const previousFriends = new Map(
@@ -4133,6 +4145,7 @@ async function fetchAllOnlineFriends(forceRefresh = false) {
   });
   const offlineFriends = offlineUserIds.map((userId) => {
     const friend = makeOfflineFriend(userId, seedProfiles.get(userId), null);
+    if (!presenceComplete) friend.presenceType = "Unknown";
     return reuseOnlineFriendDetails(friend, previousOfflineFriends.get(userId));
   });
   const offlineDetailsReusable =
@@ -4148,8 +4161,9 @@ async function fetchAllOnlineFriends(forceRefresh = false) {
     viewerUserId,
     friendUserIds: friendIds.slice(),
     scannedFriendTotal: friendIds.length,
+    presenceComplete,
     onlineTotal: friends.length,
-    offlineTotal: offlineFriends.length,
+    offlineTotal: presenceComplete ? offlineFriends.length : 0,
     fetchedAt: Date.now(),
     detailsComplete: false,
     verificationComplete: friends.every(
@@ -5720,8 +5734,17 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
   }
   endpoint.searchParams.set("universeIds", universeIds.slice(0, 50).join(","));
   const maxAge = Number(messageMaxAge);
-  const blockedGameName = /^(?:steal a brainrot|steal an egg)$/i;
-  const blacklistIds = new Set((Array.isArray(rawBlacklistIds) ? rawBlacklistIds : []).map(String));
+  const savedBlacklist = await new Promise((resolve, reject) => {
+    chrome.storage.local.get({ rslRandomPlayBlacklistIds: [] }, result => {
+      if (chrome.runtime.lastError) { reject(new Error("BLACKLIST_UNAVAILABLE")); return; }
+      resolve(result.rslRandomPlayBlacklistIds);
+    });
+  });
+  const blacklistIds = new Set((Array.isArray(savedBlacklist) ? savedBlacklist : []).map(String));
+  const isBlocked = game => skipBlockedGames && (
+    blacklistIds.has(String(game.rootPlaceId || game.placeId || "")) ||
+    blacklistIds.has(String(game.universeId || game.id || ""))
+  );
   const discoveryGames = await fetchRobloxDiscoveryGames();
   const fetchRecommendation = async (universeId) => {
     try {
@@ -5757,6 +5780,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     ...secondRecommendationPayloads
   ].flatMap((payload) => Array.isArray(payload?.games) ? payload.games : [payload])
   .map((game) => ({
+    universeId: game?.universeId || game?.id,
     rootPlaceId: game?.rootPlaceId || game?.placeId,
     name: game?.name,
     playing: game?.playerCount,
@@ -5766,9 +5790,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
     isValidId(String(game.rootPlaceId || "")) &&
     Number(game.playing) > 0 &&
     !(maxAge > 0 && maxAge < 16 && game.minimumAge >= 16) &&
-    !(skipBlockedGames && blockedGameName.test(String(game.name || ""))) &&
-    !blacklistIds.has(String(game.rootPlaceId || game.placeId || game.universeId || "")) &&
-    !blacklistIds.has(String(game.universeId || ""))
+    !isBlocked(game)
   );
   const uniqueRecommendedGames = Array.from(
     new Map(recommendedGames.map((game) => [String(game.rootPlaceId), game])).values()
@@ -5802,9 +5824,7 @@ async function getRandomActiveGame(rawCandidateIds = [], rawPlaceIds = [], messa
           /(?:16|17|18)\s*\+|mature|restricted/i.test(
             String(game?.contentRatingType || game?.ageRecommendation || "")
           )) &&
-        !(skipBlockedGames && blockedGameName.test(String(game?.name || ""))) &&
-        !blacklistIds.has(String(game?.rootPlaceId || "")) &&
-        !blacklistIds.has(String(game?.universeId || ""))
+        !isBlocked(game)
       )
     : [];
   if (!games.length) throw new Error("NO_ACTIVE_GAMES");
@@ -17561,7 +17581,7 @@ async function collectLifetimeSpent(userId) {
     const endpoint = new URL(`/v2/users/${userId}/transactions`, "https://economy.roblox.com");
     endpoint.searchParams.set("transactionType", "Purchase");
     endpoint.searchParams.set("limit", String(LIFETIME_SPENT_PAGE_LIMIT));
-    endpoint.searchParams.set("sortOrder", "Asc");
+    endpoint.searchParams.set("sortOrder", "Desc");
     if (cursor) endpoint.searchParams.set("cursor", cursor);
     const payload = await fetchAccountRecoveryJson(endpoint);
     if (!Array.isArray(payload?.data)) throw new Error("INVALID_RESPONSE");
@@ -20497,9 +20517,81 @@ if (globalThis.__rslBackgroundTestHooks) {
   });
 }
 
+function extractFriendshipSince(payload, userId, now = Date.now()) {
+  const entry = Array.isArray(payload?.userInsights)
+    ? payload.userInsights.find(item => String(item?.targetUser) === String(userId)) : null;
+  if (!Array.isArray(entry?.profileInsights)) return null;
+  for (const insight of entry.profileInsights) {
+    const raw = insight?.friendshipAgeInsight?.friendsSinceDateTime?.seconds;
+    const seconds = typeof raw === "number" || (typeof raw === "string" && /^\d+$/.test(raw)) ? Number(raw) : NaN;
+    if (Number.isSafeInteger(seconds) && seconds >= 1136073600 && seconds * 1000 <= now) return seconds;
+  }
+  return null;
+}
+
+function extractProfileMutualCount(payload, userId) {
+  const entry = Array.isArray(payload?.userInsights)
+    ? payload.userInsights.find(item => String(item?.targetUser) === String(userId)) : null;
+  if (!Array.isArray(entry?.profileInsights)) return null;
+  for (const insight of entry.profileInsights) {
+    const mutuals = insight?.mutualFriendInsight?.mutualFriends;
+    if (mutuals && typeof mutuals === "object" && !Array.isArray(mutuals)) {
+      return Object.keys(mutuals).length;
+    }
+  }
+  return null;
+}
+
+function extractProfileAccountRegion(payload, userId) {
+  const entry = Array.isArray(payload?.userInsights)
+    ? payload.userInsights.find(item => String(item?.targetUser) === String(userId)) : null;
+  if (!Array.isArray(entry?.profileInsights)) return null;
+  for (const insight of entry.profileInsights) {
+    const code = insight?.accountLocationInsight?.accountLocationCode;
+    if (typeof code === "string" && /^[a-z]{2}$/i.test(code)) return code.toUpperCase();
+  }
+  return null;
+}
+
+async function fetchProfileFriendshipSince(userId, includeRegion = false) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const options = { method: "POST", credentials: "include", headers,
+      body: JSON.stringify({ userIds: [Number(userId)], rankingStrategy: "tc_info_boost" }),
+      signal: controller.signal };
+    const url = "https://apis.roblox.com/profile-insights-api/v1/multiProfileInsights";
+    let response = await fetch(url, options);
+    const token = response.headers.get("x-csrf-token");
+    if (response.status === 403 && token) {
+      headers["x-csrf-token"] = token;
+      response = await fetch(url, options);
+    }
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return { seconds: extractFriendshipSince(payload, userId), mutualCount: extractProfileMutualCount(payload, userId),
+      regionCode: includeRegion ? extractProfileAccountRegion(payload, userId) : null };
+  } finally { clearTimeout(timer); }
+}
+
 function handleRuntimeMessage(message, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) {
     return false;
+  }
+
+  if (message?.type === "rsl:profile-friendship-since") {
+    if (getTrustedRobloxTopFrameTabId(sender) === null ||
+        !/^[1-9]\d*$/.test(String(message.userId)) ||
+        !Number.isSafeInteger(Number(message.userId))) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    fetchProfileFriendshipSince(message.userId, message.includeRegion === true)
+      .then(insights => sendResponse({ ok: Boolean(insights), seconds: insights?.seconds ?? null, mutualCount: insights?.mutualCount ?? null,
+        regionCode: insights?.regionCode ?? null }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
   }
 
   if (message?.type === TOOLBAR_POPUP_SETTINGS_MESSAGE_TYPE) {
@@ -20647,6 +20739,26 @@ function handleRuntimeMessage(message, sender, sendResponse) {
     return handleRejoinServerHistoryMessage(message, sender, sendResponse);
   }
 
+  if (message?.type === "rsl:random-blacklist-search") {
+    if (getTrustedRobloxTopFrameTabId(sender) === null) {
+      sendResponse({ ok: false, code: "INVALID" });
+      return false;
+    }
+    (async () => {
+      const query = String(message.query || "").trim();
+      if (query.length < 2 || query.length > 300) throw new Error("INVALID");
+      const direct = /^\d+$/.test(query) || /^https:\/\//i.test(query);
+      const results = direct
+        ? [await resolveGameEventsGame(query, null, message.locale)]
+        : await searchGameEventsGames(query, message.locale);
+      return Promise.all(results.slice(0, 8).map(async game => ({
+        ...game,
+        thumbnailUrl: await getThumbnail("gameUniverse", String(game.universeId))
+      })));
+    })().then(results => sendResponse({ ok: true, results }))
+      .catch(() => sendResponse({ ok: false, code: "UNAVAILABLE" }));
+    return true;
+  }
   if (
     message?.type === GAME_EVENTS_GET_MESSAGE_TYPE ||
     message?.type === GAME_EVENTS_ADD_MESSAGE_TYPE ||

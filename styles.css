@@ -578,7 +578,11 @@
    deliberately limited to direct navigation rows so a matching footer link,
    modal, or control elsewhere on the page cannot be hidden. */
 #left-navigation-container nav > ul > li[data-rsl-native-sidebar-hidden],
-.left-col-list > li[data-rsl-native-sidebar-hidden] {
+.left-col-list > li[data-rsl-native-sidebar-hidden],
+.left-nav [data-rsl-native-sidebar-hidden],
+#btr-blogfeed-container[data-rsl-native-sidebar-hidden],
+#btr-blogfeed[data-rsl-native-sidebar-hidden],
+.btr-nav-node-sidebar_blogfeed[data-rsl-native-sidebar-hidden] {
   display: none !important;
 }
 
@@ -6453,10 +6457,52 @@
   }
 }
 .rsl-random-blacklist-editor { display: block; }
-.rsl-random-blacklist-controls { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; width: 100%; min-width: 0; }
-.rsl-random-blacklist-input { width: 100%; min-width: 0; padding: 9px 12px; border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; background: var(--color-surface-100, #18181b); color: var(--color-content-emphasis, #fff); font-size: 15px; }
-.rsl-random-blacklist-controls > button { flex: 0 0 auto; min-width: 68px; min-height: 32px; padding: 5px 12px; white-space: nowrap; background: var(--color-action-emphasis-background, #335fff); color: #fff; border: 0; border-radius: 6px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.rsl-random-blacklist-search { position: relative; flex: 0 1 auto; min-width: 0; width: calc(100% - 92px); }
+.rsl-random-blacklist-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 540px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.rsl-random-blacklist-controls .rsl-random-blacklist-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--color-stroke-default, #555);
+  border-radius: 8px;
+  background: var(--color-surface-100, #18181b);
+  color: var(--color-content-emphasis, #fff);
+  font: inherit;
+  font-size: 14px;
+}
+.rsl-random-blacklist-controls > button {
+  box-sizing: border-box;
+  width: 76px;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 12px;
+  white-space: nowrap;
+  background: var(--color-action-emphasis-background, #335fff);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rsl-random-blacklist-search { position: relative; min-width: 0; width: 100%; box-sizing: border-box; }
 .rsl-random-blacklist-suggestions { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; background: var(--color-surface-100, #18181b); border: 1px solid var(--color-stroke-default, #555); border-radius: 8px; overflow: hidden; }
 .rsl-random-blacklist-suggestion { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; background: transparent; color: #fff; text-align: left; cursor: pointer; }
 .rsl-random-blacklist-suggestion img { width: 40px; height: 40px; border-radius: 5px; object-fit: cover; background: #343740; }
@@ -6466,3 +6512,45 @@
 .rsl-random-blacklist-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .rsl-random-blacklist-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 6px; background: var(--color-surface-300, #454a55); color: #fff; font-size: 12px; }
 .rsl-random-blacklist-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; }
+.rsl-lifetime-spent-help {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.rsl-lifetime-spent-help > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: help;
+}
+.rsl-lifetime-spent-help > [role="tooltip"] {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1002;
+  width: 280px;
+  max-width: 70vw;
+  padding: 10px 12px;
+  border: 1px solid #494d5a;
+  border-radius: 8px;
+  background: #202227;
+  color: #f7f7f8;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+}
+.rsl-lifetime-spent-help:hover > [role="tooltip"],
+.rsl-lifetime-spent-help:focus-within > [role="tooltip"] {
+  display: block;
+}

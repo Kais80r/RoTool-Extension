@@ -1266,6 +1266,7 @@
         hiddenCompetingRoot.remove();
         const expectedHeadshotWidth = isCompactMobile ? 88 : 128;
         const expectedProfileDetailLabels = [
+          "Account Value",
           "Account age",
           "Inventory",
           "Badges",
@@ -1321,7 +1322,7 @@
           visual.gameFallbackPath !== visual.baseFallbackPath ||
           visual.tabHeight !== 46 ||
           visual.profileDetailsTagName !== "DIV" ||
-          visual.profileDetailCount !== 5 ||
+          visual.profileDetailCount !== 6 ||
           visual.profileDetailLabels.join("|") !==
             expectedProfileDetailLabels.join("|") ||
           actualProfileDetailLabels.join("|") !==
@@ -1831,7 +1832,6 @@
           "Account age",
           "Mutual groups",
           "Inventory",
-          "Badges",
           "Games",
           "Owned groups"
         ];
@@ -1841,7 +1841,7 @@
           !state.internalText.includes("Chat") ||
           foreignVisual.actionLabels.join("|") !== "Join|Chat" ||
           foreignVisual.actionOrder.join("|") !== "Join|Chat|overflow" ||
-          foreignVisual.profileDetailCount !== 6 ||
+          foreignVisual.profileDetailCount !== 5 ||
           foreignVisual.trustedLabelVisible !== false ||
           foreignVisual.profileDetailLabels.join("|") !==
             expectedForeignDetailLabels.join("|") ||
@@ -1861,7 +1861,8 @@
           ).join("|") !== "Inventory:Private" ||
           foreignDetails.get("Mutual groups") !== "15" ||
           foreignDetails.get("Inventory") !== "Private" ||
-          foreignDetails.get("Badges") !== "245" ||
+          foreignDetails.has("Badges") ||
+          foreignDetails.has("Account Value") ||
           foreignDetails.get("Games") !== "8" ||
           foreignDetails.get("Owned groups") !== "3"
         ) {
@@ -2071,7 +2072,7 @@
             (text) => text.endsWith("Mutuals")
           ) ||
           privateSectionsDetails.get("Inventory") !== "Private" ||
-          privateSectionsDetails.get("Badges") !== "Private" ||
+          privateSectionsDetails.has("Badges") ||
           privateSectionsVisual.profileStatusLabels.join("|") !==
             "Profile Limited" ||
           privateSectionsVisual.profileLimitItems.map(

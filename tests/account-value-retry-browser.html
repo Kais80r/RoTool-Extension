@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><body>
+<script>
+let calls=0, failNext=true;
+window.chrome={storage:{local:{get:(d,cb)=>cb(d)},onChanged:{addListener(){}}},runtime:{sendMessage(message,cb){
+ if(message.action==='cancel'||message.action==='status'){cb({ok:true,result:{}});return;}
+ calls++;
+ if(failNext){failNext=false;cb({ok:false,error:'Rate limited',retryable:true,retryAfterMs:1000});return;}
+ cb({ok:true,result:{done:true,total:50,processed:1,unknown:0,warnings:[],groups:{avatar:{status:'ready',value:50,priced:1,unknown:0,offset:0,items:[{id:'1',name:'Shirt',price:50}]}}}});
+}}};
+</script><script src="../account-value.js"></script><script>
+(async()=>{
+ RoToolAccountValue.open('123');
+ await new Promise(r=>setTimeout(r,100));
+ const root=document.getElementById('rsl-account-value-host').shadowRoot;
+ if(!root.getElementById('status').textContent.includes('automatically'))throw Error('No automatic countdown');
+ if(root.getElementById('scan-state').dataset.state!=='waiting')throw Error('Missing waiting indicator');
+ if(!root.getElementById('resume').hidden)throw Error('Manual resume shown for temporary error');
+ await new Promise(r=>setTimeout(r,6000));
+ if(calls!==2||root.getElementById('total').textContent!=='50 Robux')throw Error('Automatic retry failed');
+ if(root.getElementById('scan-state').dataset.state!=='success')throw Error('Missing finished indicator');
+ failNext=true; RoToolAccountValue.open('123');
+ await new Promise(r=>setTimeout(r,100));
+ root.getElementById('done').click();
+ const atClose=calls;
+ await new Promise(r=>setTimeout(r,6000));
+ if(calls!==atClose)throw Error('Retry continued after closing');
+ document.body.dataset.result='pass';
+})().catch(e=>{document.body.dataset.result='fail';document.body.append(e.message)});
+</script></body></html>

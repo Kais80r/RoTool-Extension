@@ -1019,7 +1019,7 @@
         Object.freeze({
           key: "randomPlaySafeMode",
           label: "Skip blacklisted games",
-          description: "Avoid games known to be inaccessible or risky to join."
+          description: "Exclude games in your blacklist from Random Play."
         }),
         Object.freeze({
           key: "randomPlayBlacklistEditor",
@@ -1046,6 +1046,19 @@
       group: "Experiences",
       label: "CCU Hover Graph",
       description: "Show the 12-hour graph when hovering or focusing any player count."
+    }),
+    Object.freeze({
+      key: "accountValue",
+      group: "Tools",
+      label: "Account Value",
+      description: "Estimate avatar, Limited, bundle and gamepass value from a profile."
+    }),
+    Object.freeze({
+      key: "developerMode",
+      group: "Tools",
+      label: "Developer Mode",
+      defaultEnabled: false,
+      description: "Show experimental Roblox account-region diagnostics on enhanced profiles. Not a live location."
     }),
     Object.freeze({
       key: "recoverySnapshots",
@@ -1220,15 +1233,23 @@
   let featureSettings = { ...DEFAULT_FEATURE_SETTINGS };
   let randomPlayBlacklistIds = [];
   const RANDOM_PLAY_BLACKLIST_KEY = "rslRandomPlayBlacklistIds";
+  let randomPlayBlacklistNames = {};
+  let randomPlayBlacklistLoad = null;
   function loadRandomPlayBlacklist() {
-    try { chrome.storage.local.get({ [RANDOM_PLAY_BLACKLIST_KEY]: [] }, (r) => { randomPlayBlacklistIds = Array.isArray(r?.[RANDOM_PLAY_BLACKLIST_KEY]) ? r[RANDOM_PLAY_BLACKLIST_KEY].map(String).filter((id) => /^\d+$/.test(id)) : []; }); } catch { randomPlayBlacklistIds = []; }
-  }
-  function editRandomPlayBlacklist() {
-    const entered = globalThis.prompt("Enter Place or Universe IDs separated by commas. Leave empty to clear the blacklist.", randomPlayBlacklistIds.join(", "));
-    if (entered === null) return;
-    randomPlayBlacklistIds = Array.from(new Set(entered.split(/[,\s]+/).map((id) => id.trim()).filter((id) => /^\d+$/.test(id))));
-    try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {}
-    renderFeatureSettingsDialog();
+    if (!randomPlayBlacklistLoad) {
+      randomPlayBlacklistLoad = new Promise((resolve, reject) => {
+        chrome.storage.local.get({ [RANDOM_PLAY_BLACKLIST_KEY]: [], rslRandomPlayBlacklistNames: {} }, result => {
+          if (chrome.runtime.lastError) { randomPlayBlacklistLoad = null; reject(new Error("Storage unavailable")); return; }
+          randomPlayBlacklistIds = Array.from(new Set(
+            (Array.isArray(result[RANDOM_PLAY_BLACKLIST_KEY]) ? result[RANDOM_PLAY_BLACKLIST_KEY] : [])
+              .map(String).filter(id => /^[1-9]\d*$/.test(id))
+          ));
+          randomPlayBlacklistNames = result.rslRandomPlayBlacklistNames || {};
+          resolve();
+        });
+      });
+    }
+    return randomPlayBlacklistLoad;
   }
   let featureSettingsConfirmed = { ...DEFAULT_FEATURE_SETTINGS };
   let featureSettingsApplied = { ...DEFAULT_FEATURE_SETTINGS };
@@ -2226,7 +2247,8 @@
     document
       .querySelectorAll(
         `#left-navigation-container [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}], ` +
-          `.left-col-list [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}]`
+          `.left-col-list [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}], ` +
+          `.left-nav [${NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE}]`
       )
       .forEach((row) => row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE));
   }
@@ -2237,7 +2259,7 @@
       return;
     }
     const roots = Array.from(
-      document.querySelectorAll("#left-navigation-container, .left-col-list")
+      document.querySelectorAll("#left-navigation-container, .left-col-list, .left-nav")
     );
     if (roots.length === 0) {
       return;
@@ -2285,6 +2307,14 @@
           // Roblox can reuse list rows while navigating. Never leave an owned
           // marker behind once that row no longer has the matched semantics.
           row.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
+        }
+      });
+      // BTRoblox inserts its news feed separately from the native Blog link.
+      root.querySelectorAll("#btr-blogfeed-container, #btr-blogfeed, .btr-nav-node-sidebar_blogfeed").forEach((feed) => {
+        if (hiddenByKey.blog) {
+          feed.setAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE, "blog");
+        } else {
+          feed.removeAttribute(NATIVE_SIDEBAR_HIDDEN_ATTRIBUTE);
         }
       });
     });
@@ -5756,7 +5786,7 @@
       typeof friend?.displayName === "string"
         ? friend.displayName.trim().slice(0, 100)
         : "";
-    const presenceType = ["Online", "InGame", "InStudio", "Offline"].includes(friend?.presenceType)
+    const presenceType = ["Online", "InGame", "InStudio", "Offline", "Unknown"].includes(friend?.presenceType)
       ? friend.presenceType
       : "Online";
 
@@ -6096,7 +6126,7 @@
         }
 
         allOfflineFriends = normalizeOnlineFriendsResponse(response);
-        offlineFriendsTotal = allOfflineFriends.length;
+        offlineFriendsTotal = allOfflineFriends.filter(friend => friend.presenceType !== "Unknown").length;
         offlineFriendsDetailsComplete = response.detailsComplete === true;
         offlineFriendsVerificationComplete = response.verificationComplete === true;
         if (response.verificationComplete === undefined) {
@@ -6484,6 +6514,9 @@
   }
 
   function getPresencePresentation(friend) {
+    if (friend.presenceType === "Unknown") {
+      return { iconClass: "", label: "Status unavailable", gameId: null };
+    }
     if (friend.presenceType === "Offline") {
       return { iconClass: "", label: "Offline", gameId: null };
     }
@@ -7476,7 +7509,7 @@
       }
       return orderedFriends;
     }
-    return activeFriendsPresenceFilter === "offline" ? allOfflineFriends : allOnlineFriends;
+    return activeFriendsPresenceFilter === "offline" ? allOfflineFriends.filter(friend => friend.presenceType !== "Unknown") : allOnlineFriends;
   }
 
   function hasActiveFriendsAdvancedFilters(state = friendsAdvancedAppliedState) {
@@ -7532,7 +7565,7 @@
       baseFriends = orderedFriends;
     } else {
       baseFriends = activeFriendsPresenceFilter === "offline"
-        ? allOfflineFriends
+        ? allOfflineFriends.filter(friend => friend.presenceType !== "Unknown")
         : allOnlineFriends;
     }
     if (
@@ -7594,12 +7627,16 @@
   }
 
   function getActiveFriendsLoadState() {
+    if (["online", "offline"].includes(activeFriendsPresenceFilter) &&
+        allOfflineFriends.some(friend => friend.presenceType === "Unknown")) return "error";
     return activeFriendsPresenceFilter === BEST_FRIENDS_FILTER_VALUE
       ? bestFriendsLoadState
       : onlineFriendsLoadState;
   }
 
   function getActiveFriendsErrorCode() {
+    if (["online", "offline"].includes(activeFriendsPresenceFilter) &&
+        allOfflineFriends.some(friend => friend.presenceType === "Unknown")) return "PRESENCE_UNAVAILABLE";
     return activeFriendsPresenceFilter === BEST_FRIENDS_FILTER_VALUE
       ? bestFriendsErrorCode
       : onlineFriendsErrorCode;
@@ -7712,6 +7749,8 @@
           ? errorCode === "UNAUTHENTICATED"
             ? "Sign in to load all friends."
             : "Could not load all friends."
+        : errorCode === "PRESENCE_UNAVAILABLE"
+          ? "Online status is temporarily unavailable. Your friends are still listed under All."
         : errorCode === "UNAUTHENTICATED"
           ? `Sign in to load all ${presenceLabel} friends.`
           : `Could not load all ${presenceLabel} friends.`;
@@ -18621,7 +18660,7 @@
   }
 
   function mountRandomGameButton() {
-    loadRandomPlayBlacklist();
+    void loadRandomPlayBlacklist().catch(() => {});
     const notificationItem = findNativeHeaderNotificationItem();
     if (!notificationItem?.parentElement) return;
     const id = "rsl-random-game-nav";
@@ -19572,30 +19611,155 @@
       if (definition.controlType === "randomBlacklist") {
         const row = document.createElement("div");
         row.className = "rsl-feature-settings__row rsl-feature-settings__row--child rsl-random-blacklist-editor";
-        const copy = document.createElement("span"); copy.className = "rsl-feature-settings__copy";
-        const label = document.createElement("strong"); label.className = "content-emphasis text-label-large"; label.textContent = definition.label;
-        const description = document.createElement("span"); description.className = "content-default text-body-medium"; description.textContent = definition.description;
-        copy.append(label, description);
-        const controls = document.createElement("div"); controls.className = "rsl-random-blacklist-controls";
-        const searchWrap = document.createElement("div"); searchWrap.className = "rsl-random-blacklist-search";
-        const input = document.createElement("input"); input.type = "search"; input.placeholder = "Search games or paste a URL or ID"; input.className = "rsl-input rsl-random-blacklist-input"; input.autocomplete = "off";
-        const suggestions = document.createElement("div"); suggestions.className = "rsl-random-blacklist-suggestions";
-        const add = document.createElement("button"); add.type = "button"; add.className = "rsl-button rsl-button--primary foundation-web-button"; add.textContent = "Add";
-        add.addEventListener("click", () => { const id = input.value.trim(); if (/^\d+$/.test(id) && !randomPlayBlacklistIds.includes(id)) { randomPlayBlacklistIds.push(id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } });
+        const label = document.createElement("strong");
+        label.textContent = definition.label;
+        const controls = document.createElement("div");
+        controls.className = "rsl-random-blacklist-controls";
+        const searchWrap = document.createElement("div");
+        searchWrap.className = "rsl-random-blacklist-search";
+        const input = document.createElement("input");
+        input.type = "search";
+        input.placeholder = "Search games or paste a URL or ID";
+        input.className = "rsl-input rsl-random-blacklist-input";
+        input.autocomplete = "off";
+        input.setAttribute("aria-label", "Search games to blacklist");
+        const suggestions = document.createElement("div");
+        suggestions.className = "rsl-random-blacklist-suggestions";
+        suggestions.hidden = true;
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "rsl-button rsl-button--primary foundation-web-button";
+        add.textContent = "Add";
+        const status = document.createElement("span");
+        status.setAttribute("role", "status");
+        const list = document.createElement("div");
+        list.className = "rsl-random-blacklist-list";
+        const names = new Map(Object.entries(randomPlayBlacklistNames));
+        let selectedGame = null;
+        let loaded = false;
+        let sequence = 0;
+        let saving = false;
+        const renderList = () => {
+          list.replaceChildren();
+          randomPlayBlacklistIds.forEach((id) => {
+            const chip = document.createElement("span");
+            chip.className = "rsl-random-blacklist-chip";
+            chip.append(document.createTextNode(names.get(id) || id));
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.textContent = "×";
+            remove.setAttribute("aria-label", "Remove " + (names.get(id) || id));
+            remove.addEventListener("click", () => saveList(randomPlayBlacklistIds.filter(value => value !== id)));
+            chip.append(remove);
+            list.append(chip);
+          });
+        };
+        const saveList = (next, addedName = "") => {
+          if (saving || !loaded) return;
+          saving = true;
+          add.disabled = true;
+          status.textContent = "Saving...";
+          try {
+            const nextNames = Object.fromEntries(next.filter(id => names.has(id)).map(id => [id, names.get(id)]));
+            chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: next, rslRandomPlayBlacklistNames: nextNames }, () => {
+              const error = chrome.runtime.lastError;
+              saving = false;
+              add.disabled = false;
+              if (error) { status.textContent = "Could not save. Please try again."; return; }
+              randomPlayBlacklistIds = next;
+              randomPlayBlacklistNames = nextNames;
+              selectedGame = null;
+              sequence += 1;
+              input.value = "";
+              suggestions.replaceChildren();
+              suggestions.hidden = true;
+              renderList();
+              status.textContent = addedName ? addedName + " added to blacklist." : "Blacklist updated.";
+            });
+          } catch {
+            saving = false;
+            add.disabled = false;
+            status.textContent = "Could not save. Please reload RoTool.";
+          }
+        };
+        const addGame = (id, name) => {
+          if (!/^\d+$/.test(id)) return;
+          if (randomPlayBlacklistIds.includes(id)) {
+            status.textContent = "Already blacklisted.";
+            return;
+          }
+          if (name) names.set(id, name);
+          saveList([...randomPlayBlacklistIds, id], name || id);
+        };
+        add.addEventListener("click", () => {
+          if (selectedGame) addGame(selectedGame.id, selectedGame.name);
+          else status.textContent = "Select a game from the search results.";
+        });
         input.addEventListener("input", async () => {
+          const current = ++sequence;
           const query = input.value.trim();
           suggestions.replaceChildren();
-          if (query.length < 2 || /^\d+$/.test(query)) return;
+          suggestions.hidden = true;
+          status.textContent = "";
+          selectedGame = null;
+          if (query.length < 2) return;
+          await new Promise(resolve => window.setTimeout(resolve, 300));
+          if (current !== sequence || !row.isConnected) return;
+          status.textContent = "Searching...";
           try {
-            const response = await sendGameEventsRuntimeMessage({ type: GAME_EVENTS_SEARCH_MESSAGE_TYPE, requestId: Date.now(), query, locale: getRobloxPageLocale() });
-            (response?.results || []).slice(0, 8).forEach((result) => { const option = document.createElement("button"); option.type = "button"; option.className = "rsl-random-blacklist-suggestion"; const id = String(result.universeId || result.placeId || ""); const image = document.createElement("img"); image.alt = ""; if (result.thumbnailUrl || result.imageUrl) image.src = result.thumbnailUrl || result.imageUrl; else if (/^\d+$/.test(id)) fetch("https://thumbnails.roblox.com/v1/games/icons?universeIds=" + id + "&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false").then((r) => r.json()).then((p) => { const url = p?.data?.[0]?.imageUrl; if (url) image.src = url; }).catch(() => {}); const copy = document.createElement("span"); copy.className = "rsl-random-blacklist-suggestion-copy"; const name = document.createElement("strong"); name.textContent = result.name || "Roblox experience"; const detail = document.createElement("small"); detail.textContent = "Universe " + id; copy.append(name, detail); option.append(image, copy); option.addEventListener("click", () => { if (/^\d+$/.test(id)) { randomPlayBlacklistIds = Array.from(new Set([...randomPlayBlacklistIds, id])); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); } }); suggestions.append(option); });
-          } catch {}
+            const response = await sendGameEventsRuntimeMessage({
+              type: "rsl:random-blacklist-search", requestId: Date.now(),
+              query, locale: getRobloxPageLocale()
+            });
+            if (current !== sequence || !row.isConnected) return;
+            if (!response?.ok) throw new Error("Search failed");
+            const results = (response.results || []).slice(0, 8);
+            status.textContent = results.length ? results.length + " games found" : "No matching games.";
+            results.forEach(result => {
+              const id = String(result.universeId || result.placeId || "");
+              if (!/^\d+$/.test(id)) return;
+              const option = document.createElement("button");
+              option.type = "button";
+              option.className = "rsl-random-blacklist-suggestion";
+              const copy = document.createElement("span");
+              copy.className = "rsl-random-blacklist-suggestion-copy";
+              const name = document.createElement("strong");
+              name.textContent = result.name || "Roblox experience";
+              const detail = document.createElement("small");
+              detail.textContent = "Universe " + id;
+              copy.append(name, detail);
+              const image = document.createElement("img");
+              image.alt = "";
+              if (result.thumbnailUrl || result.imageUrl) image.src = result.thumbnailUrl || result.imageUrl;
+              option.append(image, copy);
+              option.addEventListener("click", event => {
+                event.preventDefault();
+                event.stopPropagation();
+                selectedGame = { id, name: name.textContent };
+                input.value = name.textContent;
+                sequence += 1;
+                suggestions.replaceChildren();
+                suggestions.hidden = true;
+                status.textContent = "Click Add to blacklist " + name.textContent + ".";
+              });
+              suggestions.append(option);
+            });
+            suggestions.hidden = !suggestions.childElementCount;
+          } catch {
+            if (current === sequence) status.textContent = "Search unavailable. Please try again.";
+          }
         });
         searchWrap.append(input, suggestions);
         controls.append(searchWrap, add);
-        const list = document.createElement("div"); list.className = "rsl-random-blacklist-list";
-        randomPlayBlacklistIds.forEach((id) => { const chip = document.createElement("span"); chip.className = "rsl-random-blacklist-chip"; chip.textContent = id; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.title = "Remove"; remove.addEventListener("click", () => { randomPlayBlacklistIds = randomPlayBlacklistIds.filter((value) => value !== id); try { chrome.storage.local.set({ [RANDOM_PLAY_BLACKLIST_KEY]: randomPlayBlacklistIds }); } catch {} renderFeatureSettingsDialog(); }); chip.append(remove); list.append(chip); });
-        row.append(copy, controls, list); return row;
+        row.append(label, controls, status, list);
+        add.disabled = true;
+        loadRandomPlayBlacklist().then(() => {
+          loaded = true;
+          add.disabled = false;
+          Object.entries(randomPlayBlacklistNames).forEach(([id, name]) => names.set(id, name));
+          renderList();
+        }).catch(() => { status.textContent = "Could not load blacklist. Please reopen settings."; });
+        return row;
       }
       const declaredParentKey = definition.parentKey || "";
       const parentKey = definition.independentOfParent === true
@@ -23096,7 +23260,7 @@
       editProfile: "#user-profile-header-EditProfile",
       noBio: ".description-content",
       more: ".more-btn",
-      friends: 'a[href*="friends#!/friends"]',
+      friends: 'a[href$="friends#!/friends"]:not([data-rsl-mutual-friends-tab])',
       followers: 'a[href*="friends#!/followers"]',
       following: 'a[href*="friends#!/following"]'
     };
@@ -23109,7 +23273,7 @@
     if (typeof nativeText === "string" && nativeText.trim()) {
       const cleaned = nativeText.replace(/\s+/g, " ").trim();
       return ["friends", "followers", "following"].includes(key)
-        ? cleaned.replace(/^[\d.,+\s]+/, "").trim()
+        ? cleaned.replace(/^[\p{N}.,+\s]+(?:(?:[KMBT]|Tsd\.?|Mio\.?|Mrd\.?|mil|万|億|亿|천|만|억)(?=\s|$)\s*)?/iu, "").trim()
         : cleaned;
     }
     const locale = String(getRobloxPageLocale() || "en").toLowerCase();
@@ -23367,6 +23531,14 @@
       font-variant-numeric: slashed-zero;
       font-size: 16px;
     }
+    .rtp-friendship-since {
+      margin: 6px 0 0;
+      color: var(--rtp-default);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
     .rtp-trusted-label { white-space: nowrap; }
     .rtp-badges { display: inline-flex; align-items: center; gap: 4px; }
     .rtp-native-name-icon-fallback {
@@ -23594,7 +23766,8 @@
     }
     .rtp-social::-webkit-scrollbar { display: none; }
     .rtp-social a,
-    .rtp-social button {
+    .rtp-social button,
+    .rtp-social .rtp-mutual-count-only {
       display: inline-flex;
       min-height: 32px;
       align-items: center;
@@ -26820,6 +26993,71 @@
     return disclosure;
   }
 
+  const enhancedProfileFriendshipRequests = new Map();
+  function appendEnhancedProfileFriendship(grid, userId, viewerUserId, social = null, useMutualFallback = false) {
+    const includeRegion = isFeatureEnabled("developerMode");
+    const key = `${viewerUserId}:${userId}:${includeRegion}`;
+    let cached = enhancedProfileFriendshipRequests.get(key);
+    if (!cached || Date.now() - cached.time > 60000) {
+      const promise = new Promise(resolve => {
+        try {
+          chrome.runtime.sendMessage({ type: "rsl:profile-friendship-since", userId, includeRegion }, response => {
+            if (chrome.runtime.lastError) return resolve(null);
+            resolve(response?.ok ? response : null);
+          });
+        } catch { resolve(null); }
+      });
+      cached = { time: Date.now(), promise };
+      if (enhancedProfileFriendshipRequests.size >= 50) enhancedProfileFriendshipRequests.clear();
+      enhancedProfileFriendshipRequests.set(key, cached);
+    }
+    cached.promise.then(insights => {
+      if (!grid.isConnected || String(getEnhancedProfileViewerUserId()) !== String(viewerUserId)) return;
+      if (includeRegion && isFeatureEnabled("developerMode")) {
+        grid.querySelector(".rtp-developer-region")?.remove();
+        const region = makeEnhancedProfileElement("p", "rtp-friendship-since rtp-developer-region");
+        const german = String(getRobloxPageLocale()).toLowerCase().startsWith("de");
+        let value = insights ? (german ? "Keine Regionsangabe verfügbar" : "No region provided")
+          : (german ? "API-Anfrage fehlgeschlagen" : "API request failed");
+        const code = insights?.regionCode;
+        if (typeof code === "string" && /^[A-Z]{2}$/.test(code)) {
+          value = code;
+          try { value = `${new Intl.DisplayNames([getRobloxPageLocale() || "en"], {type: "region"}).of(code)} (${code})`; } catch {}
+        }
+        region.textContent = `${german ? "Entwickler · Account-Region" : "Developer · Account region"}: ${value}`;
+        region.title = german ? "Von Roblox gelieferte Account-Region, kein aktueller Standort." : "Roblox-provided account region, not a live location.";
+        grid.append(region);
+      }
+      const mutualCount = insights?.mutualCount;
+      if (useMutualFallback && social?.isConnected && Number.isSafeInteger(mutualCount) && mutualCount >= 0 &&
+          !social.querySelector('[data-rtp-social="mutuals"]')) {
+        const badge = makeEnhancedProfileElement("span", "rtp-mutual-count-only");
+        badge.style.cursor = "default";
+        badge.dataset.rtpSocial = "mutuals";
+        badge.append(makeEnhancedProfileElement("strong", "", formatEnhancedProfileNumber(mutualCount)),
+          makeEnhancedProfileElement("span", "", getEnhancedProfileUiText("mutuals", "Mutuals")));
+        social.append(badge);
+      }
+      const seconds = insights?.seconds;
+      if (!isEnhancedProfileFeatureEnabled("enhancedProfileRelationships")) return;
+      if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds * 1000 > Date.now()) return;
+      const locale = getRobloxPageLocale() || "en-US";
+      const language = locale.toLowerCase().split("-")[0];
+      const labels = { de: "Befreundet seit", en: "Friends since", es: "Amigos desde", fr: "Amis depuis",
+        pt: "Amigos desde", it: "Amici dal", ja: "フレンドになった日", ko: "친구가 된 날짜", tr: "Arkadaşlık tarihi" };
+      let formatted;
+      try { formatted = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(seconds * 1000); }
+      catch { formatted = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(seconds * 1000); }
+      const row = makeEnhancedProfileElement("p", "rtp-friendship-since");
+      row.dataset.rtpFriendshipSince = String(seconds);
+      const time = document.createElement("time");
+      time.dateTime = new Date(seconds * 1000).toISOString();
+      time.textContent = formatted;
+      row.append(`${labels[language] || "Friends since"} `, time);
+      grid.querySelector(".rtp-username")?.after(row);
+    });
+  }
+
   function makeEnhancedProfileHeaderDetails(data) {
     const identity = data.sections.identity.data;
     const viewerUserId = getEnhancedProfileViewerUserId();
@@ -26838,7 +27076,9 @@
     const details = makeEnhancedProfileElement("div", "rtp-profile-details");
     details.setAttribute("aria-label", "Profile details");
     const grid = makeEnhancedProfileElement("dl", "rtp-profile-details-grid");
-    const badgeDetail = showBadges ? makeEnhancedProfileHeaderDetail(
+    const inventoryIsPrivate = data.sections.inventory?.data?.visibility === "limited" ||
+      data.sections.inventory?.code === "PRIVATE";
+    const badgeDetail = showBadges && !inventoryIsPrivate ? makeEnhancedProfileHeaderDetail(
       getEnhancedProfileUiText("badges", "Badges"), getEnhancedProfileBadgeCountLabel(data.sections.badges)
     ) : null;
     if (badgeDetail) {
@@ -26855,6 +27095,14 @@
       }
     }
     const rows = [
+      isFeatureEnabled("accountValue") &&
+      !inventoryIsPrivate ? makeEnhancedProfileHeaderDetail(
+        "Account Value", "Calculate", {
+          action: "account-value",
+          ariaLabel: "Calculate estimated inventory value",
+          onClick: (trigger) => globalThis.RoToolAccountValue?.open(identity.userId, trigger)
+        }
+      ) : null,
       accountAgeDetails
         ? makeEnhancedProfileHeaderDetail(
             getEnhancedProfileUiText("accountAge", "Account age"),
@@ -27598,6 +27846,7 @@
   function syncEnhancedProfileNativeActionSizing(record) {
     const node = record?.node;
     if (!node?.isConnected) return;
+    const isForeignProfile = Boolean(enhancedProfileShadowRoot?.querySelector(".rtp-actions--foreign"));
     node.style.setProperty("width", "auto", "important");
     node.style.setProperty("max-width", "none", "important");
     node.style.setProperty("min-width", "0", "important");
@@ -27608,7 +27857,7 @@
       control.style.setProperty("width", "auto", "important");
       control.style.setProperty("min-width", "max-content", "important");
       control.style.setProperty("max-width", "none", "important");
-      control.style.setProperty("flex", "0 1 auto", "important");
+      control.style.setProperty("flex", isForeignProfile ? "1 1 auto" : "0 1 auto", "important");
       control.style.setProperty("white-space", "nowrap", "important");
       control.style.setProperty("overflow", "visible", "important");
       control.style.setProperty("text-overflow", "clip", "important");
@@ -28602,6 +28851,11 @@
       )
     );
     const social = makeEnhancedProfileElement("nav", "rtp-social");
+    if ((isEnhancedProfileFeatureEnabled("enhancedProfileRelationships") || isFeatureEnabled("developerMode")) && viewerUserId && !isOwnProfile) {
+      appendEnhancedProfileFriendship(identityBlock, identity.userId, viewerUserId, social,
+        isEnhancedProfileFeatureEnabled("enhancedProfileRelationships") &&
+        !(data.sections.relationships.status === "ready" && data.sections.relationships.data.mutualFriendsAvailable));
+    }
     social.setAttribute("aria-label", "Profile connections");
     for (const [key, label, hash] of [
       ["friends", getEnhancedProfileUiText("friends", "Friends"), "friends"],
@@ -30629,7 +30883,25 @@
       label.dataset.rslLifetimeSpent = "";
       label.style.marginLeft = "18px";
       label.style.whiteSpace = "nowrap";
-      label.textContent = "Lifetime Spent: …";
+      const value = document.createElement("span");
+      value.dataset.rslLifetimeSpentValue = "";
+      value.textContent = "Lifetime Spent: …";
+      const help = document.createElement("span");
+      help.className = "rsl-lifetime-spent-help";
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.setAttribute("aria-label", "About Lifetime Spent");
+      trigger.setAttribute("aria-describedby", "rsl-lifetime-spent-info");
+      const icon = document.createElement("span");
+      icon.className = "icon-moreinfo-16x16";
+      icon.setAttribute("aria-hidden", "true");
+      trigger.append(icon);
+      const tooltip = document.createElement("span");
+      tooltip.id = "rsl-lifetime-spent-info";
+      tooltip.setAttribute("role", "tooltip");
+      tooltip.textContent = "Based on your last 10,000 purchases available from Roblox (or fewer if you have less). Counts Robux spent on purchases, not real-money payments. Refunds are not deducted.";
+      help.append(trigger, tooltip);
+      label.append(value, help);
     }
     if (label.parentElement !== balanceText) balanceText.append(label);
     if (lifetimeSpentRequestKey === userId && lifetimeSpentRequest) return;
@@ -30638,17 +30910,17 @@
       .then((response) => {
         if (lifetimeSpentRequestKey !== userId || !label.isConnected) return;
         if (response?.ok !== true || !Number.isSafeInteger(response.totalSpent)) {
-          label.textContent = "Lifetime Spent: unavailable";
+          label.querySelector("[data-rsl-lifetime-spent-value]").textContent = "Lifetime Spent: unavailable";
           return;
         }
-        label.textContent = `Lifetime Spent: ${formatEnhancedProfileNumber(response.totalSpent)}`;
+        label.querySelector("[data-rsl-lifetime-spent-value]").textContent = `Lifetime Spent: ${formatEnhancedProfileNumber(response.totalSpent)}`;
         if (response.complete === false) {
-          label.title = "Partial total: Roblox limited the transaction history returned.";
+          label.querySelector("[role=tooltip]").textContent += " Older purchases are not included because the 10,000-purchase limit was reached.";
         }
       })
       .catch(() => {
         if (lifetimeSpentRequestKey === userId && label.isConnected) {
-          label.textContent = "Lifetime Spent: unavailable";
+          label.querySelector("[data-rsl-lifetime-spent-value]").textContent = "Lifetime Spent: unavailable";
         }
       });
   }
@@ -30925,6 +31197,10 @@
   }
 
   function reconcileFeatureSettings(previousSettings, nextSettings) {
+    if (featureSettingsLoaded && previousSettings.developerMode !== nextSettings.developerMode) {
+      enhancedProfileFriendshipRequests.clear();
+      renderEnhancedProfile();
+    }
     if (!featureSettingsLoaded) {
       return;
     }

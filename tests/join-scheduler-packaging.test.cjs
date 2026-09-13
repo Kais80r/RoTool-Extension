@@ -22,7 +22,7 @@ const releaseBuilderSource = fs.readFileSync(
   "utf8"
 );
 
-assert.equal(manifest.version, "0.19.11", "the current release ships as RoTool 0.19.11");
+assert.equal(manifest.version, "0.19.12", "the current release ships as RoTool 0.19.12");
 assert.equal(
   manifest.minimum_chrome_version,
   "102",
@@ -76,11 +76,11 @@ const schedulerFiles = [
   "join-scheduler.css",
   "join-scheduler.js"
 ];
-assert.equal(packageFiles.length, 30, "the strict runtime allowlist includes the Scheduler, snapshot, archive, and toolbar popup assets");
+assert.equal(packageFiles.length, 32, "the strict runtime allowlist includes the Account Value modules");
 assert.match(
   releaseBuilderSource,
-  /\$packageFiles\.Count\s+-ne\s+30[\s\S]*?exactly 30 managed files/,
-  "the deterministic release builder accepts the 30-file runtime package"
+  /\$packageFiles\.Count\s+-ne\s+32[\s\S]*?exactly 32 managed files/,
+  "the deterministic release builder accepts the 32-file runtime package"
 );
 assert.equal(new Set(packageFiles).size, packageFiles.length, "the runtime allowlist has no duplicates");
 for (const relativePath of schedulerFiles) {
@@ -155,7 +155,7 @@ assert.equal(
 
 assert.match(
   updaterSource,
-  /^\$script:UpdaterVersion\s*=\s*"1\.2\.6"\s*$/m,
+  /^\$script:UpdaterVersion\s*=\s*"1\.2\.7"\s*$/m,
   "the expanded 30-file updater-core contract advances to 1.2.6"
 );
 

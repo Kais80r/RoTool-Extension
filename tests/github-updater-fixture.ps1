@@ -547,11 +547,11 @@ try {
   $recoveryArchiveManagedFiles = @("recovery-archive.html", "recovery-archive.css", "recovery-archive.js")
   $toolbarPopupManagedFiles = @("popup.html", "popup.css", "popup.js")
   $currentManagedFiles = @(Get-RoToolPackageFiles)
-  $prePopupManagedFiles = @($currentManagedFiles | Where-Object { $toolbarPopupManagedFiles -cnotcontains $_ })
+  $prePopupManagedFiles = @($currentManagedFiles | Where-Object { $toolbarPopupManagedFiles -cnotcontains $_ -and $_ -notin @("account-value.js", "account-value-background.js") })
   $preArchiveManagedFiles = @($prePopupManagedFiles | Where-Object { $recoveryArchiveManagedFiles -cnotcontains $_ })
   $releaseManagedFiles = @($preArchiveManagedFiles | Where-Object { $recoverySnapshotManagedFiles -cnotcontains $_ })
   $legacyManagedFiles = @($releaseManagedFiles | Where-Object { $introducedManagedFiles -cnotcontains $_ })
-  Assert-Equal $currentManagedFiles.Count 30 "the current RoTool release uses the expanded 30-file allowlist"
+  Assert-Equal $currentManagedFiles.Count 32 "the current RoTool release uses the expanded 32-file allowlist"
   Assert-SequenceEqual @($currentManagedFiles | Where-Object { $toolbarPopupManagedFiles -ccontains $_ }) $toolbarPopupManagedFiles "the current allowlist adds exactly the three toolbar popup files"
   Assert-Equal $prePopupManagedFiles.Count 27 "the previous private archive release used the 27-file allowlist"
   Assert-SequenceEqual @($currentManagedFiles | Where-Object { $recoveryArchiveManagedFiles -ccontains $_ }) $recoveryArchiveManagedFiles "the current allowlist adds exactly the three private recovery archive files"
@@ -787,11 +787,11 @@ try {
   Assert-Equal @((Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "package-files.json") | ConvertFrom-Json)).Count 18 "released updater 1.2.0 begins with the 18-file package definition"
   $releasedRefreshResult = Install-RoToolUpdaterCore -UpdaterRoot $releasedUpdaterRoot -StagingRoot $correctedUpdaterRoot -StateRoot $releasedUpdaterState -RunningVersion "1.2.0"
   Assert-True ([bool]$releasedRefreshResult.Updated) "released updater 1.2.0 refreshes to the corrected core"
-  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $releasedUpdaterRoot "Update-RoTool.ps1")) "1.2.6" "the verified self-refresh installs updater 1.2.6"
+  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $releasedUpdaterRoot "Update-RoTool.ps1")) "1.2.7" "the verified self-refresh installs updater 1.2.7"
   Assert-SequenceEqual @((Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "package-files.json") | ConvertFrom-Json)) $currentManagedFiles "the self-refresh installs the strict 30-file package definition"
-  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "Update RoTool.cmd")) "released stable launcher" "the 1.2.0-to-1.2.6 refresh preserves the stable launcher"
-  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "updater.config.json")) '{"repository":"Kais80r/RoTool-Extension","browser":"edge","configVersion":2}' "the 1.2.0-to-1.2.6 refresh preserves local configuration bytes"
-  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.0-to-1.2.6 updater refresh journal completes"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "Update RoTool.cmd")) "released stable launcher" "the 1.2.0-to-1.2.7 refresh preserves the stable launcher"
+  Assert-Equal (Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterRoot "updater.config.json")) '{"repository":"Kais80r/RoTool-Extension","browser":"edge","configVersion":2}' "the 1.2.0-to-1.2.7 refresh preserves local configuration bytes"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $releasedUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.0-to-1.2.7 updater refresh journal completes"
 
   # The failed v0.19.0 attempt already left some users on updater 1.2.2 even
   # though their runtime stayed old. That refreshed core must also advance and
@@ -802,8 +802,8 @@ try {
   Write-Utf8File -Path (Join-Path $failedReleaseUpdaterRoot "package-files.json") -Value (($releaseManagedFiles | ConvertTo-Json) + [Environment]::NewLine)
   $failedReleaseRefreshResult = Install-RoToolUpdaterCore -UpdaterRoot $failedReleaseUpdaterRoot -StagingRoot $correctedUpdaterRoot -StateRoot $failedReleaseUpdaterState -RunningVersion "1.2.2"
   Assert-True ([bool]$failedReleaseRefreshResult.Updated) "updater 1.2.2 from the failed release refreshes to corrected bytes"
-  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $failedReleaseUpdaterRoot "Update-RoTool.ps1")) "1.2.6" "the failed-release updater advances from 1.2.2 to 1.2.6"
-  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $failedReleaseUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.2-to-1.2.6 updater refresh journal completes"
+  Assert-Equal (Get-RoToolUpdaterVersionFromFile (Join-Path $failedReleaseUpdaterRoot "Update-RoTool.ps1")) "1.2.7" "the failed-release updater advances from 1.2.2 to 1.2.7"
+  Assert-Equal ([string](Get-Content -Raw -LiteralPath (Join-Path $failedReleaseUpdaterState "updater-journal.json") | ConvertFrom-Json).status) "completed" "the 1.2.2-to-1.2.7 updater refresh journal completes"
 
   $installedUpdaterRoot = Join-Path $fixtureRoot "installed-updater"
   $stagedUpdaterRoot = Join-Path $fixtureRoot "staged-updater"

@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><body>
+<script>
+let calls = 0;
+window.chrome = {
+ storage: { local: { get: (defaults, callback) => callback(defaults) }, onChanged: { addListener() {} } },
+ runtime: { sendMessage(message, callback) {
+  if (message.action === 'cancel') { callback({ok:true}); return; }
+  calls++;
+  callback({ok:true,result:{done:true,total:250,processed:6,unknown:1,warnings:['One item unavailable'],groups:{limiteds:{value:100,priced:1,unknown:0},bundles:{value:100,priced:1,unknown:0},avatar:{value:50,priced:3,unknown:1,offset:0,items:[{id:'125',name:'Free Hat',price:0},{id:'124',name:'Offsale Face',price:null},{id:'126',name:'Cheap Shirt',price:10},{id:'123',name:'Test Shirt',price:40}]},passes:{value:0,priced:0,unknown:0}}}});
+ } }
+};
+</script><script src="../account-value.js"></script><script>
+(async()=>{
+ const baseSend=chrome.runtime.sendMessage;
+ chrome.runtime.sendMessage=(message,callback)=>baseSend(message,response=>{
+   if(response.result){for(const group of Object.values(response.result.groups))group.status='ready';response.result.total+=55;response.result.groups.ugcLimiteds={value:55,priced:1,unknown:0,offset:0,status:'ready',items:[{id:'14742730714',name:'Angry Duck Trophy',price:55,priceSource:'Lowest resale'}]};}
+   callback(response);
+ });
+ RoToolAccountValue.open('123');
+ await new Promise(resolve=>setTimeout(resolve,50));
+ const root=document.getElementById('rsl-account-value-host').shadowRoot;
+ if(!root.querySelector('dialog').open) throw Error('Dialog not open');
+ if(root.getElementById('total').textContent!=='305 Robux') throw Error('Wrong total');
+ if(!root.getElementById('price-note').textContent.includes('not what you originally paid'))throw Error('Missing current-price notice');
+ if(root.getElementById('scan-state').dataset.state!=='success'||!root.getElementById('scan-state').textContent.includes('Scan complete'))throw Error('Missing scan completion indicator');
+ if(root.getElementById('total-note').hidden||!root.getElementById('total-note').textContent.includes('Total excludes 1 item with unavailable prices.')) throw Error('Missing excluded-price explanation');
+ if(root.querySelectorAll('.row').length!==5) throw Error('Missing breakdown');
+ const ugc=root.querySelectorAll('.category')[4];
+ if(!ugc.textContent.includes('UGC Limiteds'))throw Error('Missing UGC category');
+ if(ugc.querySelector('.status-badge').dataset.state!=='success')throw Error('Missing category completion indicator');
+ ugc.querySelector('summary').click();
+ await new Promise(resolve=>setTimeout(resolve,50));
+ if(!ugc.textContent.includes('Lowest resale'))throw Error('Missing fallback-price label');
+ const category=root.querySelectorAll('.category')[2];
+ category.querySelector('summary').click();
+ await new Promise(resolve=>setTimeout(resolve,50));
+ if(!category.open||category.querySelectorAll('li').length!==4) throw Error('Items not expandable');
+ const sortedNames=[...category.querySelectorAll('li a')].map(link=>link.textContent).join(',');
+ if(sortedNames!=='Test Shirt,Cheap Shirt,Free Hat,Offsale Face') throw Error('Incorrect price order: '+sortedNames);
+ if(!category.textContent.includes('Price unavailable')) throw Error('Missing unavailable-price item');
+ if(category.querySelector('.status-badge').dataset.state!=='success') throw Error('Unavailable price incorrectly marks scan incomplete');
+ if(!category.textContent.includes('3 items valued')) throw Error('Missing clearer item counts');
+ if(category.querySelector('li a').href!=='https://www.roblox.com/catalog/123') throw Error('Wrong item link');
+ root.getElementById('done').click();
+ if(root.querySelector('dialog').open) throw Error('Close failed');
+ const completeSend=chrome.runtime.sendMessage;
+ chrome.runtime.sendMessage=(message,callback)=>completeSend(message,response=>{
+   if(response.result)response.result.groups.avatar.status='partial';
+   callback(response);
+ });
+ RoToolAccountValue.open('123');
+ await new Promise(resolve=>setTimeout(resolve,50));
+ const partialRoot=document.getElementById('rsl-account-value-host').shadowRoot;
+ if(partialRoot.getElementById('scan-state').dataset.state!=='warning'||!partialRoot.getElementById('scan-state').textContent.includes('some categories incomplete'))throw Error('Incomplete scan not distinguished');
+ partialRoot.getElementById('done').click();
+ document.body.dataset.result='pass';
+})().catch(error=>{document.body.dataset.result='fail';document.body.append(error.message)});
+</script></body></html>

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "RoTool",
   "short_name": "RoTool",
-  "version": "0.19.11",
+  "version": "0.19.12",
   "minimum_chrome_version": "102",
   "description": "Enhanced Profiles—Best Friends, Quick Settings, Quick Play, Private Servers, Random Server, Join Scheduler, Recovery, Events/History",
   "permissions": [
@@ -74,6 +74,7 @@
       ],
       "js": [
         "join-scheduler.js",
+        "account-value.js",
         "content.js"
       ],
       "run_at": "document_idle"

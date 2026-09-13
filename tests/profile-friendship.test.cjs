@@ -1,0 +1,50 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const staged = path.join(__dirname, '../friendship-background.js');
+const source = fs.readFileSync(fs.existsSync(staged) ? staged : path.join(__dirname, '../background.js'), 'utf8');
+const code = source.slice(source.indexOf('function extractFriendshipSince('), source.indexOf('function handleRuntimeMessage('));
+const context = { AbortController, setTimeout, clearTimeout, fetch: null };
+vm.createContext(context);
+vm.runInContext(code, context);
+const payload = { userInsights: [{ targetUser: 42, profileInsights: [{ friendshipAgeInsight: { friendsSinceDateTime: { seconds: '1735689600' } } }] }] };
+assert.equal(context.extractFriendshipSince(payload, '42'), 1735689600);
+assert.equal(context.extractFriendshipSince(payload, 43), null);
+assert.equal(context.extractFriendshipSince({}, 42), null);
+for (const value of [null, true, -1, 0, 'bad', 999999999999, 1.5]) {
+  const bad = JSON.parse(JSON.stringify(payload));
+  bad.userInsights[0].profileInsights[0].friendshipAgeInsight.friendsSinceDateTime.seconds = value;
+  assert.equal(context.extractFriendshipSince(bad, 42), null);
+}
+(async () => {
+  let calls = 0;
+  context.fetch = async (url, options) => {
+    assert.equal(url, 'https://apis.roblox.com/profile-insights-api/v1/multiProfileInsights');
+    assert.equal(options.credentials, 'include');
+    assert.deepEqual(JSON.parse(options.body), {userIds:[42], rankingStrategy:'tc_info_boost'});
+    calls++;
+    if (calls === 1) return {status:403, ok:false, headers:{get:()=> 'test-token'}};
+    assert.equal(options.headers['x-csrf-token'], 'test-token');
+    return {status:200, ok:true, headers:{get:()=>null}, json:async()=>payload};
+  };
+  const result = await context.fetchProfileFriendshipSince(42);
+  assert.equal(result.seconds, 1735689600);
+  assert.equal(result.mutualCount, null);
+  assert.equal(calls, 2);
+  context.fetch = async()=>({status:401,ok:false,headers:{get:()=>null}});
+  assert.equal(await context.fetchProfileFriendshipSince(42), null);
+  const mutualPayload = { userInsights: [{targetUser:42,profileInsights:[{mutualFriendInsight:{mutualFriends:{'12':{},'13':{}}}}]}] };
+  assert.equal(context.extractProfileMutualCount(mutualPayload,42),2);
+  assert.equal(context.extractProfileMutualCount(mutualPayload,43),null);
+  assert.equal(context.extractProfileMutualCount({},42),null);
+  mutualPayload.userInsights[0].profileInsights[0].mutualFriendInsight.mutualFriends = {};
+  assert.equal(context.extractProfileMutualCount(mutualPayload,42),0);
+  const regionPayload = {userInsights:[{targetUser:42,profileInsights:[{accountLocationInsight:{accountLocationCode:'de'}}]}]};
+  assert.equal(context.extractProfileAccountRegion(regionPayload,42),'DE');
+  assert.equal(context.extractProfileAccountRegion(regionPayload,43),null);
+  assert.equal(context.extractProfileAccountRegion({},42),null);
+  regionPayload.userInsights[0].profileInsights[0].accountLocationInsight.accountLocationCode='<script>';
+  assert.equal(context.extractProfileAccountRegion(regionPayload,42),null);
+  console.log('Friendship timestamp, target isolation, invalid data, CSRF retry, unavailable API: PASS');
+})().catch(error=>{console.error(error);process.exitCode=1});

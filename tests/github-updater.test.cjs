@@ -22,16 +22,18 @@ const exampleConfiguration = JSON.parse(
 );
 const packageFiles = JSON.parse(fs.readFileSync(path.join(updaterRoot, "package-files.json"), "utf8"));
 
-assert.equal(manifest.version, "0.19.11", "the current release version must match its manifest");
+assert.equal(manifest.version, "0.19.12", "the current release version must match its manifest");
 assert.match(
   updaterSource,
-  /^\$script:UpdaterVersion\s*=\s*"1\.2\.6"\s*$/m,
+  /^\$script:UpdaterVersion\s*=\s*"1\.2\.7"\s*$/m,
   "the 30-file updater core must advance for the toolbar popup assets"
 );
 
 const expectedPackageFiles = [
   "manifest.json",
   "background.js",
+  "account-value-background.js",
+  "account-value.js",
   "content.js",
   "styles.css",
   "context-copy.css",

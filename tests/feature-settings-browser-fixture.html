@@ -209,7 +209,7 @@
           );
           if (
             !dialog?.open ||
-            switches.length !== hooks.featureSettingDefinitions.length ||
+            switches.length !== hooks.featureSettingDefinitions.filter(definition => definition.controlType !== "randomBlacklist").length ||
             serverHistorySwitch?.checked !== false ||
             switches.some((input) => {
               const key = input.getAttribute("data-rsl-feature-key");
@@ -217,7 +217,7 @@
             })
           ) {
             throw new Error(
-              "Feature settings dialog did not preserve the complete default switch state"
+              `Feature settings default mismatch: switches=${switches.length}, definitions=${hooks.featureSettingDefinitions.length}, serverHistory=${serverHistorySwitch?.checked}, mismatches=${switches.filter(input=>input.checked !== (hooks.defaultFeatureSettings[input.getAttribute("data-rsl-feature-key")] !== false)).map(input=>input.getAttribute("data-rsl-feature-key")).join(",")}`
             );
           }
           dialog.close();
@@ -258,13 +258,13 @@
             dialog.querySelectorAll("[data-rsl-feature-disclosure]")
           );
           if (
-            advancedButtons.length !== 6 ||
+            advancedButtons.length !== 7 ||
             advancedButtons.some((button) => {
               const panel = document.getElementById(button.getAttribute("aria-controls"));
               return button.getAttribute("aria-expanded") !== "false" || !panel?.hidden;
             })
           ) {
-            throw new Error("Advanced settings disclosures were not collapsed and linked to panels");
+            throw new Error(`Advanced disclosures: actual=${advancedButtons.length}, expected=${hooks.featureSettingDefinitions.filter(definition => definition.children?.length || definition.advancedControls?.length).length}, bad=${advancedButtons.filter(button=>button.getAttribute("aria-expanded") !== "false" || !document.getElementById(button.getAttribute("aria-controls"))?.hidden).map(button=>button.getAttribute("data-rsl-feature-disclosure")).join(",")}`);
           }
           const disclosureNames = advancedButtons.map((button) =>
             button.getAttribute("aria-label")
